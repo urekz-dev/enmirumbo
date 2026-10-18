@@ -100,8 +100,8 @@ Each published business has its card at `/{estado}/{municipio}/negocio/<slug>-<i
 - Its title, description, canonical URL and share preview come from the layout; its description hides any number written in "¿Qué ofreces?". Its Schema.org `LocalBusiness` block (`src/core/seo/card.ts`, `src/components/JsonLd.astro`) declares the name, the URL, the catalogue zone inside an address of the locality, the category and the trades, never the address, the numbers or the opening hours.
 - Each trade links to its trade page in the card's locality (`src/components/CardTrades.astro`). The card is published, so that page always lists it and is never an empty one.
 - After the contact block and apart from it, as small muted links (`src/components/CardSecondaryLinks.astro`): "Reportar este negocio", to the card's report form (see [Reports](#reports)), and "¿Es tu negocio?" with "Perdí mi enlace", which opens WhatsApp to the contact WhatsApp of the card's locality, read from its record, with the message "Hola, soy de «<nombre>» en enmirumbo y perdí el enlace para editar mi ficha. Les escribo desde el número que registré, ¿me lo pueden pasar?" (`lostLinkLink`). A contact WhatsApp that is not ten digits hides that block.
-- The listing card (`src/components/ListingCard.astro`, from a `ListingBusiness`, `src/core/business/listing.ts`) is the one card of the listings and the search results: the placeholder with the emoji of the category (`src/core/catalogue/category-emoji.ts`), the name as an `h2` linked to the card, the zone, "A domicilio" and a green WhatsApp button with the same message, measured as `whatsapp-listing`. A page passes it its `analytics` (`pageAnalytics`).
-- No photo is shown and no photo key is read until the photos arrive (ADR 0011): a card without a photo shows no gap, and the listing card shows its placeholder.
+- The listing card (`src/components/ListingCard.astro`, from a `ListingBusiness`, `src/core/business/listing.ts`) is the one card of the listings and the search results: its photo or, without one, the placeholder with the emoji of the category (`src/core/catalogue/category-emoji.ts`), the name as an `h2` linked to the card, the zone, "A domicilio" and a green WhatsApp button with the same message, measured as `whatsapp-listing`. A page passes it its `analytics` (`pageAnalytics`), and the list marks its first card as `firstRow`, the only one whose photo loads at once.
+- A card with a photo shows it above its name, shares it as its preview and names it in its Schema.org block; a card without one shows no gap. See [Photos](#photos).
 
 ### Search
 
@@ -167,7 +167,7 @@ One route, `src/pages/[state]/[municipality]/[segment].astro`, serves the pages 
 - `/robots.txt` (`src/pages/robots.txt.ts`, `src/lib/robots.ts`) reads the active localities only when it is open. The exclusions of a locality are `LOCALITY_DISALLOW`; the edit mode is never named.
 - `/sitemap.xml` (`src/pages/sitemap.xml.ts`, `src/core/seo/sitemap.ts`) is generated from the database on every request, through the cached `HYPERDRIVE`, with absolute URLs from `SITE_URL`. Today it lists, for every active locality, its home, the listings of the 8 categories, even when empty, the trade pages and trade and zone pages with at least one published card, and the published cards, each at its current URL with its publication date; and the two legal pages. A list appears by its first page only. Each indexable page of a locality adds its kind to `LOCALITY_PAGES` when it lands (the registration page is the next); nothing else lists pages. In a deployed environment without a usable `SITE_URL` it is an empty sitemap. `test/e2e/seo.spec.ts` requests every URL it lists and fails on anything but a 200.
 - Every page renders inside `BaseLayout`, which writes the title, the description, `og:title`, `og:description` and the share image. A page that may be indexed passes its own path as `canonicalPath`, and the layout declares its absolute canonical URL and `og:url` with `absoluteUrl`; a 404 or the panel passes none. A page that answers but must not be indexed passes `noindex`: the layout writes `<meta name="robots" content="noindex, follow">` and no canonical.
-- The share image is one static 1200×630 PNG per locality, `src/assets/share/{estado}/{municipio}.png`, found by the slugs of the locality (`src/lib/share-image.ts`); the build serves it, hashed, under `/_astro/`. A locality without one, and every page outside a locality, shares `src/assets/share/enmirumbo.png`, the wordmark alone. To add a locality's image, add its file; no code changes.
+- The share image is one static 1200×630 PNG per locality, `src/assets/share/{estado}/{municipio}.png`, found by the slugs of the locality (`src/lib/share-image.ts`); the build serves it, hashed, under `/_astro/`. A locality without one, and every page outside a locality, shares `src/assets/share/enmirumbo.png`, the wordmark alone. To add a locality's image, add its file; no code changes. A card with a photo shares its photo instead, 1200×900 WebP from the media hostname (see [Photos](#photos)).
 
 The images were made once, on 2026-10-15, without any tool kept in the repository: an HTML page of 1200×630 with the design tokens of `src/styles/global.css` (background `background`, a 72px band of `surface` with a 2px top border of `line` at the bottom) and the system font stack, with the wordmark "enmirumbo" centred in `ink`, bold, 168px, letter spacing -0.025em, and below it, 28px apart, the line "Tizayuca, Hidalgo" in `ink-muted`, weight 500, 60px; the generic image has no second line. Playwright's Chromium (`vp exec playwright install chromium`) rendered it on macOS with a 1200×630 viewport and a device scale factor of 1, and the screenshot was saved as PNG. A new locality's image follows the same recipe with its own "{municipio}, {estado}".
 
@@ -241,11 +241,12 @@ Under `/{estado}/{municipio}/`, one path segment is a category (`servicios-del-h
 
 ### Fictitious seed
 
-`vp run db:seed` (`src/core/db/seed/`) inserts twelve fake businesses in Tizayuca: published cards in seven categories (the eighth, "Otro", stays empty) and several zones, one in review and one rejected, with the cases the directory, the search and the panel need. Their names say they are made up, their numbers are of the `771999xxxx` series, their references point nowhere, and none has a photo yet. The command prints that the data is fake.
+`vp run db:seed` (`src/core/db/seed/`) inserts fourteen fake businesses in Tizayuca: published cards in seven categories (the eighth, "Otro", stays empty) and several zones, one in review and one rejected, with the cases the directory, the search and the panel need. Their names say they are made up, their numbers are of the `771999xxxx` series and their references point nowhere. Two cards of "Salud", the farmacia and the dentista, have a photo, which the seed draws when it runs (see [Photos](#photos)); the rest have none. The command prints that the data is fake.
 
 - It inserts only what is missing and never changes a row that is already there. Each fake business has a fixed identifier; one whose identifier, or whose WhatsApp in Tizayuca, is already taken is left out, and trades are added only to the businesses it inserts. Running it again changes nothing.
 - While Tizayuca has no contact WhatsApp, it sets the fake one, `7719990100`, and turns the locality on, so the seeded directory can be seen. A number someone set, and the active flag next to it, are never touched.
 - It runs on every deploy to `dev` and `stage`, never on `prod`: with `ENVIRONMENT=prod` it seeds nothing, and against a database that is not on this machine it needs `ENVIRONMENT=dev` or `ENVIRONMENT=stage`.
+- Its photos go to the local media bucket, which `vp run dev` and `vp run preview` serve under `/_media/`. With `ENVIRONMENT=dev` or `stage` they go instead to the directory `SEED_MEDIA_DIR`, which the deploy uploads to the media bucket of `dev` and `stage` (`scripts/deploy/upload-seed-media.sh`); without that variable the seed refuses to run there.
 
 ## Deployment
 
@@ -259,7 +260,7 @@ Three deployed environments ([ADR 0008](docs/adr/0008-environments-and-deploymen
 
 Every deployed environment answers with `X-Robots-Tag: noindex` and a closed `robots.txt` until the cut-over, production included: the Worker adds the header to its responses, and the `_headers` file of the build to the static assets (see [Legal pages](#legal-pages)). Version and Preview URLs are off, so `/admin` is reachable only through Access.
 
-Each workflow checks the ref, builds for its environment, checks the generated configuration and the `_headers` file of the static assets, which must give every one of them noindex and the security headers (`scripts/deploy/check-build.sh`), applies the migrations, seeds (not on `prod`), deploys with the project's Wrangler and runs a smoke test (`scripts/deploy/smoke-test.sh`): the home answers 200, following its redirects within https, with `X-Robots-Tag: noindex` and the security headers; so does `/aviso-de-privacidad`, a prerendered page served without the Worker; and `robots.txt` is closed. The dev workflow first resets the Neon `dev` branch from `stage` (`scripts/deploy/reset-neon-dev.sh`), so anything stored in dev is lost on each deploy. Each step receives only the secrets it needs from the GitHub Environment of the same name (see [Secrets](#secrets)). To deploy a branch to dev: Actions, "Deploy dev", "Run workflow", pick the branch. To release: push a tag `vX.Y.Z` from `main`.
+Each workflow checks the ref, builds for its environment, checks the generated configuration and the `_headers` file of the static assets, which must give every one of them noindex and the security headers (`scripts/deploy/check-build.sh`), applies the migrations, seeds (not on `prod`) and uploads the seed's photos (`scripts/deploy/upload-seed-media.sh`), deploys with the project's Wrangler and runs a smoke test (`scripts/deploy/smoke-test.sh`): the home answers 200, following its redirects within https, with `X-Robots-Tag: noindex` and the security headers; so does `/aviso-de-privacidad`, a prerendered page served without the Worker; and `robots.txt` is closed. The dev workflow first resets the Neon `dev` branch from `stage` (`scripts/deploy/reset-neon-dev.sh`), so anything stored in dev is lost on each deploy. Each step receives only the secrets it needs from the GitHub Environment of the same name (see [Secrets](#secrets)). To deploy a branch to dev: Actions, "Deploy dev", "Run workflow", pick the branch. To release: push a tag `vX.Y.Z` from `main`.
 
 The build fixes the environment: `CLOUDFLARE_ENV=<env> vp run build` writes `dist/server/wrangler.json` for that environment only, and `wrangler deploy` refuses to deploy it to another one. Never run `wrangler deploy` by hand.
 
@@ -271,16 +272,54 @@ Worker variables:
 | `ACCESS_TEAM_DOMAIN` | The Access team domain, `urekz.cloudflareaccess.com`.                                               |
 | `ACCESS_AUD`         | The AUD tag of the `enmirumbo admin` Access application. While it is empty, `/admin` answers 403.   |
 | `SITE_URL`           | The public URL of the environment, without a trailing slash: the base of every absolute URL.        |
-| `PHOTOS_URL`         | The https origin of the environment's photos (ADR 0011), allowed by the content security policy.    |
+| `MEDIA_URL`          | The https origin of the environment's media hostname (ADR 0011), allowed by the CSP. Empty locally. |
 | `UMAMI_WEBSITE_ID`   | `prod` only: the Website ID of Umami Cloud. Empty until the launch, so nothing is measured.         |
 | `DEPLOY_BRANCH`      | `dev` only: the branch deployed, set by `deploy-dev.yml` and shown in the page footer.              |
 | `DEPLOY_COMMIT`      | `dev` only: the commit deployed, set by `deploy-dev.yml` and shown in the page footer.              |
 
 The prerendered legal pages are built before the deploy sets `DEPLOY_BRANCH` and `DEPLOY_COMMIT`, so on `dev` their footer does not name the branch.
 
-Besides the Hyperdrive bindings, each environment binds `QUOTA_COUNTER`, the Durable Object of the per-IP quotas, and declares its class `QuotaCounter` in `exports` (see [Per-IP quotas](#per-ip-quotas)); Cloudflare creates its namespace on the first deploy of each environment, with nothing to set up by hand. The deploy stops before changing anything if the build lacks either.
+Besides the Hyperdrive bindings, each environment binds `QUOTA_COUNTER`, the Durable Object of the per-IP quotas, and declares its class `QuotaCounter` in `exports` (see [Per-IP quotas](#per-ip-quotas)); Cloudflare creates its namespace on the first deploy of each environment, with nothing to set up by hand. The deploy stops before changing anything if the build lacks either. Each environment also binds `MEDIA`, its public media bucket, which must exist before its first deploy (see [Photos](#photos)); the deploy stops if the build binds another bucket or `MEDIA_URL` is not an https origin.
 
 The Hyperdrive configurations hold the database credentials and are created by hand, two per environment: `enmirumbo-<env>` (cached) and `enmirumbo-<env>-fresh` (caching disabled), both on the direct (non-pooled) host of that environment's Neon branch. Their ids go in `wrangler.jsonc`; while an id is a placeholder, the deploy of that environment stops before changing anything.
+
+### Photos
+
+Business photos live in a public media bucket of R2 ([ADR 0011](docs/adr/0011-photos-in-r2-transformed-on-upload.md), amended): a bucket of public content that people or the admin upload, organized by prefix, never anything private (the backups have their own). Cloudflare serves it from the media hostname, a custom domain of the bucket, without the Worker. Production has its own bucket; `dev` and `stage` share one, because a binding or an R2 token cannot be limited to a prefix (so nothing deployed from a branch can reach production's photos), and because `dev` copies `stage`'s database, whose cards must point at photos that exist.
+
+| Environment       | Bucket (binding `MEDIA`) | `MEDIA_URL`                             | Later                             |
+| ----------------- | ------------------------ | --------------------------------------- | --------------------------------- |
+| `local`           | `enmirumbo-media-local`  | empty: served under `/_media/`          |                                   |
+| `dev` and `stage` | `enmirumbo-media-dev`    | `https://media-dev-enmirumbo.urekz.com` | `https://media-dev.enmirumbo.com` |
+| `prod`            | `enmirumbo-media`        | `https://media-enmirumbo.urekz.com`     | `https://media.enmirumbo.com`     |
+
+The hostnames live under `urekz.com` until `enmirumbo.com` is on Cloudflare (EMR-63); moving them is a change of `MEDIA_URL` and of the custom domains, never of code. They are one level below their zone, as the [naming rule](AGENTS.md) asks, so Cloudflare's free Universal SSL certificate covers them.
+
+- A business stores one photo key, 24 random characters of the identifier alphabet (`newPhotoKey`, `src/core/photos/photo.ts`). Its photo is two WebP objects: `photos/<key>/card.webp`, 400×400, for the listing card, and `photos/<key>/full.webp`, 1200×900, for the card, its share preview and its Schema.org block. Each carries `Cache-Control: public, max-age=31536000, immutable`: a key never changes its bytes, so browsers and Cloudflare's cache keep it for a year.
+- Pages build a photo's address only through `src/lib/media.ts`, from `MEDIA_URL` and a stored key of a published card; a stored value that is not exactly a key the server generates is no photo, and the listing card shows its placeholder. The listing card shows the `card` variant with its size, and only the first card of a list loads it at once; the card shows the `full` one above its name. A deployed environment without an https `MEDIA_URL` shows no photo and logs it once.
+- Locally `MEDIA_URL` is empty: the local Worker (`src/worker.ts`) serves Miniflare's local bucket, in `.wrangler/state`, at `/_media/<object key>`, only with `ENVIRONMENT` `local` and on `localhost`. `vp run db:seed` and the end-to-end setup write the seed's photos there, so `vp run dev` and `vp run preview` show them. To start again without them, delete `.wrangler/state`.
+- The seed draws its photos when it runs (`src/core/db/seed/photos.ts`): a coloured rectangle with the made-up name and "FOTO DE MENTIRA", as lossless WebP from a small encoder in plain TypeScript (`src/core/db/seed/webp.ts`), so there is no image file in the repository and no native dependency. Each fake business with a photo has a fixed key, so every run writes the same objects.
+- On the deploys to `dev` and `stage`, the seed writes its photos with a manifest to `SEED_MEDIA_DIR`, and the next step uploads them to `enmirumbo-media-dev` through R2's S3 API with `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`, an R2 token that can read and write that bucket only; that step has no database secret, and the seed's step has no R2 token. Nothing is seeded in production.
+
+Set up once, by hand, before the first deploy that binds `MEDIA` (a deploy fails while its bucket does not exist, and the merge to `main` deploys `stage`):
+
+1. In the Cloudflare dashboard of the account that holds the `urekz.com` zone: R2 object storage, Overview, Create bucket. Name `enmirumbo-media`, location Automatic, default storage class Standard, Create bucket. Repeat for `enmirumbo-media-dev`.
+2. In `enmirumbo-media`: Settings, Custom Domains, Add, `media-enmirumbo.urekz.com`, Continue, Connect Domain. Wait until its status is Active. In `enmirumbo-media-dev`, the same with `media-dev-enmirumbo.urekz.com`.
+3. In each bucket: Settings, Public Development URL. It must say it is disabled; if it is enabled, Disable, type `disallow`, Disallow.
+4. In the `urekz.com` zone: Caching, Configuration, Browser Cache TTL must be "Respect Existing Headers" (the default), so the objects' year of caching reaches browsers. Optionally, Caching, Tiered Cache, Smart Tiered Cache, as R2 recommends; it applies to the whole zone.
+5. R2 object storage, Overview, API Tokens (Manage), Create Account API Token. Name `enmirumbo-media-dev-seed`, permission Object Read & Write, Specify bucket(s): Apply to specific buckets only, `enmirumbo-media-dev`, TTL Forever, Create API Token. Copy the Access Key ID and the Secret Access Key, and keep them in the password manager.
+6. In GitHub: Settings, Environments, `dev`, Environment secrets, Add environment secret: `R2_ACCESS_KEY_ID` with the Access Key ID, then `R2_SECRET_ACCESS_KEY` with the Secret Access Key. Repeat in `stage` with the same two values.
+7. Deploy `dev` (Actions, "Deploy dev", Run workflow). Wrangler does not call the R2 API to deploy, and Cloudflare checks the binding when the Worker is uploaded, so the deploy tokens need no new permission. If a deploy fails with an authentication error about an R2 bucket, edit that environment's `CLOUDFLARE_API_TOKEN` and add Workers R2 Storage Bucket Item Read on its bucket only (`enmirumbo-media` for `prod`, `enmirumbo-media-dev` for `dev` and `stage`).
+8. Check the media hostname of `dev` and `stage`: the first request must answer 200 with `content-type: image/webp` and the cache header, a second one `cf-cache-status: HIT`, and the root 404:
+
+```sh
+url=https://media-dev-enmirumbo.urekz.com/photos/yya626vdevvbuxa5avc2n8e6/card.webp
+curl -sI "$url" | grep -iE '^(HTTP|content-type|cache-control|cf-cache-status)'
+curl -sI "$url" | grep -i '^cf-cache-status'
+curl -s -o /dev/null -w '%{http_code}\n' https://media-dev-enmirumbo.urekz.com/
+```
+
+Production's hostname answers 404 to everything until the registration uploads the first photo.
 
 ### Security headers
 
@@ -299,7 +338,7 @@ The content security policy of production without a Website ID (each directive o
 default-src 'self'
 script-src 'self' https://challenges.cloudflare.com
 style-src 'self'
-img-src 'self' https://fotos.enmirumbo.com
+img-src 'self' https://media-enmirumbo.urekz.com
 connect-src 'self'
 frame-src https://challenges.cloudflare.com
 frame-ancestors 'none'
@@ -308,7 +347,7 @@ base-uri 'none'
 form-action 'self'
 ```
 
-`img-src` takes the `PHOTOS_URL` of the environment (none locally). With a Website ID, production adds `https://cloud.umami.is` to `script-src`, and `https://gateway.umami.is https://cloud.umami.is` to `connect-src`. On the panel, `form-action` also allows `https://urekz.cloudflareaccess.com`, where Access sends a submission whose session expired. No inline script or style is allowed, so the build keeps every stylesheet and script in a file (`build.inlineStylesheets: "never"` and `assetsInlineLimit: 0` in `astro.config.mjs`), and no page may carry a `style` attribute or an `is:inline` script of its own. The one exception is a card's Schema.org block, `<script type="application/ld+json">`: a data block that the browser never runs, so the policy does not apply to it. `vp run dev` leaves the policy out, because Vite's development pages need inline styles; `vp run preview` and every build send it.
+`img-src` takes the `MEDIA_URL` of the environment (none locally, where the photos come from the site itself). With a Website ID, production adds `https://cloud.umami.is` to `script-src`, and `https://gateway.umami.is https://cloud.umami.is` to `connect-src`. On the panel, `form-action` also allows `https://urekz.cloudflareaccess.com`, where Access sends a submission whose session expired. No inline script or style is allowed, so the build keeps every stylesheet and script in a file (`build.inlineStylesheets: "never"` and `assetsInlineLimit: 0` in `astro.config.mjs`), and no page may carry a `style` attribute or an `is:inline` script of its own. The one exception is a card's Schema.org block, `<script type="application/ld+json">`: a data block that the browser never runs, so the policy does not apply to it. `vp run dev` leaves the policy out, because Vite's development pages need inline styles; `vp run preview` and every build send it.
 
 To read the headers of a deployed environment, for a page of the Worker and for a static asset:
 
@@ -319,21 +358,21 @@ for path in /hidalgo/tizayuca /aviso-de-privacidad; do
 done
 ```
 
-Both must print the four security headers with the values above, with that environment's photo hostname in `img-src`, and `X-Robots-Tag: noindex`.
+Both must print the four security headers with the values above, with that environment's media hostname in `img-src`, and `X-Robots-Tag: noindex`.
 
 ## Secrets
 
 Every secret lives in the GitHub Environments of this repository, `dev`, `stage` and `prod`, plus `backup` for the nightly backup ([ADR 0020](docs/adr/0020-secrets-in-github-environments.md)): Settings > Environments. A secret reaches only the jobs that declare its environment; `prod` releases its secrets only to tags `v*`, and `stage` and `backup` only to `main`. GitHub masks their values in the logs and never shows them again, so the originals stay in each provider and in the custodian's password manager.
 
-| Secret                  | Environments                     | What it is                                                                                                                                                                |
-| ----------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`  | `dev`, `stage`, `prod`           | An account API token with the Editor role on that environment's Worker only.                                                                                              |
-| `CLOUDFLARE_ACCOUNT_ID` | `dev`, `stage`, `prod`, `backup` | The Cloudflare account id.                                                                                                                                                |
-| `DATABASE_URL`          | `dev`, `stage`, `prod`, `backup` | The direct (non-pooled) connection string of that environment's Neon branch, `sslmode=verify-full`. In `backup`, production's, for the read-only role `enmirumbo_backup`. |
-| `NEON_API_KEY`          | `dev`                            | A Neon project-scoped API key, to reset the `dev` branch from `stage`.                                                                                                    |
-| `NEON_PROJECT_ID`       | `dev`                            | The Neon project id.                                                                                                                                                      |
-| `R2_ACCESS_KEY_ID`      | `backup`                         | The Access Key ID of an R2 token with Object Read & Write on the `enmirumbo-backups` bucket only.                                                                         |
-| `R2_SECRET_ACCESS_KEY`  | `backup`                         | The Secret Access Key of that token.                                                                                                                                      |
+| Secret                  | Environments                     | What it is                                                                                                                                                                  |
+| ----------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`  | `dev`, `stage`, `prod`           | An account API token with the Editor role on that environment's Worker only.                                                                                                |
+| `CLOUDFLARE_ACCOUNT_ID` | `dev`, `stage`, `prod`, `backup` | The Cloudflare account id.                                                                                                                                                  |
+| `DATABASE_URL`          | `dev`, `stage`, `prod`, `backup` | The direct (non-pooled) connection string of that environment's Neon branch, `sslmode=verify-full`. In `backup`, production's, for the read-only role `enmirumbo_backup`.   |
+| `NEON_API_KEY`          | `dev`                            | A Neon project-scoped API key, to reset the `dev` branch from `stage`.                                                                                                      |
+| `NEON_PROJECT_ID`       | `dev`                            | The Neon project id.                                                                                                                                                        |
+| `R2_ACCESS_KEY_ID`      | `dev`, `stage`, `backup`         | The Access Key ID of an R2 token with Object Read & Write on one bucket only: `enmirumbo-media-dev` in `dev` and `stage` (the same token), `enmirumbo-backups` in `backup`. |
+| `R2_SECRET_ACCESS_KEY`  | `dev`, `stage`, `backup`         | The Secret Access Key of that token.                                                                                                                                        |
 
 The Worker has no secrets yet; the per-IP quotas need none, since their key lives only in the memory of the Durable Object. When one arrives, its name goes in `secrets.required` of each Wrangler environment, its value in the GitHub Environments, and the deploy step uploads it with `wrangler deploy --secrets-file`. Changing a secret takes a new deploy of that environment. Locally no real secret is needed; a `.dev.vars` file, ignored by git, holds any local value.
 

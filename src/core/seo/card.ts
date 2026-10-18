@@ -112,8 +112,9 @@ export interface LocalBusinessData {
  * would be worse than not marking it. The only location is the catalogue
  * zone inside an address of the locality; a zone "Otra" is free text, so it
  * is left out. Never the opening hours, the address or references, the pin,
- * the WhatsApp or the landline. The photo arrives with the photo storage
- * (ADR 0011), built by the site from its key, never from what is stored.
+ * the WhatsApp or the landline. The image is the address of the card's photo
+ * that the site built from its key (src/lib/media.ts), never anything
+ * stored; without one the block has no image.
  */
 export function localBusinessData(
   card: Pick<
@@ -122,6 +123,7 @@ export function localBusinessData(
   >,
   locality: CardLocality,
   url: string | null,
+  image: string | null = null,
 ): LocalBusinessData {
   const description = card.whatYouOffer ? hideContactNumbers(card.whatYouOffer) : "";
   const zone = card.zoneSlug !== null && card.zoneName !== null ? card.zoneName : null;
@@ -131,6 +133,7 @@ export function localBusinessData(
     name: card.name,
     ...(url === null ? {} : { url }),
     ...(description === "" ? {} : { description }),
+    ...(image === null ? {} : { image: [image] }),
     address: {
       "@type": "PostalAddress",
       ...(zone === null ? {} : { streetAddress: zone }),

@@ -5,7 +5,14 @@
 // it with a fake contact WhatsApp while it has none. It runs on every deploy
 // to dev and stage (never prod), so it only inserts what is missing and never
 // changes a row that is already there: running it again changes nothing.
-import { and, eq, isNull } from "drizzle-orm";
+//
+// It also says which seeded photos the database names (`photos`): the fake
+// businesses with a photo whose row carries their photo key, inserted now or
+// before. The caller draws and writes those (./photos.ts) to the media bucket
+// of the environment, at the same keys every time, so the bucket ends up with
+// exactly one photo per seeded business that has one, and never an object
+// that no row names.
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { NodePgQueryResultHKT } from "drizzle-orm/node-postgres";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import { NOTICE_VERSION } from "../../legal/version.ts";
@@ -20,6 +27,7 @@ import {
   zones,
 } from "../schema/index.ts";
 import { FAKE_BUSINESSES, type FakeBusiness } from "./businesses.ts";
+import type { SeededPhoto } from "./photos.ts";
 
 /** Tizayuca, Hidalgo: the only locality the seed fills. */
 export const SEED_LOCALITY_CODE = "13069";
@@ -48,6 +56,8 @@ export interface SeedReport {
   alreadyThere: number;
   /** Whether the seed set the fake contact WhatsApp and turned the locality on. */
   activated: boolean;
+  /** The seeded photos the database names, to write to the media bucket. */
+  photos: SeededPhoto[];
 }
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -122,6 +132,7 @@ function businessRow(fake: FakeBusiness, ids: Ids, now: Date): NewBusiness {
     publishedAt: fake.publishedDaysAgo === undefined ? null : daysAgo(fake.publishedDaysAgo),
     rejectedAt: fake.rejected ? daysAgo(fake.rejected.daysAgo) : null,
     rejectionReason: fake.rejected?.reason ?? null,
+    photoKey: fake.photoKey ?? null,
   };
 }
 
@@ -179,6 +190,27 @@ export async function seed(db: SeedDb, now: Date = new Date()): Promise<SeedRepo
     const newLinks = links.filter(({ businessId }) => insertedIds.has(businessId));
     if (newLinks.length > 0) await tx.insert(businessTrades).values(newLinks).onConflictDoNothing();
 
+    // The fake businesses with a photo whose row still carries their key: a
+    // row the seed did not insert (a business that took the WhatsApp first)
+    // names no seeded photo, so none is written for it.
+    const withPhoto = FAKE_BUSINESSES.flatMap((fake, shade) =>
+      fake.photoKey === undefined ? [] : [{ name: fake.name, photoKey: fake.photoKey, shade }],
+    );
+    const named =
+      withPhoto.length === 0
+        ? []
+        : await tx
+            .select({ photoKey: businesses.photoKey })
+            .from(businesses)
+            .where(
+              inArray(
+                businesses.photoKey,
+                withPhoto.map(({ photoKey }) => photoKey),
+              ),
+            );
+    const namedKeys = new Set(named.map(({ photoKey }) => photoKey));
+    const photos = withPhoto.filter(({ photoKey }) => namedKeys.has(photoKey));
+
     const activated = await tx
       .update(localities)
       .set({ contactWhatsapp: SEED_CONTACT_WHATSAPP, active: true })
@@ -190,6 +222,7 @@ export async function seed(db: SeedDb, now: Date = new Date()): Promise<SeedRepo
       inserted: inserted.length,
       alreadyThere: FAKE_BUSINESSES.length - inserted.length,
       activated: activated.length > 0,
+      photos,
     };
   });
 }

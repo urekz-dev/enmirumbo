@@ -12,6 +12,9 @@
 #   - SITE_URL is an https origin;
 #   - QUOTA_COUNTER bound to the QuotaCounter Durable Object, which `exports`
 #     declares with SQLite storage, so the per-IP quotas count (ADR 0012);
+#   - MEDIA bound to the public media bucket of the environment, the one of
+#     production for prod and the one dev and stage share for them, and
+#     MEDIA_URL an https origin (ADR 0011);
 #   - the _headers file of the static assets gives every one of them the
 #     security headers (a Content-Security-Policy that forbids framing,
 #     plugins and posting to other sites, nosniff, X-Frame-Options: DENY and a
@@ -40,14 +43,17 @@ case "${env_name}" in
 dev)
   worker="dev-enmirumbo"
   crons='[]'
+  media_bucket="enmirumbo-media-dev"
   ;;
 stage)
   worker="stage-enmirumbo"
   crons='["0 * * * *"]'
+  media_bucket="enmirumbo-media-dev"
   ;;
 prod)
   worker="enmirumbo"
   crons='["0 * * * *"]'
+  media_bucket="enmirumbo-media"
   ;;
 *) usage "environment must be dev, stage or prod (got '${env_name}')" ;;
 esac
@@ -110,6 +116,13 @@ quota_bindings="$(jq -c '[.durable_objects.bindings // [] | .[] | select(.name =
   error "expected QUOTA_COUNTER bound to the QuotaCounter Durable Object, found ${quota_bindings}; declare it in env.${env_name}.durable_objects of wrangler.jsonc"
 [ "$(value '.exports.QuotaCounter')" = '{"type":"durable-object","storage":"sqlite"}' ] ||
   error "exports.QuotaCounter is $(value '.exports.QuotaCounter'), expected a Durable Object with SQLite storage; declare it in env.${env_name}.exports of wrangler.jsonc"
+
+media_bindings="$(jq -c '[.r2_buckets // [] | .[] | select(.binding == "MEDIA") | {binding, bucket_name}]' "${config}")"
+[ "${media_bindings}" = "[{\"binding\":\"MEDIA\",\"bucket_name\":\"${media_bucket}\"}]" ] ||
+  error "expected MEDIA bound to the R2 bucket ${media_bucket}, found ${media_bindings}; declare it in env.${env_name}.r2_buckets of wrangler.jsonc"
+media_url="$(jq -r '.vars.MEDIA_URL // ""' "${config}")"
+[[ "${media_url}" =~ ^https://[a-z0-9.-]+$ ]] ||
+  error "MEDIA_URL is '${media_url}', expected the https origin of the media hostname, without a path or trailing slash"
 
 # Whether a _headers file has a rule for /* with a header line that matches
 # the extended regular expression $2, which is matched in lowercase.

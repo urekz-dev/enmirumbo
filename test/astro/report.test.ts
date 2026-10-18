@@ -63,6 +63,7 @@ const CARD: PublishedCard = {
   openingHours: null,
   pageUrl: null,
   trades: [],
+  photoKey: null,
 };
 
 const LOST_LINK_MESSAGE =

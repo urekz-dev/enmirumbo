@@ -21,7 +21,8 @@
 // content="noindex, follow">`, so its links are still followed, and no
 // canonical. Every page shares its title and description, and the share
 // image of its locality or the generic one (src/lib/share-image.ts), with its
-// size and alt text. Without a base for absolute URLs, the canonical,
+// size and alt text; a card with a photo passes its photo as `image` instead
+// (src/lib/media.ts). Without a base for absolute URLs, the canonical,
 // `og:url` and `og:image` are left out.
 //
 // Measurement: a page may tag its view with one of ANALYTICS_TAGS
@@ -36,7 +37,7 @@ import SiteFooter from "../components/SiteFooter.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import { pageAnalytics, type AnalyticsTag } from "../lib/analytics.ts";
 import { readDeployInfo } from "../lib/deploy-info.ts";
-import { shareImage } from "../lib/share-image.ts";
+import { shareImage, type ShareImage } from "../lib/share-image.ts";
 import { documentTitle, SITE_NAME, siteDescription } from "../lib/site.ts";
 import { absoluteUrl } from "../lib/site-url.ts";
 import "../styles/global.css";
@@ -55,15 +56,27 @@ interface Props {
   noindex?: boolean | undefined;
   /** The tag of this page view (ANALYTICS_TAGS), when the measurement is on. */
   analyticsTag?: AnalyticsTag | undefined;
+  /**
+   * The page's own share image, with an absolute `src`, instead of its
+   * locality's: a card's photo.
+   */
+  image?: ShareImage | undefined;
 }
 
-const { title, description, canonicalPath, noindex = false, analyticsTag } = Astro.props;
+const {
+  title,
+  description,
+  canonicalPath,
+  noindex = false,
+  analyticsTag,
+  image: ownImage,
+} = Astro.props;
 const locality = Astro.locals.locality;
 const pageTitle = documentTitle(title, locality);
 const metaDescription = description ?? siteDescription(locality);
 const canonical = canonicalPath === undefined || noindex ? null : absoluteUrl(env, canonicalPath);
-const image = shareImage(locality);
-const imageUrl = absoluteUrl(env, image.src);
+const image = ownImage ?? shareImage(locality);
+const imageUrl = ownImage ? ownImage.src : absoluteUrl(env, image.src);
 const analytics = pageAnalytics(env, Astro.url, Astro.routePattern);
 const deploy = readDeployInfo(env);
 ---

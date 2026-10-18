@@ -15,7 +15,9 @@
 // production, with a Website ID), Umami Cloud (ADR 0014). No inline script or
 // style, no plugin, no framing of the site by another one, and no form
 // posting to another site; the panel also lets its forms reach the Access
-// login, where Access sends a submission whose session expired.
+// login, where Access sends a submission whose session expired. Images come
+// from the site and from the environment's media hostname, MEDIA_URL, where
+// the business photos are (ADR 0011).
 import { isAdminRequest } from "./access/admin-gate.ts";
 import { parseTeamDomain } from "./access/verify.ts";
 import {
@@ -47,8 +49,8 @@ export const PANEL_REFERRER_POLICY = "strict-origin";
 export interface PolicyOptions {
   /** Whether Umami Cloud may load and collect (production, configured). */
   analytics: boolean;
-  /** The https origin the business photos are served from (ADR 0011), if any. */
-  photosOrigin?: string | null | undefined;
+  /** The https origin of the media hostname, where the business photos are served from (ADR 0011), if any. */
+  mediaOrigin?: string | null | undefined;
   /** Origins forms may post to besides the site: the Access login, on the panel. */
   formOrigins?: readonly string[] | undefined;
 }
@@ -56,14 +58,14 @@ export interface PolicyOptions {
 /** The value of `Content-Security-Policy`. */
 export function contentSecurityPolicy({
   analytics,
-  photosOrigin,
+  mediaOrigin,
   formOrigins = [],
 }: PolicyOptions): string {
   const directives: [string, readonly string[]][] = [
     ["default-src", ["'self'"]],
     ["script-src", ["'self'", TURNSTILE_ORIGIN, ...(analytics ? [UMAMI_SCRIPT_ORIGIN] : [])]],
     ["style-src", ["'self'"]],
-    ["img-src", ["'self'", ...(photosOrigin ? [photosOrigin] : [])]],
+    ["img-src", ["'self'", ...(mediaOrigin ? [mediaOrigin] : [])]],
     ["connect-src", ["'self'", ...(analytics ? UMAMI_COLLECTOR_ORIGINS : [])]],
     ["frame-src", [TURNSTILE_ORIGIN]],
     ["frame-ancestors", ["'none'"]],
@@ -75,8 +77,8 @@ export function contentSecurityPolicy({
 }
 
 export interface SecurityVars extends AnalyticsVars {
-  /** The https origin of the business photos of the environment (ADR 0011). */
-  PHOTOS_URL?: string | undefined;
+  /** The https origin of the media hostname of the environment (ADR 0011). */
+  MEDIA_URL?: string | undefined;
   /** The Access team domain, where the panel's forms may be sent to sign in again. */
   ACCESS_TEAM_DOMAIN?: string | undefined;
 }
@@ -86,7 +88,7 @@ export function policyOptions(vars: SecurityVars, panel: boolean): PolicyOptions
   const teamDomain = panel ? parseTeamDomain(vars.ACCESS_TEAM_DOMAIN) : undefined;
   return {
     analytics: readAnalytics(vars) !== null,
-    photosOrigin: parseOrigin(vars.PHOTOS_URL, ["https:"]),
+    mediaOrigin: parseOrigin(vars.MEDIA_URL, ["https:"]),
     formOrigins: teamDomain === undefined ? [] : [`https://${teamDomain}`],
   };
 }

@@ -1,7 +1,8 @@
 // The fictitious businesses of `vp run db:seed` (docs/specs/data-model.md,
 // "Seed of fictitious businesses for development (v2)"). Everything here is
 // made up and reads as made up: invented names, numbers of the 771999xxxx
-// series, references that point nowhere, and no photo. None is a real
+// series, references that point nowhere, and photos the seed draws when it
+// runs (./photos.ts), never a picture of anything real. None is a real
 // business of the locality. The texts are copy, so they are in Spanish.
 //
 // The set covers what the directory, the search and the panel need to show:
@@ -13,7 +14,11 @@
 // comida corrida", is in neither its name nor its "¿Qué ofreces?", so only the
 // search by trade finds it; the academia's keywords carry accents ("Fútbol").
 // Two cards of "Servicios del hogar" share their publication date, so the
-// listing shows the tie broken by name.
+// listing shows the tie broken by name. Two cards of "Salud" have a photo
+// ("The demo seed leaves cards with a photo to see the directory as the
+// resident will see it"), the newest and the oldest of that listing, so it
+// shows a photo in its first row, the placeholder, and a photo below; every
+// other card has none.
 import type { BusinessOrigin, BusinessStatus } from "../schema/business.ts";
 
 export interface FakeBusiness {
@@ -41,6 +46,11 @@ export interface FakeBusiness {
   registeredDaysAgo: number;
   publishedDaysAgo?: number;
   rejected?: { daysAgo: number; reason: string };
+  /**
+   * Its photo key, fixed like its identifier, so the seed writes the same
+   * objects on every run (src/core/photos/photo.ts); none when it has no photo.
+   */
+  photoKey?: string;
   /**
    * The consent record, by default the notice version in force when it
    * registered. Two cards give the panel its other cases: one from before
@@ -188,6 +198,38 @@ export const FAKE_BUSINESSES: readonly FakeBusiness[] = [
     openingHours: "Lunes a sábado de 9 a 7",
     registeredDaysAgo: 8,
     publishedDaysAgo: 6,
+  },
+  {
+    // With a photo: the newest card of "Salud", first in its listing.
+    id: "rq7ka9z3yd",
+    name: "Farmacia La Pastilla de Mentiras",
+    category: "salud",
+    zone: "atempa",
+    whatsapp: "7719990113",
+    status: "published",
+    origin: "seeded",
+    trades: ["farmacia"],
+    whatYouOffer: "Medicamentos, material de curación y toma de presión",
+    homeDelivery: true,
+    openingHours: "Todos los días de 8 de la mañana a 10 de la noche",
+    registeredDaysAgo: 3,
+    publishedDaysAgo: 1,
+    photoKey: "yya626vdevvbuxa5avc2n8e6",
+  },
+  {
+    // With a photo: the oldest card of "Salud", below the placeholder.
+    id: "evr69edxat",
+    name: "Dentista Sonrisa de Mentiras",
+    category: "salud",
+    zone: "tizayuca-centro",
+    whatsapp: "7719990114",
+    status: "published",
+    trades: ["dentista"],
+    whatYouOffer: "Limpiezas, resinas y extracciones",
+    openingHours: "Lunes a viernes de 10 a 7",
+    registeredDaysAgo: 22,
+    publishedDaysAgo: 20,
+    photoKey: "rt2874ra8hntwxavrv7rc2f4",
   },
   {
     id: "5k3fca733a",

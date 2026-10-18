@@ -1,5 +1,7 @@
 // Scenarios of docs/specs/deployment.md, requirement "Each environment is
-// built and deployed by its own workflow (v2)": the scripts in scripts/deploy/
+// built and deployed by its own workflow (v2)", and of docs/specs/
+// data-model.md, "The demo seed leaves cards with a photo to see the
+// directory as the resident will see it": the scripts in scripts/deploy/
 // that the deploy workflows run. Each script runs in bash with a clean
 // environment (never the GitHub Actions variables of the CI run itself) and,
 // where it calls the network, with test/scripts/fake-curl.sh as curl.
@@ -17,6 +19,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { FAKE_BUSINESSES } from "../../src/core/db/seed/businesses.ts";
+import { seedPhotoObjects } from "../../src/core/db/seed/photos.ts";
+import { PHOTO_CACHE_CONTROL, PHOTO_CONTENT_TYPE } from "../../src/core/photos/photo.ts";
+import { writeSeedMediaDirectory } from "../../scripts/seed-media.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const script = (name: string) => join(ROOT, "scripts/deploy", name);
@@ -150,6 +156,14 @@ describe("Each environment is built and deployed by its own workflow (v2): the r
 const WORKERS = { dev: "dev-enmirumbo", stage: "stage-enmirumbo", prod: "enmirumbo" } as const;
 type Environment = keyof typeof WORKERS;
 
+// The public media of each environment (ADR 0011): production alone, dev and
+// stage together.
+const MEDIA = {
+  dev: { bucket: "enmirumbo-media-dev", url: "https://media-dev-enmirumbo.urekz.com" },
+  stage: { bucket: "enmirumbo-media-dev", url: "https://media-dev-enmirumbo.urekz.com" },
+  prod: { bucket: "enmirumbo-media", url: "https://media-enmirumbo.urekz.com" },
+} as const;
+
 // What `CLOUDFLARE_ENV=<env> vp run build` writes to dist/server/wrangler.json,
 // with real-looking Hyperdrive ids.
 function build(environment: Environment, overrides: Record<string, unknown> = {}) {
@@ -169,11 +183,13 @@ function build(environment: Environment, overrides: Record<string, unknown> = {}
       ACCESS_TEAM_DOMAIN: "urekz.cloudflareaccess.com",
       ACCESS_AUD: "a1".repeat(32),
       SITE_URL: `https://${WORKERS[environment]}.urekz.workers.dev`,
+      MEDIA_URL: MEDIA[environment].url,
     },
     assets: { binding: "ASSETS", directory: "../client" },
     durable_objects: { bindings: [{ name: "QUOTA_COUNTER", class_name: "QuotaCounter" }] },
     exports: { QuotaCounter: { type: "durable-object", storage: "sqlite" } },
     migrations: [],
+    r2_buckets: [{ binding: "MEDIA", bucket_name: MEDIA[environment].bucket }],
     ...overrides,
   };
 }
@@ -183,7 +199,7 @@ function build(environment: Environment, overrides: Record<string, unknown> = {}
 // src/integrations/static-headers.ts.
 const CSP =
   "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self'; " +
-  "img-src 'self' https://fotos.enmirumbo.com; connect-src 'self'; " +
+  "img-src 'self' https://media-enmirumbo.urekz.com; connect-src 'self'; " +
   "frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; object-src 'none'; " +
   "base-uri 'none'; form-action 'self'";
 const SECURITY_RULE = [
@@ -340,6 +356,41 @@ describe("Each environment is built and deployed by its own workflow (v2): the b
     expect(errors(checkBuild("dev", build("dev", { exports: {} })))).toEqual([
       expect.stringMatching(/exports\.QuotaCounter is null.*env\.dev\.exports/),
     ]);
+  });
+
+  // deployment, "Public media live in R2, in one bucket for production and
+  // one for dev and stage (v2)": a build never reaches another bucket.
+  it("a build without its media bucket, or with another one, is refused", () => {
+    expect(errors(checkBuild("prod", build("prod", { r2_buckets: undefined })))).toEqual([
+      expect.stringMatching(
+        /expected MEDIA bound to the R2 bucket enmirumbo-media, found \[\].*env\.prod\.r2_buckets/,
+      ),
+    ]);
+    // dev never reaches the bucket of production.
+    expect(
+      errors(
+        checkBuild(
+          "dev",
+          build("dev", { r2_buckets: [{ binding: "MEDIA", bucket_name: "enmirumbo-media" }] }),
+        ),
+      ),
+    ).toEqual([
+      expect.stringContaining("expected MEDIA bound to the R2 bucket enmirumbo-media-dev"),
+    ]);
+    // stage shares the bucket of dev.
+    expect(checkBuild("stage", build("stage")).status).toBe(0);
+  });
+
+  it("a MEDIA_URL that is not an https origin is refused", () => {
+    for (const url of [
+      "",
+      "http://media-enmirumbo.urekz.com",
+      "https://media-enmirumbo.urekz.com/",
+    ]) {
+      const config = build("prod");
+      const result = checkBuild("prod", { ...config, vars: { ...config.vars, MEDIA_URL: url } });
+      expect(errors(result), url).toEqual([expect.stringContaining("MEDIA_URL is")]);
+    }
   });
 
   it("an empty ACCESS_AUD is only a warning: the panel stays closed", () => {
@@ -763,5 +814,161 @@ describe("Each environment is built and deployed by its own workflow (v2): the s
     ]) {
       expect(run("smoke-test.sh", [origin]).status).toBe(1);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// upload-seed-media.sh: data-model, "The demo seed leaves cards with a photo
+// to see the directory as the resident will see it", on the deploys to dev
+// and stage, with test/scripts/fake-backup-tools.sh as aws.
+
+const ACCOUNT = "f".repeat(32);
+const R2_SECRET = "fictional-r2-secret-access-key";
+const R2_ENV = {
+  R2_ACCESS_KEY_ID: "fictional-r2-access-key-id",
+  R2_SECRET_ACCESS_KEY: R2_SECRET,
+  CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
+};
+
+interface ToolCall {
+  tool: string;
+  argv: string[];
+  env: Record<string, string>;
+}
+
+/** The build of `environment` in dist/server/wrangler.json, and the seed's photos in a directory. */
+async function seededMedia(environment: Environment, config = build(environment)) {
+  mkdirSync(join(work, "server"), { recursive: true });
+  const configFile = join(work, "server", "wrangler.json");
+  writeFileSync(configFile, JSON.stringify(config));
+  const directory = join(work, "seed-media");
+  const objects = seedPhotoObjects(
+    FAKE_BUSINESSES.flatMap(({ name, photoKey }, shade) =>
+      photoKey === undefined ? [] : [{ name, photoKey, shade }],
+    ),
+  );
+  await writeSeedMediaDirectory(directory, objects);
+  const bin = join(work, "bin");
+  mkdirSync(bin, { recursive: true });
+  copyFileSync(join(ROOT, "test/scripts/fake-backup-tools.sh"), join(bin, "aws"));
+  chmodSync(join(bin, "aws"), 0o755);
+  const store = join(work, "bucket");
+  const log = join(work, "tools.log");
+  mkdirSync(store, { recursive: true });
+  writeFileSync(log, "");
+  return {
+    objects,
+    args: [environment, directory, configFile],
+    env: {
+      PATH: `${bin}:${process.env["PATH"] ?? "/usr/bin:/bin"}`,
+      FAKE_TOOLS_LOG: log,
+      FAKE_STORE: store,
+    },
+    calls: (): ToolCall[] =>
+      readFileSync(log, "utf8")
+        .split("\n")
+        .filter((line) => line !== "")
+        .map((line) => JSON.parse(line) as ToolCall),
+    stored: (key: string) => readFileSync(join(store, key)),
+  };
+}
+
+function argAfter(argv: string[], name: string): string | undefined {
+  const index = argv.indexOf(name);
+  return index === -1 ? undefined : argv[index + 1];
+}
+
+describe("The demo seed leaves cards with a photo to see the directory as the resident will see it: the upload", () => {
+  it.for(["dev", "stage"] as const)(
+    "uploads every photo of the seed to the media bucket of %s, with its type and caching",
+    async (environment) => {
+      const media = await seededMedia(environment);
+
+      const result = run("upload-seed-media.sh", media.args, { ...media.env, ...R2_ENV });
+
+      expect(result.stderr).toBe("");
+      expect(result.status).toBe(0);
+      expect(media.objects.length).toBeGreaterThan(0);
+      const puts = media.calls().filter((call) => call.argv[1] === "put-object");
+      expect(puts.map((call) => argAfter(call.argv, "--key"))).toEqual(
+        media.objects.map(({ key }) => key),
+      );
+      for (const put of puts) {
+        expect(argAfter(put.argv, "--bucket")).toBe("enmirumbo-media-dev");
+        expect(argAfter(put.argv, "--endpoint-url")).toBe(
+          `https://${ACCOUNT}.r2.cloudflarestorage.com`,
+        );
+        expect(argAfter(put.argv, "--content-type")).toBe(PHOTO_CONTENT_TYPE);
+        expect(argAfter(put.argv, "--cache-control")).toBe(PHOTO_CACHE_CONTROL);
+        expect(put.env).toMatchObject({
+          AWS_ACCESS_KEY_ID: "fictional-r2-access-key-id",
+          AWS_SECRET_ACCESS_KEY: R2_SECRET,
+          AWS_DEFAULT_REGION: "auto",
+        });
+        expect(put.argv.join(" ")).not.toContain(R2_SECRET);
+      }
+      for (const { key, body } of media.objects) {
+        expect(new Uint8Array(media.stored(key))).toEqual(body);
+      }
+      expect(result.stdout).toContain(`${media.objects.length} objects`);
+    },
+  );
+
+  it("running it again writes the same objects at the same keys", async () => {
+    const media = await seededMedia("stage");
+    run("upload-seed-media.sh", media.args, { ...media.env, ...R2_ENV });
+    const first = media.objects.map(({ key }) => media.stored(key));
+
+    const again = run("upload-seed-media.sh", media.args, { ...media.env, ...R2_ENV });
+
+    expect(again.status).toBe(0);
+    expect(media.objects.map(({ key }) => media.stored(key))).toEqual(first);
+  });
+
+  it("never production", async () => {
+    const media = await seededMedia("prod");
+
+    const result = run("upload-seed-media.sh", media.args, { ...media.env, ...R2_ENV });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("dev or stage only");
+    expect(media.calls()).toEqual([]);
+  });
+
+  it("refused without the R2 token, or for a build of another environment or without the bucket", async () => {
+    const media = await seededMedia("dev");
+    const missing = run("upload-seed-media.sh", media.args, {
+      ...media.env,
+      ...R2_ENV,
+      R2_SECRET_ACCESS_KEY: "",
+    });
+    expect(missing.status).toBe(1);
+    expect(missing.stderr).toContain("R2_SECRET_ACCESS_KEY is not set");
+
+    const other = run("upload-seed-media.sh", ["stage", ...media.args.slice(1)], {
+      ...media.env,
+      ...R2_ENV,
+    });
+    expect(other.status).toBe(1);
+    expect(other.stderr).toContain("is not a build for stage");
+
+    const unbound = await seededMedia("dev", build("dev", { r2_buckets: [] }));
+    const result = run("upload-seed-media.sh", unbound.args, { ...unbound.env, ...R2_ENV });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("binds no MEDIA bucket");
+    expect([...media.calls(), ...unbound.calls()]).toEqual([]);
+  });
+
+  it("an upload R2 refuses fails the run", async () => {
+    const media = await seededMedia("dev");
+
+    const result = run("upload-seed-media.sh", media.args, {
+      ...media.env,
+      ...R2_ENV,
+      FAKE_AWS_PUT_FAIL: "1",
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("the upload of photos/");
   });
 });

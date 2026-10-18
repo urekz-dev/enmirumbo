@@ -47,7 +47,7 @@ export async function builtVars(serverDir: URL): Promise<Record<string, string>>
     config = JSON.parse(await readFile(new URL("./wrangler.json", serverDir), "utf8"));
   } catch {
     // No configuration to read: the environment is unknown, which counts as
-    // deployed (blocksIndexing fails closed), with no measurement or photos.
+    // deployed (blocksIndexing fails closed), with no measurement or media hostname.
     return {};
   }
   const vars = (config as { vars?: Record<string, unknown> } | null)?.vars ?? {};

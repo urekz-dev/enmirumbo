@@ -1,7 +1,8 @@
 // docs/specs/deployment.md, requirement "The commands that write in bulk read
 // the environment from `ENVIRONMENT` (v2)": scripts/db-seed.ts refuses a
-// remote database without ENVIRONMENT, and never writes in production. Both
-// cases stop before connecting, so no database is needed.
+// remote database without ENVIRONMENT, never writes in production, and on dev
+// and stage needs the directory of its photos. Every case stops before
+// connecting, so no database is needed.
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vite-plus/test";
@@ -31,6 +32,17 @@ describe("The commands that write in bulk read the environment from `ENVIRONMENT
     expect(run.status).toBe(1);
     expect(run.stderr).toContain("refused, DATABASE_URL is not a local database");
     expect(run.stderr).toContain("ENVIRONMENT=");
+    expect(run.stdout).not.toContain("done");
+  });
+
+  // data-model, "The demo seed leaves cards with a photo to see the directory
+  // as the resident will see it": on dev and stage the photos go to the
+  // directory the next step of the deploy uploads, never nowhere.
+  it.for(["dev", "stage"])("the seed of %s without a directory for its photos", (environment) => {
+    const run = seed({ DATABASE_URL: REMOTE, ENVIRONMENT: environment });
+
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain(`ENVIRONMENT=${environment} needs SEED_MEDIA_DIR`);
     expect(run.stdout).not.toContain("done");
   });
 

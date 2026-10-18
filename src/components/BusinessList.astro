@@ -4,7 +4,9 @@
 // listings by category, by trade and by trade and zone render this one list,
 // so "the same card and the same order" is the same component. The order is
 // the query's. Each card's name is an `h2` under the page's `h1` ("Heading
-// levels never skip (v2)"). No client JavaScript.
+// levels never skip (v2)"). The list is one column, so its first row is its
+// first card, the only one whose photo loads at once ("Photo weight does not
+// break the 4G budget"). No client JavaScript.
 import type { ListingBusiness } from "../core/business/listing.ts";
 import type { LocalityRef } from "../core/locality/paths.ts";
 import type { Analytics } from "../lib/analytics.ts";
@@ -22,9 +24,14 @@ const { businesses, locality, analytics } = Astro.props;
 
 {businesses.length > 0 && (
   <ul class="flex flex-col gap-4">
-    {businesses.map((business) => (
+    {businesses.map((business, index) => (
       <li>
-        <ListingCard business={business} locality={locality} analytics={analytics} />
+        <ListingCard
+          business={business}
+          locality={locality}
+          analytics={analytics}
+          firstRow={index === 0}
+        />
       </li>
     ))}
   </ul>

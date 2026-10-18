@@ -13,8 +13,12 @@
 //
 // The photo slot is square and keeps its proportion whatever the text beside
 // it measures (`self-start`), so the card takes the same space with a photo or
-// without one. Until the photos arrive (ADR 0011, epic D) it always shows the
-// placeholder; the photo key is never read here.
+// without one, and nothing moves when the photo arrives. It shows the card's
+// photo ("Foto de <nombre>"), always its 400×400 `card` variant from the
+// address src/lib/media.ts builds, never the card page's `full` one; or the
+// placeholder when there is no photo, or what is stored is not a key the
+// server generated. Only the first row of a list loads its photo at once;
+// the rest load lazily ("Photo weight does not break the 4G budget").
 //
 // Measurement (docs/specs/base-layout.md, "Three product events and the
 // no-results tag are recorded, only in production (v2)"; public-directory, "Only the WhatsApp buttons of
@@ -27,8 +31,10 @@ import type { ListingBusiness } from "../core/business/listing.ts";
 import { cardPath } from "../core/business/card-path.ts";
 import { whatsappLink } from "../core/business/contact.ts";
 import type { LocalityRef } from "../core/locality/paths.ts";
+import { env } from "cloudflare:workers";
 import { ANALYTICS_EVENTS, eventAttributes, type Analytics } from "../lib/analytics.ts";
 import { PRIMARY_BUTTON } from "../lib/buttons.ts";
+import { businessPhoto } from "../lib/media.ts";
 import HomeDeliveryTag from "./HomeDeliveryTag.astro";
 import PhotoPlaceholder from "./PhotoPlaceholder.astro";
 
@@ -38,9 +44,12 @@ interface Props {
   locality: LocalityRef;
   /** The measurement of the page (pageAnalytics), or null when it is off. */
   analytics: Analytics | null;
+  /** Whether the card is in the first row of its list, whose photo loads at once. */
+  firstRow?: boolean | undefined;
 }
 
-const { business, locality, analytics } = Astro.props;
+const { business, locality, analytics, firstRow = false } = Astro.props;
+const photo = businessPhoto(env, business.photoKey, "card");
 const whatsapp = whatsappLink(business.whatsapp);
 const whatsappEvent = eventAttributes(analytics, ANALYTICS_EVENTS.whatsappListing, {
   locality,
@@ -50,7 +59,19 @@ const whatsappEvent = eventAttributes(analytics, ANALYTICS_EVENTS.whatsappListin
 
 <article class="relative flex gap-4 rounded-xl border border-line bg-background p-4">
   <div class="relative aspect-square w-20 shrink-0 self-start overflow-hidden rounded-lg">
-    <PhotoPlaceholder categorySlug={business.categorySlug} />
+    {photo ? (
+      <img
+        src={photo.src}
+        width={photo.width}
+        height={photo.height}
+        alt={`Foto de ${business.name}`}
+        loading={firstRow ? "eager" : "lazy"}
+        decoding="async"
+        class="h-full w-full bg-surface object-cover"
+      />
+    ) : (
+      <PhotoPlaceholder categorySlug={business.categorySlug} />
+    )}
   </div>
   <div class="flex min-w-0 flex-1 flex-col gap-1.5">
     <h2 class="font-semibold break-words text-ink">

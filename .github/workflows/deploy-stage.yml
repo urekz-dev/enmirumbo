@@ -57,11 +57,22 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: ./node_modules/.bin/vp run db:migrate
+      # The seed draws the photos of its fictitious cards into a directory;
+      # the next step, the only one with the R2 token, uploads them to the
+      # media bucket that dev and stage share (ADR 0011).
       - name: Seed the fictitious data
         env:
           ENVIRONMENT: stage
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SEED_MEDIA_DIR: ${{ runner.temp }}/seed-media
         run: ./node_modules/.bin/vp run db:seed
+      - name: Upload the seeded photos
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SEED_MEDIA_DIR: ${{ runner.temp }}/seed-media
+        run: scripts/deploy/upload-seed-media.sh stage "${SEED_MEDIA_DIR}"
       # Wrangler checks that CLOUDFLARE_ENV matches the environment of the build.
       - name: Deploy
         env:

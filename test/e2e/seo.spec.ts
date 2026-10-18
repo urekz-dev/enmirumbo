@@ -4,7 +4,8 @@
 // database (v2)", "The sitemap includes the two legal pages (v2)", "Every page
 // declares its title, description, canonical and share preview (v2)" and
 // "Each locality has its own share image, one static image per locality
-// (v2)". It runs with Tizayuca alone and again with a second, fictitious
+// (v2)"; and docs/specs/public-directory.md, "The card looks good when shared
+// over WhatsApp or Facebook". It runs with Tizayuca alone and again with a second, fictitious
 // locality (playwright.config.ts), so every active locality is checked. The
 // sitemap's URLs carry SITE_URL's origin, while the server under test may
 // listen on another port (E2E_PORT), so each URL is requested by its path.
@@ -27,6 +28,9 @@ async function sitemapUrls(request: APIRequestContext): Promise<string[]> {
 }
 
 const pathOf = (url: string) => new URL(url).pathname;
+
+/** Whether a share image is a card's photo, which the local Worker serves under /_media/photos/. */
+const isPhoto = (url: string) => url.startsWith(`${SITE_URL}/_media/photos/`);
 
 test.describe("The sitemap lists the pages that exist, from the database (v2)", () => {
   test("every URL is absolute, from SITE_URL, and answers 200 without a redirect", async ({
@@ -105,19 +109,25 @@ test.describe("Every page declares its title, description, canonical and share p
           .soft(page.locator('meta[property="og:description"]'), url)
           .toHaveAttribute("content", (await description.getAttribute("content")) ?? "");
       }
+      // A card with a photo shares its photo (public-directory, "The card looks
+      // good when shared over WhatsApp or Facebook"); every other page, the
+      // image of its locality.
+      const photo = isPhoto(
+        (await page.locator('meta[property="og:image"]').getAttribute("content")) ?? "",
+      );
       await expect
         .soft(page.locator('meta[property="og:image:width"]'), url)
         .toHaveAttribute("content", "1200");
       await expect
         .soft(page.locator('meta[property="og:image:height"]'), url)
-        .toHaveAttribute("content", "630");
+        .toHaveAttribute("content", photo ? "900" : "630");
       await expect
         .soft(page.locator('meta[property="og:image:alt"]'), url)
-        .toHaveAttribute("content", /^enmirumbo/);
+        .toHaveAttribute("content", photo ? /^Foto de / : /^enmirumbo/);
     }
   });
 
-  test("every share image is absolute, from SITE_URL, and is served as a PNG", async ({
+  test("every share image is absolute, from SITE_URL, and is served as a PNG, or a card's photo as WebP", async ({
     page,
     request,
   }) => {
@@ -130,8 +140,12 @@ test.describe("Every page declares its title, description, canonical and share p
       expect(image.startsWith(`${SITE_URL}/`), image).toBe(true);
       const response = await request.get(pathOf(image));
       expect.soft(response.status(), image).toBe(200);
-      expect.soft(response.headers()["content-type"], image).toBe("image/png");
+      expect
+        .soft(response.headers()["content-type"], image)
+        .toBe(isPhoto(image) ? "image/webp" : "image/png");
     }
+    // The seed's cards with a photo share it.
+    expect([...images].some(isPhoto)).toBe(true);
   });
 
   test("the home of Tizayuca shares its own image, and a page outside a locality the generic one", async ({

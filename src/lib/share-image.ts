@@ -39,7 +39,7 @@ function imageKey(locality: LocalityRef): string {
 }
 
 export interface ShareImage {
-  /** The path the build serves it at. */
+  /** The path the build serves it at; for a card's photo, its absolute address. */
   src: string;
   width: number;
   height: number;

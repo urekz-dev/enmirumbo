@@ -14,7 +14,10 @@
 //   a typo, accents) answers a 301 to its current URL, which browsers keep
 //   for an hour at most: the name can change again, even back.
 // - The card declares its title, description and canonical URL, which the
-//   layout also shares as its preview, and its Schema.org block.
+//   layout also shares as its preview, and its Schema.org block. A card with
+//   a photo shares it as its preview image and names it in the block, at the
+//   address the site builds from its key (src/lib/media.ts); a card without
+//   one shares its locality's image and its block has no image.
 // - Its zone is shown with its display name everywhere (src/core/catalogue/
 //   zone-names.ts): with its type when another zone of the locality, or the
 //   locality itself, has the same name.
@@ -33,6 +36,7 @@ import { withDb } from "../../../../core/db/client.ts";
 import { cardDescription, cardTitle, localBusinessData } from "../../../../core/seo/card.ts";
 import BaseLayout from "../../../../layouts/BaseLayout.astro";
 import { pageAnalytics } from "../../../../lib/analytics.ts";
+import { absolutePhotoUrl, photoShareImage } from "../../../../lib/media.ts";
 import { notFound, permanentRedirect, requireLocality } from "../../../../lib/locality.ts";
 import { absoluteUrl } from "../../../../lib/site-url.ts";
 
@@ -52,13 +56,19 @@ const path = cardPath(locality, card);
 if (segment !== cardSegment(card)) return permanentRedirect(path);
 
 const analytics = pageAnalytics(env, Astro.url, Astro.routePattern);
-const structuredData = localBusinessData(card, locality, absoluteUrl(env, path));
+const structuredData = localBusinessData(
+  card,
+  locality,
+  absoluteUrl(env, path),
+  absolutePhotoUrl(env, card.photoKey, "full"),
+);
 ---
 
 <BaseLayout
   title={cardTitle(card, locality)}
   description={cardDescription(card, locality)}
   canonicalPath={path}
+  image={photoShareImage(env, card) ?? undefined}
 >
   <JsonLd slot="head" data={structuredData} />
   <BusinessCard card={card} locality={locality} analytics={analytics} />

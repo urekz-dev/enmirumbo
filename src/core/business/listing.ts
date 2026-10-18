@@ -30,9 +30,9 @@ export interface ListingBusiness {
   homeDelivery: boolean;
   whatsapp: string;
   /**
-   * The stored photo reference, uninterpreted. Only the photo module (ADR
-   * 0011, epic D) may turn it into an address; until then no surface
-   * renders it.
+   * The stored photo reference of a published card, uninterpreted. Only
+   * src/lib/media.ts turns it into an address, and only when it is a key
+   * the server generated (ADR 0011).
    */
   photoKey: string | null;
 }
