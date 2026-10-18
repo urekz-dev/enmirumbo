@@ -11,7 +11,8 @@
 // 2. Any other answer of the action renders the form again from the same
 //    submission, with the error next to each field and what the owner had
 //    written: no cookie and nothing in the address. Astro gives the page the
-//    status of the error (400, 403, 429 or 500), and no cache keeps it.
+//    status of the error (400, 403, 413, 429, 500, 502 or 503;
+//    src/lib/registration.ts), and no cache keeps it.
 //
 // The catalogue of the form (the categories and the visible zones) and the
 // switch of Turnstile are read through the cached HYPERDRIVE, like every

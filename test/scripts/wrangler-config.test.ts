@@ -5,9 +5,11 @@
 // environment (v2)" (scenario "one trigger"); and of docs/specs/
 // business-registration.md, "Turnstile is checked on the server, fails
 // closed and has a switch in the database (v2)" (the keys of each
-// environment). Reads wrangler.jsonc the way Wrangler resolves it
-// for each environment, so a binding or variable that an environment only
-// inherits, or forgets, fails here instead of in a deploy.
+// environment) and "Photos are uploaded through the Images binding, within
+// a ceiling of work (v2)" (the binding). Reads wrangler.jsonc the way
+// Wrangler resolves it for each environment, so a binding or variable that
+// an environment only inherits, or forgets, fails here instead of in a
+// deploy.
 import { experimental_readRawConfig, unstable_readConfig } from "wrangler";
 import { describe, expect, it } from "vite-plus/test";
 import {
@@ -53,6 +55,7 @@ interface ResolvedConfig {
   migrations: unknown[];
   r2_buckets: { binding: string; bucket_name?: string }[];
   secrets?: { required?: string[] };
+  images?: { binding: string; remote?: boolean };
 }
 
 function read(env?: string): ResolvedConfig {
@@ -96,6 +99,17 @@ describe("Three deployed environments, each with its own Worker, bindings and va
         env: Record<string, Record<string, unknown>>;
       };
       expect(raw.env[env]).toHaveProperty("r2_buckets");
+    },
+  );
+
+  it.for(ENVIRONMENTS)(
+    "per environment: $env binds Cloudflare Images as IMAGES, never remotely",
+    ({ env }) => {
+      expect(read(env).images).toEqual({ binding: "IMAGES" });
+      const raw = experimental_readRawConfig({ config: "wrangler.jsonc" }).rawConfig as {
+        env: Record<string, Record<string, unknown>>;
+      };
+      expect(raw.env[env]).toHaveProperty("images");
     },
   );
 
@@ -171,6 +185,7 @@ describe("Three deployed environments, each with its own Worker, bindings and va
       expect(config.r2_buckets.map((r2) => r2.binding)).toEqual(
         top.r2_buckets.map((r2) => r2.binding),
       );
+      expect(config.images).toEqual(top.images);
       expect(config.vars["ENVIRONMENT"]).not.toBe("local");
     }
   });
@@ -182,6 +197,9 @@ describe("Three deployed environments, each with its own Worker, bindings and va
     expect(config.workers_dev).toBe(false);
     expect(config.preview_urls).toBe(false);
     expect(config.triggers.crons ?? []).toEqual([]);
+    // The offline Images of Wrangler: tests and `vp run dev` never reach the
+    // real service, so they spend none of the monthly allowance.
+    expect(config.images).toEqual({ binding: "IMAGES" });
   });
 });
 

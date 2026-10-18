@@ -14,11 +14,16 @@
 // public forms (v2)" (the trap field), "The registration page of a
 // locality lives under it, and lands on its thank-you page (v2)", "Turnstile
 // is checked on the server, fails closed and has a switch in the database
-// (v2)" (the widget, with the switch on and off) and "Without JavaScript the
-// registration says so and cannot be sent while Turnstile is on (v2)". What the
+// (v2)" (the widget, with the switch on and off), "Without JavaScript the
+// registration says so and cannot be sent while Turnstile is on (v2)", "The
+// photo field explains the PRD §6.1 policy and opens the phone gallery" and,
+// for what the photo field shows, "The server only accepts the photo if it
+// is a real image of at most 5 MB" and "Image work has a ceiling, and what
+// does not fit is turned away with a message, not queued". What the
 // page decides, with the database, the action and the quota, runs end to end
-// in test/e2e/registration.spec.ts; the submission itself is tested in
-// test/worker/registration.test.ts.
+// in test/e2e/registration.spec.ts and test/e2e/registration-photo.spec.ts;
+// the submission itself is tested in test/worker/registration.test.ts and
+// test/worker/photo-upload.test.ts.
 import { experimental_AstroContainer as AstroContainer } from "astro/container";
 import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
 import RegistrationPage from "../../src/components/RegistrationPage.astro";
@@ -191,6 +196,8 @@ const LABELS = [
   "Dirección o referencias (opcional)",
   "Horario (opcional)",
   "Link de tu Facebook (opcional)",
+  "Foto de tu negocio (opcional)",
+  "Dejar mi ficha sin foto",
   "Acepto el aviso de privacidad y confirmo que este negocio es mío o que tengo permiso para registrarlo.",
 ];
 
@@ -209,6 +216,8 @@ const FULL_DRAFT: RegistrationDraft = {
   address: "a un lado de la primaria",
   openingHours: "Solo fines de semana",
   facebookUrl: "facebook.com/minegocio",
+  photo: false,
+  removePhoto: false,
 };
 
 describe("Public registration page on a single screen", () => {
@@ -291,6 +300,8 @@ describe("Required and optional form fields", () => {
       expect(has(control(html, name), "required"), name).toBe(false);
     }
     expect(has(control(html, "facebookUrl"), "required")).toBe(false);
+    expect(has(control(html, "photo"), "required")).toBe(false);
+    expect(has(control(html, "removePhoto"), "required")).toBe(false);
     expect(alerts(html)).toEqual([]);
     for (const tag of controls(formOf(html))) {
       if (attribute(tag, "type") === "hidden") continue;
@@ -333,9 +344,10 @@ describe("Required and optional form fields", () => {
     );
   });
 
-  // The photo field arrives with EMR-40; the search text has no field
-  // (The registration leaves the card ready for the search, scenario "the
-  // form does not change for the owner")
+  // The search text has no field (The registration leaves the card ready
+  // for the search, scenario "the form does not change for the owner"), nor
+  // does the photo key (scenario "the client cannot set the photo
+  // reference")
   it("its only fields are those of the form, the version it carries and the trap field", async () => {
     const names = controls(formOf(await render()))
       .map((tag) => attribute(tag, "name"))
@@ -353,6 +365,8 @@ describe("Required and optional form fields", () => {
       "address",
       "openingHours",
       "facebookUrl",
+      "photo",
+      "removePhoto",
       "noticeVersion",
       "consent",
     ]);
@@ -559,6 +573,121 @@ describe("Without JavaScript the registration says so and cannot be sent while T
     expect(attribute(button, "type")).toBe("submit");
     // The only submit control: pressing Enter in a field sends nothing either.
     expect(controls(form).filter((tag) => /type="submit"/.test(tag))).toHaveLength(1);
+  });
+});
+
+describe("The photo field explains the PRD §6.1 policy and opens the phone gallery", () => {
+  const POLICY =
+    "Una foto de tu local, de tus productos o de tu trabajo. Que no salgan personas que se puedan reconocer. Máximo 5 MB (JPG, PNG o WebP); nosotros la comprimimos para que cargue rápido.";
+
+  // Scenario: choosing a photo from the phone
+  it("a file field for one image, labelled, with the policy above it and tied to it", async () => {
+    const html = await render();
+    const photo = control(html, "photo");
+    const id = attribute(photo, "id") ?? "";
+
+    expect(attribute(photo, "type")).toBe("file");
+    // The formats the server takes: iOS turns a HEIC photo into a JPEG.
+    expect(attribute(photo, "accept")).toBe("image/jpeg,image/png,image/webp");
+    // One photo, chosen from the gallery: no `multiple`, no `capture`.
+    expect(has(photo, "multiple")).toBe(false);
+    expect(has(photo, "capture")).toBe(false);
+    expect(labelFor(html, id)).toBe("Foto de tu negocio (opcional)");
+    const helpId = `${id}-help`;
+    expect(attribute(photo, "aria-describedby")).toBe(helpId);
+    expect(
+      readable(new RegExp(`<p id="${helpId}"[^>]*>([\\s\\S]*?)</p>`).exec(html)?.[1] ?? ""),
+    ).toBe(POLICY);
+    // Visible before choosing the file: above it.
+    expect(html.indexOf(`id="${helpId}"`)).toBeLessThan(html.indexOf(`id="${id}"`));
+    expect(attribute(photo, "class")).toMatch(/\bmin-h-11\b/);
+  });
+
+  it("the form sends the photo in the same submission", async () => {
+    const [form = ""] = formOf(await render()).match(/<form\b[^>]*>/) ?? [];
+    expect(attribute(form, "enctype")).toBe("multipart/form-data");
+    expect(attribute(form, "method")).toBe("post");
+  });
+
+  // Scenario: the remove-photo checkbox is the same for everyone
+  it('"Dejar mi ficha sin foto" is always there, the same, unchecked, below the field', async () => {
+    const html = await render();
+    const checkbox = control(html, "removePhoto");
+
+    expect(attribute(checkbox, "type")).toBe("checkbox");
+    expect(has(checkbox, "checked")).toBe(false);
+    expect(labelFor(html, attribute(checkbox, "id") ?? "")).toBe("Dejar mi ficha sin foto");
+    expect(html.indexOf('name="photo"')).toBeLessThan(html.indexOf('name="removePhoto"'));
+    // Between the Facebook link and the consent.
+    const names = controls(formOf(html)).map((tag) => attribute(tag, "name"));
+    expect(names.indexOf("photo")).toBe(names.indexOf("facebookUrl") + 1);
+    expect(names.indexOf("removePhoto")).toBeLessThan(names.indexOf("consent"));
+    // The same markup whatever the form comes back with.
+    const again = await render({ draft: FULL_DRAFT, errors: { whatsapp: "duplicate" } });
+    expect(control(again, "removePhoto")).toBe(checkbox);
+  });
+
+  it("the checkbox comes back as it was sent", async () => {
+    const html = await render({
+      draft: { ...FULL_DRAFT, removePhoto: true },
+      errors: { name: "required" },
+    });
+    expect(has(control(html, "removePhoto"), "checked")).toBe(true);
+  });
+
+  // Scenarios: photo over 5 MB; file disguised as an image; huge image in
+  // pixels; more photos arrive than fit at once; a failure while transforming
+  it.for([
+    ["too-large", "Esa foto pesa más de 5 MB. Sube una más ligera."],
+    ["unreadable", "No pudimos leer esa foto. Sube una imagen JPG, PNG o WebP."],
+    ["busy", "Estamos recibiendo muchas fotos, intenta de nuevo en un momento"],
+    ["failed", "No pudimos procesar tu foto. Intenta con otra o envía tu registro sin foto."],
+  ] as const)(
+    "the photo's error %s sits next to it, takes the focus, and the rest stays",
+    async ([code, message]) => {
+      const html = await render({ draft: { ...FULL_DRAFT, photo: true }, errors: { photo: code } });
+      const photo = control(html, "photo");
+      const id = attribute(photo, "id") ?? "";
+
+      expect(alerts(html)).toEqual([message]);
+      expect(attribute(photo, "aria-invalid")).toBe("true");
+      expect((attribute(photo, "aria-describedby") ?? "").split(" ")).toEqual([
+        `${id}-help`,
+        `${id}-error`,
+      ]);
+      expect(html).toMatch(new RegExp(`<p id="${id}-error" role="alert"`));
+      expect(has(photo, "autofocus")).toBe(true);
+      expect(attribute(photo, "class")).toContain("border-2 border-ink");
+      expect(attribute(control(html, "name"), "value")).toBe("Plomería Güicho");
+    },
+  );
+
+  // Scenario: the photo has to be chosen again
+  it("when the form comes back for another field, a photo that was sent has to be chosen again", async () => {
+    const html = await render({
+      draft: { ...FULL_DRAFT, photo: true },
+      errors: { whatsapp: "invalid" },
+    });
+    const photo = control(html, "photo");
+    const id = attribute(photo, "id") ?? "";
+
+    expect(alerts(html)).toEqual([
+      "Revisa tu número de WhatsApp: deben ser 10 dígitos",
+      "Tu foto no se quedó guardada: vuelve a elegirla antes de enviar.",
+    ]);
+    expect((attribute(photo, "aria-describedby") ?? "").split(" ")).toContain(`${id}-error`);
+    // It is no error of the photo: the focus stays on the field that has one.
+    expect(has(photo, "aria-invalid")).toBe(false);
+    expect(has(photo, "autofocus")).toBe(false);
+    expect(attribute(photo, "value")).toBeUndefined();
+    // Over the quota or after a failure too.
+    const quota = await render({ draft: { ...FULL_DRAFT, photo: true }, general: "quota" });
+    expect(alerts(quota)).toContain(
+      "Tu foto no se quedó guardada: vuelve a elegirla antes de enviar.",
+    );
+    // Without a photo sent, nothing is said.
+    const without = await render({ draft: FULL_DRAFT, errors: { whatsapp: "invalid" } });
+    expect(alerts(without)).toEqual(["Revisa tu número de WhatsApp: deben ser 10 dígitos"]);
   });
 });
 

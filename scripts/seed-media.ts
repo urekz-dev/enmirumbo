@@ -35,6 +35,16 @@ function localMediaBucket(): string {
 /** Writes the objects to the local media bucket. */
 export async function writeLocalSeedMedia(objects: readonly SeedPhotoObject[]): Promise<void> {
   if (objects.length === 0) return;
+  await withLocalMediaBucket((bucket) => writeSeedPhotos(bucket, objects));
+}
+
+/**
+ * Runs `run` with the local media bucket; the end-to-end tests also remove
+ * through it the photos their registrations upload.
+ */
+export async function withLocalMediaBucket(
+  run: (bucket: R2Bucket) => Promise<void>,
+): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), "enmirumbo-seed-media-"));
   try {
     const configPath = join(directory, "wrangler.json");
@@ -51,7 +61,7 @@ export async function writeLocalSeedMedia(objects: readonly SeedPhotoObject[]): 
       persist: { path: LOCAL_STATE },
     });
     try {
-      await writeSeedPhotos(proxy.env.MEDIA, objects);
+      await run(proxy.env.MEDIA);
     } finally {
       await proxy.dispose();
     }

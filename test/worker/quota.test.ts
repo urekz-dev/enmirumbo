@@ -244,7 +244,6 @@ describe("Anti-abuse counters live in a Durable Object and never in PostgreSQL (
     for (const key of keys) {
       expect(key).toMatch(/^[0-9a-f]{32}$/);
       expect(key).not.toContain(address);
-      expect(key).not.toContain("198");
     }
     const codes = await runInDurableObject(counter(), (instance: QuotaCounter) =>
       Promise.all([

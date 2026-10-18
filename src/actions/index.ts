@@ -44,8 +44,10 @@ export const server = {
   // it go through HYPERDRIVE_FRESH, the switch of Turnstile included, so
   // turning it off lets submissions through at once; the token is checked
   // with siteverify (src/lib/turnstile.ts), and the quota is the
-  // `registration` purpose. Nothing about the sender is read but the address
-  // the quota counts in memory, which siteverify is never sent.
+  // `registration` purpose. A photo goes through the Images binding (IMAGES)
+  // to the public media bucket (MEDIA), only after every other check.
+  // Nothing about the sender is read but the address the quota counts in
+  // memory, which siteverify is never sent.
   register: defineAction({
     accept: "form",
     handler: async (form, context) => {
@@ -55,6 +57,7 @@ export const server = {
         useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
         takeQuota: () => takeQuota(env, context.request.headers, "registration"),
         verifyTurnstile: turnstileVerifier(env),
+        photos: { images: env.IMAGES, bucket: env.MEDIA },
       });
       const error = registrationActionError(outcome);
       if (error !== null) throw error;

@@ -4,11 +4,12 @@
 // the chosen category", "The server validates every field and returns
 // per-field errors in Spanish", "Consent with a visible simplified notice and
 // a consent record", "Nobody consents to a notice version they did not have
-// in front of them", "Form states and registration accessibility" and "The
+// in front of them", "Form states and registration accessibility", "The
 // zone is typed with the locality's zones as suggestions, and a name that is
-// none of them is kept as "Otra" (v2)"): the trap field, the five required
-// fields, the optional ones marked as such, the consent block with the
-// simplified notice and "Registrar mi negocio".
+// none of them is kept as "Otra" (v2)" and "The photo field explains the PRD
+// §6.1 policy and opens the phone gallery"): the trap field, the five
+// required fields, the optional ones marked as such, the photo, the consent
+// block with the simplified notice and "Registrar mi negocio".
 //
 // It posts to the page it is on, with the action `register`, and the server
 // resolves and validates it. `novalidate`
@@ -22,6 +23,14 @@
 //
 // The zone is a text field with the visible zones of the locality as the
 // browser's own suggestions (`datalist`), by display name.
+//
+// The photo travels in the same submission (`multipart/form-data`), from a
+// file field that takes the JPEG, PNG and WebP images the server accepts,
+// so a phone opens its gallery, with the photo policy above it and "Dejar
+// mi ficha sin foto" below, the same for everyone. No browser fills a file
+// field again, so when the form comes back from a submission that carried a
+// photo, the field says it has to be chosen again, unless the photo itself
+// is what came back with an error.
 //
 // While Turnstile is on (docs/specs/business-registration.md, "Without
 // JavaScript the registration says so and cannot be sent while Turnstile is
@@ -37,8 +46,6 @@
 // sent. Without it, the example is the generic one or the chosen category's,
 // and the button stays as it is.
 //
-// The photo field (EMR-40) goes between "Link de tu Facebook (opcional)" and
-// the consent block.
 import type { RegistrationCatalogue } from "../core/registration/catalogue.ts";
 import {
   GENERIC_WHAT_YOU_OFFER_EXAMPLE,
@@ -52,7 +59,11 @@ import {
   type GeneralError,
   MAX_LENGTHS,
   NO_JAVASCRIPT_MESSAGE,
+  PHOTO_ACCEPT,
+  PHOTO_NOT_KEPT_MESSAGE,
+  PHOTO_POLICY,
   REGISTRATION_FIELDS as F,
+  REMOVE_PHOTO_LABEL,
   type RegistrationDraft,
   type RegistrationErrors,
   SENDING_TEXT,
@@ -110,9 +121,18 @@ const checkboxLabel =
   "flex min-h-11 cursor-pointer items-center gap-3 text-sm font-semibold text-ink";
 
 const chosen = catalogue.categories.find(({ slug }) => slug === draft.category);
+/** What the photo field says: its error, or that the photo sent has to be chosen again. */
+const photoMessage = message("photo") ?? (draft.photo ? PHOTO_NOT_KEPT_MESSAGE : null);
 ---
 
-<form method="post" action={action} novalidate class="flex flex-col gap-6" data-registration-form>
+<form
+  method="post"
+  action={action}
+  enctype="multipart/form-data"
+  novalidate
+  class="flex flex-col gap-6"
+  data-registration-form
+>
   <HoneypotField />
 
   {turnstile && (
@@ -341,6 +361,38 @@ const chosen = catalogue.categories.find(({ slug }) => slug === draft.category);
       class={field("facebookUrl")}
     />
     <FieldError id={errorId("facebookUrl")} message={message("facebookUrl")} />
+  </div>
+
+  <div class="flex flex-col gap-1.5">
+    <label for={id(F.photo)} class={label}>
+      Foto de tu negocio (opcional)
+    </label>
+    <p id={`${id(F.photo)}-help`} class={help}>
+      {PHOTO_POLICY}
+    </p>
+    <input
+      type="file"
+      id={id(F.photo)}
+      name={F.photo}
+      accept={PHOTO_ACCEPT}
+      autofocus={first === "photo"}
+      aria-invalid={invalid("photo")}
+      aria-describedby={[`${id(F.photo)}-help`, photoMessage && errorId("photo")]
+        .filter(Boolean)
+        .join(" ")}
+      class={`block min-h-11 w-full cursor-pointer rounded-lg bg-background px-3 py-2.5 text-sm text-ink file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-lg file:border-0 file:bg-surface file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-ink focus:ring-2 focus:ring-action-strong focus:outline-none ${errors.photo === undefined ? "border border-control" : "border-2 border-ink"}`}
+    />
+    <FieldError id={errorId("photo")} message={photoMessage} />
+    <label for={id(F.removePhoto)} class={checkboxLabel}>
+      <input
+        type="checkbox"
+        id={id(F.removePhoto)}
+        name={F.removePhoto}
+        checked={draft.removePhoto}
+        class="h-5 w-5 shrink-0"
+      />
+      {REMOVE_PHOTO_LABEL}
+    </label>
   </div>
 
   <ConsentBlock

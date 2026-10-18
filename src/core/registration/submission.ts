@@ -3,17 +3,20 @@
 // "The server normalizes and validates the WhatsApp to 10 digits", "The
 // server validates every field and returns per-field errors in Spanish",
 // "Consent with a visible simplified notice and a consent record", "Nobody
-// consents to a notice version they did not have in front of them" and "The
+// consents to a notice version they did not have in front of them", "The
 // zone is typed with the locality's zones as suggestions, and a name that is
-// none of them is kept as "Otra" (v2)"). The form works without JavaScript and
-// a submission can arrive without it, so every rule is enforced here, on
-// whatever arrives: no browser validation is trusted, and only the fields
-// below are read. Status, origin, the consent record, the search text, the
+// none of them is kept as "Otra" (v2)", "The photo field explains the PRD
+// §6.1 policy and opens the phone gallery" and "Resubmission after a
+// rejection allows changing or removing the photo"). The form works without
+// JavaScript and a submission can arrive without it, so every rule is
+// enforced here, on whatever arrives: no browser validation is trusted, and
+// only the fields below are read. Status, origin, the consent record, the search text, the
 // management link, the trades and the dates are never read from a
 // submission, so no field can set them. Everything here is pure.
 import { nationalNumber } from "../business/contact.ts";
 import { boundedText, formText, isChecked } from "../forms/text.ts";
 import { NOTICE_VERSION } from "../legal/version.ts";
+import { MAX_PHOTO_BYTES, PHOTO_FORMATS } from "../photos/limits.ts";
 import { TURNSTILE_FAILED_MESSAGE } from "../turnstile/keys.ts";
 import type { RegistrationCatalogue } from "./catalogue.ts";
 import { chooseZone } from "./zone.ts";
@@ -30,7 +33,8 @@ export const REGISTRATION_FIELDS = {
   address: "address",
   openingHours: "openingHours",
   facebookUrl: "facebookUrl",
-  // The photo (EMR-40) goes here, between the Facebook link and the consent.
+  photo: "photo",
+  removePhoto: "removePhoto",
   noticeVersion: "noticeVersion",
   consent: "consent",
 } as const;
@@ -60,6 +64,7 @@ export const ERROR_FIELDS = [
   "address",
   "openingHours",
   "facebookUrl",
+  "photo",
   "consent",
 ] as const;
 
@@ -76,6 +81,8 @@ export const ERROR_CODES = {
   address: ["length"],
   openingHours: ["length"],
   facebookUrl: ["invalid", "length"],
+  // src/core/photos/upload.ts says when each happens.
+  photo: ["too-large", "unreadable", "busy", "failed"],
   consent: ["required", "notice-changed"],
 } as const satisfies Record<ErrorField, readonly string[]>;
 
@@ -111,12 +118,41 @@ const MESSAGES: { [F in ErrorField]: Record<ErrorCode<F>, string> } = {
     invalid: "El link de Facebook debe empezar con http:// o https://",
     length: lengthMessage(MAX_LENGTHS.facebookUrl),
   },
+  photo: {
+    "too-large": "Esa foto pesa más de 5 MB. Sube una más ligera.",
+    unreadable: "No pudimos leer esa foto. Sube una imagen JPG, PNG o WebP.",
+    busy: "Estamos recibiendo muchas fotos, intenta de nuevo en un momento",
+    failed: "No pudimos procesar tu foto. Intenta con otra o envía tu registro sin foto.",
+  },
   consent: {
     required: "Marca la casilla para poder registrar tu negocio",
     "notice-changed":
       "El aviso de privacidad cambió mientras llenabas esto. Léelo otra vez y vuelve a marcar la casilla.",
   },
 };
+
+/**
+ * What the photo field says when the form comes back for any other reason
+ * and the submission carried a photo: no browser fills a file field again,
+ * and nothing of that submission was kept on the server.
+ */
+export const PHOTO_NOT_KEPT_MESSAGE =
+  "Tu foto no se quedó guardada: vuelve a elegirla antes de enviar.";
+
+/** The help above the photo field, the photo policy of PRD §6.1. */
+export const PHOTO_POLICY =
+  "Una foto de tu local, de tus productos o de tu trabajo. Que no salgan personas que se puedan reconocer. Máximo 5 MB (JPG, PNG o WebP); nosotros la comprimimos para que cargue rápido.";
+
+/**
+ * What the photo field accepts: the formats the server takes, never
+ * `image/*`. A phone still opens its gallery, and iOS turns a HEIC photo
+ * into a JPEG before it is sent instead of uploading a format the server
+ * refuses.
+ */
+export const PHOTO_ACCEPT = PHOTO_FORMATS.join(",");
+
+/** The checkbox that leaves a card without a photo, the same for everyone. */
+export const REMOVE_PHOTO_LABEL = "Dejar mi ficha sin foto";
 
 /** The message of `field` for `code`, or an empty string for a code it does not have. */
 export function errorMessage(field: ErrorField, code: string): string {
@@ -169,9 +205,27 @@ export interface NewRegistration {
   facebookUrl: string | null;
 }
 
+/**
+ * What a valid submission asks of the photo: leave the card's as it is (a
+ * new card has none), take the uploaded file, or leave the card without one
+ * ("Dejar mi ficha sin foto", which wins over a file chosen with it, so the
+ * file is never opened).
+ */
+export type PhotoRequest = { kind: "keep" } | { kind: "upload"; file: File } | { kind: "remove" };
+
 export type RegistrationValidation =
   | { kind: "invalid"; errors: RegistrationErrors }
-  | { kind: "valid"; registration: NewRegistration };
+  | { kind: "valid"; registration: NewRegistration; photo: PhotoRequest };
+
+/**
+ * The file of the field `name`: its first value, when it is a file with
+ * something in it. A file field left empty sends an empty file, which is no
+ * file; further files of the same field are never read.
+ */
+export function uploadedFile(form: FormData, name: string): File | null {
+  const value = form.get(name);
+  return value instanceof File && value.size > 0 ? value : null;
+}
 
 /** The characters a WhatsApp number may be written with: digits and separators. */
 const WHATSAPP_CHARACTERS = /^[0-9\s().+-]*$/;
@@ -268,6 +322,12 @@ export function validateRegistration(
   const facebookUrl = facebookText === null ? null : pageLink(facebookText);
   if (facebookText !== null && facebookUrl === null) errors.facebookUrl = "invalid";
 
+  // Only its weight here: the file is opened after every defense
+  // (src/core/registration/submit.ts).
+  const removePhoto = isChecked(form, F.removePhoto);
+  const file = removePhoto ? null : uploadedFile(form, F.photo);
+  if (file !== null && file.size > MAX_PHOTO_BYTES) errors.photo = "too-large";
+
   if (text(F.noticeVersion) !== noticeVersion) errors.consent = "notice-changed";
   else if (!isChecked(form, F.consent)) errors.consent = "required";
 
@@ -288,6 +348,11 @@ export function validateRegistration(
       openingHours,
       facebookUrl,
     },
+    photo: removePhoto
+      ? { kind: "remove" }
+      : file === null
+        ? { kind: "keep" }
+        : { kind: "upload", file },
   };
 }
 
@@ -304,6 +369,10 @@ export interface RegistrationDraft {
   address: string;
   openingHours: string;
   facebookUrl: string;
+  /** Whether the submission carried a photo it did not leave out, which has to be chosen again. */
+  photo: boolean;
+  /** "Dejar mi ficha sin foto". */
+  removePhoto: boolean;
 }
 
 /** The form before anything was written. */
@@ -318,6 +387,8 @@ export const EMPTY_REGISTRATION_DRAFT: RegistrationDraft = {
   address: "",
   openingHours: "",
   facebookUrl: "",
+  photo: false,
+  removePhoto: false,
 };
 
 /** The longest category slug worth reading back; it is matched, never shown. */
@@ -328,7 +399,8 @@ const MAX_CATEGORY_LENGTH = 80;
  * travels in an address or a cookie: each field trimmed and bounded to its
  * limit, so a forged submission cannot make the page echo a large body; the
  * page renders it as text. The consent checkbox is never kept: it has to be
- * checked again, with the notice in front of the owner.
+ * checked again, with the notice in front of the owner; nor is the photo,
+ * which no browser fills again, so the draft only says whether one was sent.
  */
 export function registrationDraft(form: FormData): RegistrationDraft {
   const F = REGISTRATION_FIELDS;
@@ -345,5 +417,7 @@ export function registrationDraft(form: FormData): RegistrationDraft {
     address: text("address"),
     openingHours: text("openingHours"),
     facebookUrl: text("facebookUrl"),
+    photo: !isChecked(form, F.removePhoto) && uploadedFile(form, F.photo) !== null,
+    removePhoto: isChecked(form, F.removePhoto),
   };
 }

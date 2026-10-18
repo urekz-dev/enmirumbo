@@ -466,6 +466,8 @@ function counted(
       calls.turnstile += 1;
       return verify(token, action);
     },
+    // The local Images binding and media bucket; these submissions carry no photo.
+    photos: { images: env.IMAGES, bucket: env.MEDIA },
   };
   return { calls, deps };
 }

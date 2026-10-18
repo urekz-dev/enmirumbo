@@ -10,10 +10,16 @@
 //   page, `/_actions/register`) is not found.
 // - The outcome of the core (src/core/registration/submit.ts) travels to the
 //   page as an ActionError, whose status Astro gives the page: 400 for the
-//   fields (a duplicate number among them), 403 when Turnstile refused it,
-//   429 over the quota and 500 when it could not be saved. Its message names the field errors, never
-//   anything the owner wrote, so the page can show each one next to its
-//   field and read what was written from the same submission.
+//   fields (a duplicate number and a photo too large or unreadable among
+//   them), 403 when Turnstile refused it, 429 over the quota, 503 when the
+//   server is busy with other photos, 502 when Images could not process the
+//   photo and 500 when it could not be saved. Its message names the field
+//   errors, never anything the owner wrote, so the page can show each one
+//   next to its field and read what was written from the same submission.
+// - A body over the limit of the actions (ACTION_BODY_LIMIT), which only a
+//   photo far over 5 MB makes, never reaches the action: Astro refuses it
+//   with 413 before reading it, and the page says the photo is too large,
+//   without the draft, since the body was never read.
 import { ActionError } from "astro:actions";
 import type { ServedLocality } from "../core/locality/served.ts";
 import {
@@ -41,6 +47,23 @@ export function registrationLocality(context: RegistrationActionContext): Served
   const { locality } = context.locals;
   return context.routePattern === REGISTRATION_ROUTE && locality !== undefined ? locality : null;
 }
+
+/**
+ * The status of the field errors: those of the photo that are the server's
+ * own trouble have theirs, and everything else is the submission's.
+ */
+function fieldErrorsCode(errors: RegistrationErrors): ActionError["code"] {
+  if (errors.photo === "busy") return "SERVICE_UNAVAILABLE";
+  if (errors.photo === "failed") return "BAD_GATEWAY";
+  return "BAD_REQUEST";
+}
+
+/** The codes an ActionError of field errors may carry. */
+const FIELD_ERROR_CODES: ReadonlySet<ActionError["code"]> = new Set([
+  "BAD_REQUEST",
+  "SERVICE_UNAVAILABLE",
+  "BAD_GATEWAY",
+]);
 
 /** The field errors as the message of an ActionError: `name:required whatsapp:invalid`. */
 export function encodeErrors(errors: RegistrationErrors): string {
@@ -77,7 +100,10 @@ export function registrationActionError(outcome: SubmitRegistrationOutcome): Act
     case "received":
       return null;
     case "invalid":
-      return new ActionError({ code: "BAD_REQUEST", message: encodeErrors(outcome.errors) });
+      return new ActionError({
+        code: fieldErrorsCode(outcome.errors),
+        message: encodeErrors(outcome.errors),
+      });
     case "turnstile":
     case "quota":
     case "server":
@@ -99,9 +125,10 @@ export interface RegistrationPageFailure {
 }
 
 /**
- * How the page answers an error of the action. An error the action did not
- * throw (Astro refused a body too large or of another type) comes back as
- * the failure to save, without the draft.
+ * How the page answers an error of the action. A body over the limit of the
+ * actions, which Astro refused unread, is a photo too large, without the
+ * draft. Any other error the action did not throw (a body of another type)
+ * comes back as the failure to save, without the draft.
  */
 export function registrationPageFailure(error: ActionError): RegistrationPageFailure {
   for (const [general, { code, message }] of Object.entries(GENERAL)) {
@@ -109,7 +136,12 @@ export function registrationPageFailure(error: ActionError): RegistrationPageFai
       return { errors: {}, general: general as GeneralError, keepsDraft: true };
     }
   }
-  const errors = error.code === "BAD_REQUEST" ? decodeErrors(error.message) : null;
-  if (errors !== null) return { errors, general: null, keepsDraft: true };
+  if (error.code === "CONTENT_TOO_LARGE") {
+    return { errors: { photo: "too-large" }, general: null, keepsDraft: false };
+  }
+  const errors = FIELD_ERROR_CODES.has(error.code) ? decodeErrors(error.message) : null;
+  if (errors !== null && fieldErrorsCode(errors) === error.code) {
+    return { errors, general: null, keepsDraft: true };
+  }
   return { errors: {}, general: "server", keepsDraft: false };
 }
