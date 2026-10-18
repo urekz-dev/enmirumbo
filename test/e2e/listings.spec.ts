@@ -14,7 +14,7 @@
 // with "Ver más" to the next (v2)" and "A zone whose name repeats in its
 // locality is shown with its settlement type (v2)"; and
 // docs/specs/base-layout.md, "The sitemap lists the pages that exist, from
-// the database (v2)". A listing
+// the database (v2)". The empty states invite to register (EMR-39). A listing
 // longer than a page is tested in many-cards/pagination.spec.ts, which runs
 // alone. The 390px layout of every listing the sitemap names is checked by
 // surfaces.spec.ts.
@@ -26,6 +26,16 @@ const SITE_URL = "http://localhost:4321";
 /** The names of the listing cards of the page, in order. */
 function cardNames(page: Page) {
   return page.getByRole("main").getByRole("listitem").getByRole("heading", { level: 2 });
+}
+
+/**
+ * The invitation of an empty listing, to the registration page
+ * (business-registration, "Public registration page on a single screen").
+ */
+function registerLink(page: Page) {
+  return page
+    .getByRole("main")
+    .getByRole("link", { name: "Registra tu negocio gratis", exact: true });
 }
 
 /** The headings of the page, in order, as `h1`, `h2`, … */
@@ -94,6 +104,11 @@ test.describe("Category listing at a clean URL with the catalogue slug", () => {
     ).toBeVisible();
     await expect(cardNames(page)).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Filtrar por colonia" })).toHaveCount(0);
+    // The invitation to register, the primary action, to the registration page.
+    await expect(registerLink(page)).toHaveAttribute("href", `${HOME}/registro`);
+    await expect(registerLink(page)).toHaveClass(/\bbg-action\b/);
+    await registerLink(page).click();
+    await expect(page).toHaveURL(`${HOME}/registro`);
   });
 
   // Scenario: the dynamic route does not shadow the site's own routes
@@ -168,6 +183,8 @@ test.describe("Zone filter in the listing, without client-side JavaScript", () =
     await expect(
       page.getByText("No encontramos negocios de esta categoría en esa colonia.", { exact: true }),
     ).toBeVisible();
+    // A zone filter leads back to all the zones, and invites to nothing else.
+    await expect(registerLink(page)).toHaveCount(0);
     await page.getByRole("link", { name: "Ver todas las colonias" }).click();
     await expect(page).toHaveURL(`${HOME}/belleza`);
     await expect(cardNames(page)).toHaveText(["Estética Tijeras de Mentira"]);
@@ -319,6 +336,7 @@ test.describe("Trade pages without published businesses are neither indexed nor 
     await expect(
       page.getByText("Todavía no hay negocios publicados de esto en Tizayuca.", { exact: true }),
     ).toBeVisible();
+    await expect(registerLink(page)).toHaveAttribute("href", `${HOME}/registro`);
     await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex, follow");
     await expect(page.locator('link[rel="canonical"]')).toHaveCount(0);
   });
@@ -336,6 +354,7 @@ test.describe("Trade pages without published businesses are neither indexed nor 
       }),
     ).toBeVisible();
     await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex, follow");
+    await expect(registerLink(page)).toHaveAttribute("href", `${HOME}/registro`);
     await page.getByRole("link", { name: "Ver todas las colonias" }).click();
     await expect(page).toHaveURL(`${HOME}/plomeria`);
   });
@@ -346,6 +365,7 @@ test.describe("Trade pages without published businesses are neither indexed nor 
     await page.goto(`${HOME}/box-huicalco`);
 
     await expect(page.getByRole("link", { name: "Ver todas las colonias" })).toHaveCount(0);
+    await expect(registerLink(page)).toHaveAttribute("href", `${HOME}/registro`);
   });
 
   // Scenarios: the empty is not linked either; what does have content is indexed
@@ -538,7 +558,7 @@ test.describe('Directory lists show 20 cards per page, with "Ver más" to the ne
 });
 
 test.describe("The sitemap lists the pages that exist, from the database (v2)", () => {
-  test("it lists the 8 listings and the trade pages with published businesses, and no other", async ({
+  test("it lists the 8 listings, the trade pages with published businesses and the registration form, and no other", async ({
     request,
   }) => {
     const xml = await (await request.get("/sitemap.xml")).text();
@@ -585,6 +605,9 @@ test.describe("The sitemap lists the pages that exist, from the database (v2)", 
         "dentista-tizayuca-centro",
         "taller-mecanico",
         "taller-mecanico-zona-industrial-tizayuca",
+        // The registration form, the one page of the site's own at this depth
+        // (not its thank-you page).
+        "registro",
       ]
         .map((segment) => `${HOME}/${segment}`)
         .toSorted(),

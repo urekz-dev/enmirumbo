@@ -1,0 +1,20 @@
+---
+// The error next to a field of a public form: in plain Spanish, announced as
+// an alert, and tied to its field by `id` (the field names it in
+// `aria-describedby`). The warning sign is decoration, hidden from screen
+// readers; the error is never shown by colour alone. Nothing without a
+// message.
+interface Props {
+  id: string;
+  message: string | null | undefined;
+}
+
+const { id, message } = Astro.props;
+---
+
+{message && (
+  <p id={id} role="alert" class="text-sm font-semibold text-ink">
+    <span aria-hidden="true">⚠ </span>
+    {message}
+  </p>
+)}

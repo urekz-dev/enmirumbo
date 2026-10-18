@@ -1,0 +1,373 @@
+---
+// The registration form, on one screen (docs/specs/business-registration.md,
+// "Required and optional form fields", "The "¿Qué ofreces?" example adapts to
+// the chosen category", "The server validates every field and returns
+// per-field errors in Spanish", "Consent with a visible simplified notice and
+// a consent record", "Nobody consents to a notice version they did not have
+// in front of them", "Form states and registration accessibility" and "The
+// zone is typed with the locality's zones as suggestions, and a name that is
+// none of them is kept as "Otra" (v2)"): the trap field, the five required
+// fields, the optional ones marked as such, the consent block with the
+// simplified notice and "Registrar mi negocio".
+//
+// It posts to the page it is on, with the action `register`, and the server
+// resolves and validates it, so it works without JavaScript. `novalidate`
+// leaves every check to the server, so each error is its Spanish message next
+// to its field, never a browser's tooltip; `required` and the input types
+// stay for screen readers and the phone keyboards. When the form comes back,
+// it shows what the owner sent in that same submission, never from a cookie
+// or the address, except the consent checkbox, which is checked again with
+// the notice in view; Astro escapes every value. The first field with an
+// error takes the focus (`autofocus`), also without JavaScript.
+//
+// The zone is a text field with the visible zones of the locality as the
+// browser's own suggestions (`datalist`), by display name.
+//
+// Its only script, bundled as a file of the site (the content security policy
+// allows no inline script), changes the example of "¿Qué ofreces?" with the
+// category and shows "Enviando..." on the disabled button while the form is
+// sent. Without it, the example is the generic one or the chosen category's,
+// and the button stays as it is.
+//
+// The photo field (EMR-40) goes between "Link de tu Facebook (opcional)" and
+// the consent block.
+import type { RegistrationCatalogue } from "../core/registration/catalogue.ts";
+import {
+  GENERIC_WHAT_YOU_OFFER_EXAMPLE,
+  whatYouOfferExample,
+} from "../core/registration/examples.ts";
+import {
+  ERROR_FIELDS,
+  type ErrorField,
+  errorMessage,
+  GENERAL_ERROR_MESSAGES,
+  type GeneralError,
+  MAX_LENGTHS,
+  REGISTRATION_FIELDS as F,
+  type RegistrationDraft,
+  type RegistrationErrors,
+  SENDING_TEXT,
+} from "../core/registration/submission.ts";
+import { PRIMARY_BUTTON } from "../lib/buttons.ts";
+import ConsentBlock from "./ConsentBlock.astro";
+import FieldError from "./FieldError.astro";
+import HoneypotField from "./HoneypotField.astro";
+
+interface Props {
+  /** Where it posts: the page's own address with the action (`actions.register`). */
+  action: string;
+  /** The categories and the visible zones of the locality. */
+  catalogue: RegistrationCatalogue;
+  /** The name of the municipality, which the simplified notice names. */
+  municipality: string;
+  /** What the last submission sent, or nothing. */
+  draft: RegistrationDraft;
+  /** The error next to each field of the last submission. */
+  errors: RegistrationErrors;
+  /** The error above the form, if any. */
+  general: GeneralError | null;
+}
+
+const { action, catalogue, municipality, draft, errors, general } = Astro.props;
+
+/** The id of the control of each field. */
+const id = (field: string) => `registration-${field}`;
+const errorId = (field: ErrorField) => `${id(field)}-error`;
+/** The message next to `field`, or null. */
+const message = (field: ErrorField): string | null => {
+  const code = errors[field];
+  return code === undefined ? null : errorMessage(field, code);
+};
+/** The first field with an error, which takes the focus. */
+const first = ERROR_FIELDS.find((field) => errors[field] !== undefined);
+/** What `aria-describedby` names: the field's help, then its error. */
+const describedBy = (field: ErrorField, help?: string) =>
+  [help, errors[field] === undefined ? undefined : errorId(field)].filter(Boolean).join(" ") ||
+  undefined;
+const invalid = (field: ErrorField) => (errors[field] === undefined ? undefined : "true");
+
+const control =
+  "w-full rounded-lg bg-background px-4 py-3 text-base text-ink placeholder:text-ink-muted focus:ring-2 focus:ring-action-strong focus:outline-none";
+const field = (name: ErrorField) =>
+  errors[name] === undefined
+    ? `${control} border border-control`
+    : `${control} border-2 border-ink`;
+const label = "text-sm font-semibold text-ink";
+const help = "text-sm text-ink-muted";
+const checkboxLabel =
+  "flex min-h-11 cursor-pointer items-center gap-3 text-sm font-semibold text-ink";
+
+const chosen = catalogue.categories.find(({ slug }) => slug === draft.category);
+---
+
+<form method="post" action={action} novalidate class="flex flex-col gap-6" data-registration-form>
+  <HoneypotField />
+
+  {general && (
+    <p role="alert" class="text-sm font-semibold text-ink">
+      <span aria-hidden="true">⚠ </span>
+      {GENERAL_ERROR_MESSAGES[general]}
+    </p>
+  )}
+
+  <div class="flex flex-col gap-1.5">
+    <label for={id(F.name)} class={label}>
+      ¿Cómo se llama tu negocio?
+    </label>
+    <input
+      type="text"
+      id={id(F.name)}
+      name={F.name}
+      value={draft.name}
+      required
+      maxlength={MAX_LENGTHS.name}
+      autocomplete="organization"
+      autofocus={first === "name"}
+      aria-invalid={invalid("name")}
+      aria-describedby={describedBy("name")}
+      class={field("name")}
+    />
+    <FieldError id={errorId("name")} message={message("name")} />
+  </div>
+
+  <div class="flex flex-col gap-1.5">
+    <label for={id(F.category)} class={label}>
+      ¿A qué se dedica?
+    </label>
+    <select
+      id={id(F.category)}
+      name={F.category}
+      required
+      autofocus={first === "category"}
+      aria-invalid={invalid("category")}
+      aria-describedby={describedBy("category")}
+      class={field("category")}
+      data-example-source
+    >
+      <option value="" selected={chosen === undefined}>
+        Elige una categoría
+      </option>
+      {catalogue.categories.map(({ name, slug }) => (
+        <option
+          value={slug}
+          selected={chosen?.slug === slug}
+          data-example={whatYouOfferExample(slug)}
+        >
+          {name}
+        </option>
+      ))}
+    </select>
+    <FieldError id={errorId("category")} message={message("category")} />
+  </div>
+
+  <div class="flex flex-col gap-1.5">
+    <label for={id(F.whatsapp)} class={label}>
+      Tu WhatsApp (10 dígitos)
+    </label>
+    <input
+      type="tel"
+      id={id(F.whatsapp)}
+      name={F.whatsapp}
+      value={draft.whatsapp}
+      required
+      maxlength={MAX_LENGTHS.whatsapp}
+      inputmode="numeric"
+      autocomplete="tel"
+      autofocus={first === "whatsapp"}
+      aria-invalid={invalid("whatsapp")}
+      aria-describedby={describedBy("whatsapp", `${id(F.whatsapp)}-help`)}
+      class={field("whatsapp")}
+    />
+    <p id={`${id(F.whatsapp)}-help`} class={help}>
+      Sin espacios ni guiones — nosotros lo acomodamos.
+    </p>
+    <FieldError id={errorId("whatsapp")} message={message("whatsapp")} />
+  </div>
+
+  <div class="flex flex-col gap-1.5">
+    <label for={id(F.zone)} class={label}>
+      ¿En qué colonia estás?
+    </label>
+    <input
+      type="text"
+      id={id(F.zone)}
+      name={F.zone}
+      value={draft.zone}
+      required
+      maxlength={MAX_LENGTHS.zone}
+      list={`${id(F.zone)}-options`}
+      autocomplete="off"
+      autofocus={first === "zone"}
+      aria-invalid={invalid("zone")}
+      aria-describedby={describedBy("zone", `${id(F.zone)}-help`)}
+      class={field("zone")}
+    />
+    <datalist id={`${id(F.zone)}-options`}>
+      {catalogue.zones.map(({ displayName }) => (
+        <option value={displayName} />
+      ))}
+    </datalist>
+    <p id={`${id(F.zone)}-help`} class={help}>
+      Empieza a escribirla y elígela de la lista. Si no aparece, escríbela completa y nosotros la
+      acomodamos.
+    </p>
+    <FieldError id={errorId("zone")} message={message("zone")} />
+  </div>
+
+  <div class="flex flex-col gap-1.5">
+    <label for={id(F.whatYouOffer)} class={label}>
+      ¿Qué ofreces? (opcional)
+    </label>
+    <textarea
+      id={id(F.whatYouOffer)}
+      name={F.whatYouOffer}
+      rows="2"
+      maxlength={MAX_LENGTHS.whatYouOffer}
+      placeholder={whatYouOfferExample(chosen?.slug)}
+      autofocus={first === "whatYouOffer"}
+      aria-invalid={invalid("whatYouOffer")}
+      aria-describedby={describedBy("whatYouOffer")}
+      class={field("whatYouOffer")}
+      data-generic-example={GENERIC_WHAT_YOU_OFFER_EXAMPLE}
+    >{draft.whatYouOffer}</textarea>
+    <FieldError id={errorId("whatYouOffer")} message={message("whatYouOffer")} />
+  </div>
+
+  <label for={id(F.homeDelivery)} class={checkboxLabel}>
+    <input
+      type="checkbox"
+      id={id(F.homeDelivery)}
+      name={F.homeDelivery}
+      checked={draft.homeDelivery}
+      class="h-5 w-5 shrink-0"
+    />
+    ¿Haces entregas o vas a domicilio? (opcional)
+  </label>
+
+  <div class="flex flex-col gap-1.5">
+    <label for={id(F.landline)} class={label}>
+      Teléfono fijo (opcional)
+    </label>
+    <input
+      type="tel"
+      id={id(F.landline)}
+      name={F.landline}
+      value={draft.landline}
+      maxlength={MAX_LENGTHS.landline}
+      inputmode="tel"
+      autofocus={first === "landline"}
+      aria-invalid={invalid("landline")}
+      aria-describedby={describedBy("landline")}
+      class={field("landline")}
+    />
+    <FieldError id={errorId("landline")} message={message("landline")} />
+  </div>
+
+  <div class="flex flex-col gap-1.5">
+    <label for={id(F.address)} class={label}>
+      Dirección o referencias (opcional)
+    </label>
+    <textarea
+      id={id(F.address)}
+      name={F.address}
+      rows="2"
+      maxlength={MAX_LENGTHS.address}
+      placeholder="ej. a un lado de la primaria, calle y número"
+      autofocus={first === "address"}
+      aria-invalid={invalid("address")}
+      aria-describedby={describedBy("address")}
+      class={field("address")}
+    >{draft.address}</textarea>
+    <FieldError id={errorId("address")} message={message("address")} />
+  </div>
+
+  <div class="flex flex-col gap-1.5">
+    <label for={id(F.openingHours)} class={label}>
+      Horario (opcional)
+    </label>
+    <input
+      type="text"
+      id={id(F.openingHours)}
+      name={F.openingHours}
+      value={draft.openingHours}
+      maxlength={MAX_LENGTHS.openingHours}
+      placeholder="Lunes a sábado de 9 de la mañana a 7 de la tarde"
+      autofocus={first === "openingHours"}
+      aria-invalid={invalid("openingHours")}
+      aria-describedby={describedBy("openingHours", `${id(F.openingHours)}-help`)}
+      class={field("openingHours")}
+    />
+    <p id={`${id(F.openingHours)}-help`} class={help}>
+      Escríbelo como se lo dirías a un cliente: 'L-S 9am-7pm', 'Todos los días de 8 a 8', 'Solo
+      fines de semana'.
+    </p>
+    <FieldError id={errorId("openingHours")} message={message("openingHours")} />
+  </div>
+
+  <div class="flex flex-col gap-1.5">
+    <label for={id(F.facebookUrl)} class={label}>
+      Link de tu Facebook (opcional)
+    </label>
+    <input
+      type="url"
+      id={id(F.facebookUrl)}
+      name={F.facebookUrl}
+      value={draft.facebookUrl}
+      maxlength={MAX_LENGTHS.facebookUrl}
+      placeholder="https://facebook.com/tunegocio"
+      autofocus={first === "facebookUrl"}
+      aria-invalid={invalid("facebookUrl")}
+      aria-describedby={describedBy("facebookUrl")}
+      class={field("facebookUrl")}
+    />
+    <FieldError id={errorId("facebookUrl")} message={message("facebookUrl")} />
+  </div>
+
+  <ConsentBlock
+    municipality={municipality}
+    checkboxId={id(F.consent)}
+    autofocus={first === "consent"}
+    invalid={errors.consent !== undefined}
+    errorId={errorId("consent")}
+  />
+  <FieldError id={errorId("consent")} message={message("consent")} />
+
+  <button
+    type="submit"
+    class={`${PRIMARY_BUTTON} w-full px-6 py-3 text-base disabled:cursor-not-allowed disabled:opacity-70`}
+    data-sending-text={SENDING_TEXT}
+  >
+    Registrar mi negocio
+  </button>
+</form>
+
+<script>
+  // The two things the registration form does with JavaScript, and nothing
+  // else: the example of "¿Qué ofreces?" follows the category, without
+  // touching what was written; and the submit button says "Enviando..." and
+  // stays disabled while the form is sent, so a second tap sends nothing. A
+  // page restored from the browser's history gets its button back.
+  for (const form of document.querySelectorAll("form[data-registration-form]")) {
+    const category = form.querySelector("select[data-example-source]");
+    const offer = form.querySelector("textarea[data-generic-example]");
+    if (category instanceof HTMLSelectElement && offer instanceof HTMLTextAreaElement) {
+      category.addEventListener("change", () => {
+        const example = category.selectedOptions[0]?.dataset["example"];
+        offer.placeholder = example || offer.dataset["genericExample"] || "";
+      });
+    }
+    const button = form.querySelector("button[data-sending-text]");
+    if (button instanceof HTMLButtonElement) {
+      const idle = button.textContent ?? "";
+      form.addEventListener("submit", () => {
+        button.disabled = true;
+        button.textContent = button.dataset["sendingText"] ?? idle;
+      });
+      window.addEventListener("pageshow", (event) => {
+        if (!event.persisted) return;
+        button.disabled = false;
+        button.textContent = idle;
+      });
+    }
+  }
+</script>

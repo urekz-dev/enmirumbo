@@ -6,8 +6,8 @@
 // the first request. The purposes are this fixed list, each named as a literal
 // by the page or the action that takes it, and never built from a request
 // (test/scripts/quota-guardrails.test.ts). A purpose arrives with the surface
-// it protects: the search and the report form have theirs; the registration
-// and the edit (EMR-42) and the SMS add theirs here.
+// it protects: the search, the report form and the registration form have
+// theirs; the edit (EMR-43) and the SMS add theirs here.
 
 export interface Quota {
   /** Requests allowed in one window. */
@@ -29,6 +29,10 @@ export const QUOTAS = {
   // quota and pending cap per business" and "The report's per-IP quota is
   // counted in the quota counter (v2)": 3 reports an hour from one address.
   report: { limit: 3, windowSeconds: 60 * 60 },
+  // business-registration, "The registration's honeypot and per-IP quota are
+  // those of the public forms (v2)": 3 registrations an hour from one
+  // address, resubmissions included.
+  registration: { limit: 3, windowSeconds: 60 * 60 },
 } as const satisfies Record<string, Quota>;
 
 /** What a quota protects. */

@@ -1,0 +1,60 @@
+---
+// The registration form of a locality, /{estado}/{municipio}/registro
+// (docs/specs/business-registration.md; ADR 0007, ADR 0012). The middleware
+// has already resolved the active locality, or answered 404. The form posts
+// to this same address with the action `register` (src/actions/index.ts),
+// which Astro runs before this page; then:
+//
+// 1. A received registration (a new card, a resubmission or a bot caught by
+//    the trap, which look the same) answers a 303 to the thank-you page, so
+//    reloading it sends nothing again.
+// 2. Any other answer of the action renders the form again from the same
+//    submission, with the error next to each field and what the owner had
+//    written: no cookie and nothing in the address. Astro gives the page the
+//    status of the error (400, 429 or 500), and no cache keeps it.
+//
+// The catalogue of the form (the categories and the visible zones) is read
+// through the cached HYPERDRIVE, like every public read: it is reference data
+// the action never writes. The page is rendered by
+// src/components/RegistrationPage.astro.
+import { actions } from "astro:actions";
+import { env, waitUntil } from "cloudflare:workers";
+import RegistrationPage from "../../../components/RegistrationPage.astro";
+import { withDb } from "../../../core/db/client.ts";
+import { registrationCatalogue } from "../../../core/registration/catalogue.ts";
+import { registrationThanksPath } from "../../../core/registration/paths.ts";
+import {
+  EMPTY_REGISTRATION_DRAFT,
+  registrationDraft,
+} from "../../../core/registration/submission.ts";
+import { requireLocality, seeOther } from "../../../lib/locality.ts";
+import { registrationPageFailure } from "../../../lib/registration.ts";
+
+const locality = requireLocality(Astro.locals);
+const result = Astro.getActionResult(actions.register);
+if (result && !result.error) return seeOther(registrationThanksPath(locality));
+
+const failure = result?.error ? registrationPageFailure(result.error) : null;
+let draft = EMPTY_REGISTRATION_DRAFT;
+if (failure) {
+  Astro.response.headers.set("Cache-Control", "no-store");
+  if (failure.keepsDraft) {
+    try {
+      draft = registrationDraft(await Astro.request.formData());
+    } catch {
+      // A body that is no form leaves the fields empty.
+    }
+  }
+}
+const catalogue = await withDb(env, "HYPERDRIVE", { waitUntil }, (db) =>
+  registrationCatalogue(db, locality),
+);
+---
+
+<RegistrationPage
+  catalogue={catalogue}
+  action={actions.register.queryString}
+  draft={draft}
+  errors={failure?.errors ?? {}}
+  general={failure?.general ?? null}
+/>

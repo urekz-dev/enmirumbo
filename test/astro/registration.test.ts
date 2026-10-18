@@ -1,0 +1,667 @@
+// Scenarios of docs/specs/business-registration.md for the registration page
+// and its thank-you page, rendered with Astro's Container API: "Public
+// registration page on a single screen", "Required and optional form
+// fields", "The "¿Qué ofreces?" example adapts to the chosen category", "The
+// server validates every field and returns per-field errors in Spanish"
+// (what the form shows), "Consent with a visible simplified notice and a
+// consent record", "Nobody consents to a notice version they did not have in
+// front of them" (the version the form carries), "A successful submission
+// queues the business and shows the thank-you screen", "Form states and
+// registration accessibility", "The registration leaves the card ready for
+// the search" (no field of its own), "The zone is typed with the locality's
+// zones as suggestions, and a name that is none of them is kept as "Otra"
+// (v2)", "The registration's honeypot and per-IP quota are those of the
+// public forms (v2)" (the trap field) and "The registration page of a
+// locality lives under it, and lands on its thank-you page (v2)". What the
+// page decides, with the database, the action and the quota, runs end to end
+// in test/e2e/registration.spec.ts; the submission itself is tested in
+// test/worker/registration.test.ts.
+import { experimental_AstroContainer as AstroContainer } from "astro/container";
+import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
+import RegistrationPage from "../../src/components/RegistrationPage.astro";
+import { NOTICE_VERSION } from "../../src/core/legal/version.ts";
+import type { ServedLocality } from "../../src/core/locality/served.ts";
+import type { RegistrationCatalogue } from "../../src/core/registration/catalogue.ts";
+import {
+  EMPTY_REGISTRATION_DRAFT,
+  type GeneralError,
+  type RegistrationDraft,
+  type RegistrationErrors,
+} from "../../src/core/registration/submission.ts";
+import ThanksPage from "../../src/pages/[state]/[municipality]/registro/gracias.astro";
+import { collapseProblems } from "../responsive-rules.ts";
+import { env } from "./cloudflare-workers.ts";
+
+const TIZAYUCA: ServedLocality = {
+  code: "13069",
+  name: "Tizayuca",
+  slug: "tizayuca",
+  state: { code: "13", name: "Hidalgo", slug: "hidalgo" },
+  timeZone: "America/Mexico_City",
+  contactWhatsapp: "7719990100",
+  othersActive: false,
+  seat: null,
+};
+
+const OTHER: ServedLocality = {
+  ...TIZAYUCA,
+  code: "91001",
+  name: "Pueblo Uno",
+  slug: "pueblo-uno",
+  state: { code: "91", name: "Estado de prueba 91", slug: "estado-de-prueba-91" },
+};
+
+/** The 8 categories, in catalogue order, and three zones. */
+const CATALOGUE: RegistrationCatalogue = {
+  categories: [
+    { id: 1, name: "Restaurantes y fondas", slug: "restaurantes-y-fondas" },
+    { id: 2, name: "Servicios del hogar", slug: "servicios-del-hogar" },
+    { id: 3, name: "Belleza", slug: "belleza" },
+    { id: 4, name: "Salud", slug: "salud" },
+    { id: 5, name: "Abarrotes y comercio", slug: "abarrotes-y-comercio" },
+    { id: 6, name: "Talleres", slug: "talleres" },
+    { id: 7, name: "Clubes y escuelas deportivas", slug: "clubes-y-escuelas-deportivas" },
+    { id: 8, name: "Otro", slug: "otro" },
+  ],
+  zones: [
+    { id: 11, name: "El Carmen", displayName: "El Carmen (Colonia)" },
+    { id: 12, name: "Haciendas de Tizayuca", displayName: "Haciendas de Tizayuca" },
+    { id: 13, name: "Huicalco", displayName: "Huicalco" },
+  ],
+};
+
+const ACTION = "?_action=register";
+const PATH = "/hidalgo/tizayuca/registro";
+
+let container: AstroContainer;
+
+beforeAll(async () => {
+  container = await AstroContainer.create();
+});
+
+afterEach(() => {
+  for (const key of Object.keys(env)) delete env[key as keyof Env];
+  env.ENVIRONMENT = "local";
+});
+
+interface State {
+  draft?: RegistrationDraft;
+  errors?: RegistrationErrors;
+  general?: GeneralError | null;
+  locality?: ServedLocality;
+}
+
+/** The registration page in one of its states. */
+function render({
+  draft = EMPTY_REGISTRATION_DRAFT,
+  errors = {},
+  general = null,
+  locality = TIZAYUCA,
+}: State = {}): Promise<string> {
+  return container.renderToString(RegistrationPage, {
+    partial: false,
+    props: { catalogue: CATALOGUE, action: ACTION, draft, errors, general },
+    request: new Request(`https://enmirumbo.urekz.workers.dev${PATH}`),
+    locals: { locality } as App.Locals,
+  });
+}
+
+/** Text as a person reads it: entities decoded. */
+function decode(text: string): string {
+  return text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#(?:39|x27);/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+/** The inside of `main`. */
+function mainOf(html: string): string {
+  return /<main\b[^>]*>([\s\S]*?)<\/main>/.exec(html)?.[1] ?? html;
+}
+
+/** The form. */
+function formOf(html: string): string {
+  return /<form\b[\s\S]*?<\/form>/.exec(html)?.[0] ?? "";
+}
+
+/** What a person reads of some markup: no tags, no aria-hidden parts, spaces collapsed. */
+function readable(markup: string): string {
+  return decode(
+    markup
+      .replace(/<(\w+)\b[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/\1>/g, "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+}
+
+/** Every form control, as its opening tag; quoted values may hold ">". */
+function controls(html: string): string[] {
+  return html.match(/<(?:input|textarea|select|button)\b(?:[^>"]|"[^"]*")*>/g) ?? [];
+}
+
+const attribute = (tag: string, name: string): string | undefined => {
+  const value = new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1];
+  return value === undefined ? undefined : decode(value);
+};
+const has = (tag: string, name: string) => new RegExp(`\\s${name}(?:[\\s=>]|$)`).test(tag);
+
+/** The control named `name`. */
+function control(html: string, name: string): string {
+  const found = controls(formOf(html)).find((tag) => attribute(tag, "name") === name);
+  if (!found) throw new Error(`no control ${name}`);
+  return found;
+}
+
+/** The visible labels of the form, in order, as a person reads them. */
+function labels(html: string): string[] {
+  return [...formOf(html).matchAll(/<label\b[^>]*>([\s\S]*?)<\/label>/g)]
+    .filter(([tag]) => !tag.includes('for="website"'))
+    .map(([, inner = ""]) => readable(inner));
+}
+
+/** The label of the control with `id`. */
+function labelFor(html: string, id: string): string {
+  return readable(new RegExp(`<label for="${id}"[^>]*>([\\s\\S]*?)</label>`).exec(html)?.[1] ?? "");
+}
+
+/** The error messages shown, in order. */
+function alerts(html: string): string[] {
+  return [...mainOf(html).matchAll(/<p\b[^>]*role="alert"[^>]*>([\s\S]*?)<\/p>/g)].map(
+    ([, inner = ""]) => readable(inner),
+  );
+}
+
+const LABELS = [
+  "¿Cómo se llama tu negocio?",
+  "¿A qué se dedica?",
+  "Tu WhatsApp (10 dígitos)",
+  "¿En qué colonia estás?",
+  "¿Qué ofreces? (opcional)",
+  "¿Haces entregas o vas a domicilio? (opcional)",
+  "Teléfono fijo (opcional)",
+  "Dirección o referencias (opcional)",
+  "Horario (opcional)",
+  "Link de tu Facebook (opcional)",
+  "Acepto el aviso de privacidad y confirmo que este negocio es mío o que tengo permiso para registrarlo.",
+];
+
+const SIMPLIFIED_NOTICE =
+  "Aviso de privacidad (resumen): enmirumbo, el directorio de negocios de Tizayuca, usa los datos que escribes aquí para revisar tu negocio, contactarte por WhatsApp y publicar tu ficha en el directorio. Ojo con esto: si publicamos tu ficha, el nombre de tu negocio, tu WhatsApp, tu teléfono fijo y lo demás que escribas quedan a la vista de cualquiera que entre al directorio, con botones para escribirte o marcarte directo. Publicamos tu colonia, no tu domicilio exacto, salvo que tú escribas la dirección. No vendemos ni compartimos tus datos con nadie más. Puedes pedirnos que corrijamos o borremos tu ficha cuando quieras, por el mismo WhatsApp con el que te contactemos; lo atendemos en máximo 20 días hábiles.";
+
+/** A draft with every field written. */
+const FULL_DRAFT: RegistrationDraft = {
+  name: "Plomería Güicho",
+  category: "servicios-del-hogar",
+  whatsapp: "771 999 45",
+  zone: "Rinconada del Venado",
+  whatYouOffer: "destape de drenajes",
+  homeDelivery: true,
+  landline: "no tengo",
+  address: "a un lado de la primaria",
+  openingHours: "Solo fines de semana",
+  facebookUrl: "facebook.com/minegocio",
+};
+
+describe("Public registration page on a single screen", () => {
+  // Scenario: the owner reaches registration from the home page (the page)
+  it("Registra tu negocio gratis as its only h1, its phrase and one form, inside the layout", async () => {
+    const html = await render();
+
+    expect(html).toMatch(/<header\b[\s\S]*<main\b[\s\S]*<footer\b/);
+    const headings = [...mainOf(html).matchAll(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/g)];
+    expect(headings.map(([, level, inner = ""]) => `h${level} ${readable(inner)}`)).toEqual([
+      "h1 Registra tu negocio gratis",
+    ]);
+    expect(readable(mainOf(html))).toContain(
+      "Llena este formulario en un par de minutos, sin cuenta ni contraseña. En cuanto lo revisemos, te contactamos por WhatsApp.",
+    );
+    expect(mainOf(html).match(/<form\b/g)).toHaveLength(1);
+    // No steps: one submit button, no fieldset per step.
+    expect(controls(formOf(html)).filter((tag) => tag.startsWith("<button"))).toHaveLength(1);
+  });
+
+  // Scenario: mobile-first at 390px
+  it("every control is at least 44px tall, and no class blocks the responsive collapse", async () => {
+    const html = await render();
+    for (const tag of controls(formOf(html))) {
+      const type = attribute(tag, "type");
+      if (type === "hidden" || type === "checkbox" || attribute(tag, "name") === "website")
+        continue;
+      expect(attribute(tag, "class") ?? "", tag).toMatch(/\bpy-3\b|\bmin-h-11\b/);
+    }
+    // A checkbox is tapped through its label, at least 44px tall.
+    for (const [tag] of formOf(html).matchAll(/<label\b[^>]*>(?=\s*<input type="checkbox")/g)) {
+      expect(tag).toContain("min-h-11");
+    }
+    const classes = [...html.matchAll(/\bclass="([^"]*)"/g)].map(([, value = ""]) => value);
+    expect(classes.flatMap(collapseProblems)).toEqual([]);
+  });
+
+  // The registration page of a locality lives under it (v2): its metadata
+  it("its title and description name the locality, its canonical is its own address, and it may be indexed", async () => {
+    Object.assign(env, {
+      ENVIRONMENT: "stage",
+      SITE_URL: "https://stage-enmirumbo.urekz.workers.dev",
+    });
+    const html = await render();
+
+    expect(/<title>([^<]*)<\/title>/.exec(html)?.[1]).toBe(
+      "Registra tu negocio gratis en Tizayuca — enmirumbo",
+    );
+    expect(decode(/<meta name="description" content="([^"]*)"/.exec(html)?.[1] ?? "")).toBe(
+      "Registra gratis tu negocio de Tizayuca en enmirumbo: un solo formulario, sin cuenta ni contraseña. Lo revisamos y te contactamos por WhatsApp.",
+    );
+    expect(/<link rel="canonical" href="([^"]*)"/.exec(html)?.[1]).toBe(
+      "https://stage-enmirumbo.urekz.workers.dev/hidalgo/tizayuca/registro",
+    );
+    expect(html).not.toContain('name="robots"');
+  });
+
+  it("another locality: its own name in the title and the notice, and Tizayuca nowhere", async () => {
+    const html = await render({ locality: OTHER });
+
+    expect(/<title>([^<]*)<\/title>/.exec(html)?.[1]).toBe(
+      "Registra tu negocio gratis en Pueblo Uno — enmirumbo",
+    );
+    expect(readable(mainOf(html))).toContain(
+      "Aviso de privacidad (resumen): enmirumbo, el directorio de negocios de Pueblo Uno, usa",
+    );
+  });
+});
+
+describe("Required and optional form fields", () => {
+  // Scenario: empty form on open
+  it("the five required fields and the optional ones, marked, with their literal labels, and nothing prefilled or wrong", async () => {
+    const html = await render();
+
+    expect(labels(html)).toEqual(LABELS);
+    for (const name of ["name", "category", "whatsapp", "zone", "consent"]) {
+      expect(has(control(html, name), "required"), name).toBe(true);
+    }
+    for (const name of ["whatYouOffer", "homeDelivery", "landline", "address", "openingHours"]) {
+      expect(has(control(html, name), "required"), name).toBe(false);
+    }
+    expect(has(control(html, "facebookUrl"), "required")).toBe(false);
+    expect(alerts(html)).toEqual([]);
+    for (const tag of controls(formOf(html))) {
+      if (attribute(tag, "type") === "hidden") continue;
+      expect(attribute(tag, "value") ?? "", tag).toBe("");
+      expect(has(tag, "checked"), tag).toBe(false);
+      expect(has(tag, "aria-invalid"), tag).toBe(false);
+      expect(has(tag, "autofocus"), tag).toBe(false);
+    }
+    expect(formOf(html)).toMatch(/<textarea\b[^>]*name="whatYouOffer"[^>]*><\/textarea>/);
+  });
+
+  // Scenario: closed catalogue lists (the categories; the zones are the v2 field)
+  it("the 8 categories of the catalogue, in its order, after the empty choice", async () => {
+    const select = /<select\b[\s\S]*?<\/select>/.exec(await render())?.[0] ?? "";
+    const options = [...select.matchAll(/<option\b([^>]*)>([\s\S]*?)<\/option>/g)];
+
+    expect(options.map(([, , text = ""]) => readable(text))).toEqual([
+      "Elige una categoría",
+      ...CATALOGUE.categories.map(({ name }) => name),
+    ]);
+    expect(options.map(([, tag = ""]) => attribute(tag, "value"))).toEqual([
+      "",
+      ...CATALOGUE.categories.map(({ slug }) => slug),
+    ]);
+    expect(has(options[0]?.[1] ?? "", "selected")).toBe(true);
+  });
+
+  it("the opening hours: the example the way a business says it and the help, always visible", async () => {
+    const html = await render();
+    const hours = control(html, "openingHours");
+
+    expect(attribute(hours, "placeholder")).toBe(
+      "Lunes a sábado de 9 de la mañana a 7 de la tarde",
+    );
+    const help = attribute(hours, "aria-describedby") ?? "";
+    expect(
+      readable(new RegExp(`<p id="${help}"[^>]*>([\\s\\S]*?)</p>`).exec(html)?.[1] ?? ""),
+    ).toBe(
+      "Escríbelo como se lo dirías a un cliente: 'L-S 9am-7pm', 'Todos los días de 8 a 8', 'Solo fines de semana'.",
+    );
+  });
+
+  // The photo field arrives with EMR-40; the search text has no field
+  // (The registration leaves the card ready for the search, scenario "the
+  // form does not change for the owner")
+  it("its only fields are those of the form, the version it carries and the trap field", async () => {
+    const names = controls(formOf(await render()))
+      .map((tag) => attribute(tag, "name"))
+      .filter((name) => name !== undefined);
+
+    expect(names).toEqual([
+      "website",
+      "name",
+      "category",
+      "whatsapp",
+      "zone",
+      "whatYouOffer",
+      "homeDelivery",
+      "landline",
+      "address",
+      "openingHours",
+      "facebookUrl",
+      "noticeVersion",
+      "consent",
+    ]);
+  });
+});
+
+describe('The "¿Qué ofreces?" example adapts to the chosen category', () => {
+  it("with no category chosen, the generic example; each option carries its own", async () => {
+    const html = await render();
+
+    expect(attribute(control(html, "whatYouOffer"), "placeholder")).toBe(
+      "ej. palabras clave de lo que ofreces",
+    );
+    const select = /<select\b[\s\S]*?<\/select>/.exec(html)?.[0] ?? "";
+    const examples = Object.fromEntries(
+      [...select.matchAll(/<option\b([^>]*)>/g)]
+        .map(([, tag = ""]) => [attribute(tag, "value"), attribute(tag, "data-example")])
+        .filter(([value]) => value !== ""),
+    );
+    // Scenarios: home services example; sports example
+    expect(examples["servicios-del-hogar"]).toBe(
+      "ej. plomería, destape de drenajes, bombas de agua",
+    );
+    expect(examples["clubes-y-escuelas-deportivas"]).toBe(
+      "ej. futbol infantil 6-12 años, entrenamientos martes y jueves",
+    );
+    expect(Object.keys(examples)).toHaveLength(8);
+  });
+
+  it("when the form comes back with a category chosen, its example", async () => {
+    const html = await render({
+      draft: { ...EMPTY_REGISTRATION_DRAFT, category: "clubes-y-escuelas-deportivas" },
+      errors: { name: "required" },
+    });
+
+    expect(attribute(control(html, "whatYouOffer"), "placeholder")).toBe(
+      "ej. futbol infantil 6-12 años, entrenamientos martes y jueves",
+    );
+  });
+});
+
+describe("Form states and registration accessibility", () => {
+  // Scenario: announced errors; empty required fields
+  it("each error sits next to its field, tied to it, and the first field with one takes the focus", async () => {
+    const html = await render({
+      errors: { name: "required", category: "required", whatsapp: "invalid", zone: "required" },
+    });
+
+    for (const name of ["name", "category", "whatsapp", "zone"]) {
+      const tag = control(html, name);
+      const id = attribute(tag, "id") ?? "";
+      expect(attribute(tag, "aria-invalid"), name).toBe("true");
+      expect((attribute(tag, "aria-describedby") ?? "").split(" "), name).toContain(`${id}-error`);
+      expect(html, name).toMatch(new RegExp(`<p id="${id}-error" role="alert"`));
+      expect(labelFor(html, id)).not.toBe("");
+    }
+    expect(alerts(html)).toEqual([
+      "Escribe el nombre de tu negocio",
+      "Elige una categoría",
+      "Revisa tu número de WhatsApp: deben ser 10 dígitos",
+      "Escribe el nombre de tu colonia",
+    ]);
+    const focused = controls(formOf(html)).filter((tag) => has(tag, "autofocus"));
+    expect(focused.map((tag) => attribute(tag, "name"))).toEqual(["name"]);
+    // An error is never colour alone: a thicker outline and the bold message.
+    expect(attribute(control(html, "name"), "class")).toContain("border-2 border-ink");
+  });
+
+  it("the focus goes to the first field in the order of the screen", async () => {
+    const html = await render({ errors: { facebookUrl: "invalid", landline: "invalid" } });
+    const focused = controls(formOf(html)).filter((tag) => has(tag, "autofocus"));
+
+    expect(focused.map((tag) => attribute(tag, "name"))).toEqual(["landline"]);
+  });
+
+  // Scenario: numeric keyboard; the landline asks for the phone keyboard
+  it("the WhatsApp opens the numeric keyboard; the landline the phone keyboard; the link the URL one", async () => {
+    const html = await render();
+
+    expect(attribute(control(html, "whatsapp"), "type")).toBe("tel");
+    expect(attribute(control(html, "whatsapp"), "inputmode")).toBe("numeric");
+    expect(attribute(control(html, "landline"), "type")).toBe("tel");
+    expect(attribute(control(html, "landline"), "inputmode")).toBe("tel");
+    expect(attribute(control(html, "facebookUrl"), "type")).toBe("url");
+  });
+
+  // Scenario: submitting state; registration works without client JavaScript
+  it("posts to its own page with the action, leaves every check to the server, and says Enviando... only with its script", async () => {
+    const html = await render();
+    const [form = ""] = formOf(html).match(/<form\b[^>]*>/) ?? [];
+    const button = controls(formOf(html)).find((tag) => tag.startsWith("<button")) ?? "";
+
+    expect(attribute(form, "method")).toBe("post");
+    expect(attribute(form, "action")).toBe(ACTION);
+    expect(has(form, "novalidate")).toBe(true);
+    expect(attribute(button, "type")).toBe("submit");
+    expect(attribute(button, "data-sending-text")).toBe("Enviando...");
+    expect(attribute(button, "class")).toMatch(/\bbg-action\b/);
+    expect(readable(/<button\b[\s\S]*?<\/button>/.exec(html)?.[0] ?? "")).toBe(
+      "Registrar mi negocio",
+    );
+  });
+
+  // Registration works without client JavaScript: scenario "JS limited to
+  // the example field"
+  it("its only script is one module of the site, never inline", async () => {
+    const scripts = [...(await render()).matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
+
+    expect(scripts).toHaveLength(1);
+    const [, tag = "", body = ""] = scripts[0] ?? [];
+    expect(attribute(tag, "type")).toBe("module");
+    expect(attribute(tag, "src")).toMatch(/RegistrationForm\.astro/);
+    expect(body.trim()).toBe("");
+  });
+});
+
+describe("The server validates every field and returns per-field errors in Spanish", () => {
+  // Scenario: what was entered is not lost
+  it("the form comes back with everything that was written, except the consent", async () => {
+    const html = await render({
+      draft: FULL_DRAFT,
+      errors: {
+        whatsapp: "invalid",
+        landline: "invalid",
+        facebookUrl: "invalid",
+        consent: "required",
+      },
+    });
+
+    expect(attribute(control(html, "name"), "value")).toBe("Plomería Güicho");
+    expect(attribute(control(html, "whatsapp"), "value")).toBe("771 999 45");
+    expect(attribute(control(html, "zone"), "value")).toBe("Rinconada del Venado");
+    expect(attribute(control(html, "landline"), "value")).toBe("no tengo");
+    expect(attribute(control(html, "openingHours"), "value")).toBe("Solo fines de semana");
+    expect(attribute(control(html, "facebookUrl"), "value")).toBe("facebook.com/minegocio");
+    expect(has(control(html, "homeDelivery"), "checked")).toBe(true);
+    expect(has(control(html, "consent"), "checked")).toBe(false);
+    expect(formOf(html)).toMatch(/name="whatYouOffer"[^>]*>destape de drenajes<\/textarea>/);
+    expect(formOf(html)).toMatch(/name="address"[^>]*>a un lado de la primaria<\/textarea>/);
+    const select = /<select\b[\s\S]*?<\/select>/.exec(html)?.[0] ?? "";
+    expect(select).toMatch(/<option value="servicios-del-hogar" selected/);
+    expect(alerts(html)).toEqual([
+      "Revisa tu número de WhatsApp: deben ser 10 dígitos",
+      "Revisa el teléfono fijo: escribe solo números (puedes usar espacios, guiones o paréntesis)",
+      "El link de Facebook debe empezar con http:// o https://",
+      "Marca la casilla para poder registrar tu negocio",
+    ]);
+  });
+
+  // Scenarios: "¿Qué ofreces?" too long; number with a published card
+  it("the length and duplicate messages, next to their fields", async () => {
+    const html = await render({ errors: { whatYouOffer: "length", whatsapp: "duplicate" } });
+
+    expect(alerts(html)).toEqual([
+      "Este número ya tiene una ficha registrada. Si es tu negocio, no hace falta registrarlo otra vez: te vamos a pasar por WhatsApp el enlace para editarlo.",
+      "Deja esto en 200 caracteres o menos",
+    ]);
+    // Scenario: registration does not hand out management links: the only
+    // link of the page is the one to the full notice
+    const links = [...mainOf(html).matchAll(/<a\b[^>]*href="([^"]*)"/g)].map(([, href]) => href);
+    expect(links).toEqual(["/aviso-de-privacidad"]);
+    expect(mainOf(html)).not.toMatch(/\/editar|token/);
+  });
+
+  // Scenario: save failure; per-IP limit
+  it("over the quota or after a failure, the message goes above the form, with what was written", async () => {
+    for (const [general, message] of [
+      ["quota", "Ya recibimos varios registros desde aquí. Espera un rato y vuelve a intentar."],
+      ["server", "No pudimos guardar tu registro. Vuelve a intentarlo en un momento."],
+    ] as const) {
+      const html = await render({ draft: FULL_DRAFT, general });
+      expect(alerts(html), general).toEqual([message]);
+      expect(formOf(html).indexOf(message), general).toBeLessThan(
+        formOf(html).indexOf('<label for="registration-name"'),
+      );
+      expect(attribute(control(html, "name"), "value"), general).toBe("Plomería Güicho");
+    }
+  });
+
+  it("what was written is shown as text, escaped, and breaks nothing", async () => {
+    const markup = '</textarea><script>alert(1)</script>"><b>';
+    const html = await render({
+      draft: { ...FULL_DRAFT, name: markup, address: markup, zone: markup },
+      errors: { name: "length" },
+    });
+
+    // Inside a quoted attribute a tag is text; outside, only the page's own
+    // script is a tag.
+    const markupOnly = html.replace(/="[^"]*"/g, "");
+    expect(markupOnly.match(/<script\b/g)).toHaveLength(1);
+    expect(markupOnly).not.toContain("<b>");
+    expect(formOf(html)).toContain(
+      "&lt;/textarea&gt;&lt;script&gt;alert(1)&lt;/script&gt;&quot;&gt;&lt;b&gt;</textarea>",
+    );
+    expect(attribute(control(html, "name"), "value")).toBe(markup);
+    expect(attribute(control(html, "zone"), "value")).toBe(markup);
+  });
+});
+
+describe("Consent with a visible simplified notice and a consent record", () => {
+  // Scenarios: notice visible without leaving the form; the simplified notice
+  // warns that the WhatsApp and the phone become public; it names the site
+  // with the current brand; the version is visible before accepting; link to
+  // the full notice
+  it("the simplified notice, the link to the full notice, the version and the checkbox, in that order", async () => {
+    const html = await render();
+    const block = /<div class="flex flex-col gap-3 rounded-lg[\s\S]*?<\/div>/.exec(html)?.[0] ?? "";
+    const parts = [...block.matchAll(/<(p|a|label)\b[^>]*>([\s\S]*?)<\/\1>/g)].map(
+      ([, tag, inner = ""]) => `${tag} ${readable(inner)}`,
+    );
+
+    expect(parts).toEqual([
+      `p ${SIMPLIFIED_NOTICE}`,
+      "a Lee el aviso de privacidad completo",
+      `p Estás aceptando la versión ${NOTICE_VERSION} del aviso de privacidad.`,
+      `label ${LABELS.at(-1)}`,
+    ]);
+    const link = /<a\b[^>]*>/.exec(block)?.[0] ?? "";
+    expect(attribute(link, "href")).toBe("/aviso-de-privacidad");
+    expect(has(link, "target")).toBe(false);
+    expect(attribute(link, "class")).toContain("min-h-11");
+    expect(html).not.toContain("Cuando publiquemos el aviso completo");
+    expect(html).not.toMatch(/EnMiRumbo|enmirumbo Tizayuca/);
+  });
+
+  // Nobody consents to a notice version they did not have in front of them:
+  // the datum travels in the form's own submission
+  it("the form carries the version it was rendered with, and the checkbox is never checked", async () => {
+    const html = await render({ errors: { consent: "notice-changed" } });
+
+    expect(attribute(control(html, "noticeVersion"), "type")).toBe("hidden");
+    expect(attribute(control(html, "noticeVersion"), "value")).toBe(NOTICE_VERSION);
+    const consent = control(html, "consent");
+    expect(has(consent, "checked")).toBe(false);
+    expect(has(consent, "autofocus")).toBe(true);
+    expect(attribute(consent, "aria-describedby")).toBe("registration-consent-error");
+    expect(alerts(html)).toEqual([
+      "El aviso de privacidad cambió mientras llenabas esto. Léelo otra vez y vuelve a marcar la casilla.",
+    ]);
+  });
+});
+
+describe('The zone is typed with the locality\'s zones as suggestions, and a name that is none of them is kept as "Otra" (v2)', () => {
+  it("a text field whose suggestions are the visible zones of the locality, by display name", async () => {
+    const html = await render();
+    const zone = control(html, "zone");
+    const list = attribute(zone, "list") ?? "";
+    const datalist = new RegExp(`<datalist id="${list}">([\\s\\S]*?)</datalist>`).exec(html)?.[1];
+
+    expect(attribute(zone, "type")).toBe("text");
+    expect([...(datalist ?? "").matchAll(/<option value="([^"]*)"/g)].map(([, v]) => v)).toEqual([
+      "El Carmen (Colonia)",
+      "Haciendas de Tizayuca",
+      "Huicalco",
+    ]);
+    const help = (attribute(zone, "aria-describedby") ?? "").split(" ")[0] ?? "";
+    expect(
+      readable(new RegExp(`<p id="${help}"[^>]*>([\\s\\S]*?)</p>`).exec(html)?.[1] ?? ""),
+    ).toBe(
+      "Empieza a escribirla y elígela de la lista. Si no aparece, escríbela completa y nosotros la acomodamos.",
+    );
+    // No option "Otra" to choose, and no second field for it.
+    expect(formOf(html)).not.toMatch(/>Otra</);
+  });
+});
+
+describe("The registration's honeypot and per-IP quota are those of the public forms (v2)", () => {
+  // Scenario: the honeypot does not bother people
+  it("the trap field is off the screen, out of the keyboard's order and hidden from screen readers", async () => {
+    const html = await render();
+    const trap = control(html, "website");
+
+    expect(formOf(html)).toMatch(/<div aria-hidden="true" class="absolute left-\[-9999px\]/);
+    expect(attribute(trap, "tabindex")).toBe("-1");
+    expect(attribute(trap, "autocomplete")).toBe("off");
+  });
+});
+
+describe("A successful submission queues the business and shows the thank-you screen", () => {
+  /** The thank-you page of `locality`. */
+  function renderThanks(locality: ServedLocality = TIZAYUCA) {
+    return container.renderToString(ThanksPage, {
+      partial: false,
+      request: new Request(`https://enmirumbo.urekz.workers.dev${PATH}/gracias`),
+      locals: { locality } as App.Locals,
+    });
+  }
+
+  // Scenario: successful registration
+  it("the literal of PRD §6.1 as its only h1, and Volver al inicio to the home of the locality", async () => {
+    const html = await renderThanks();
+    const main = mainOf(html);
+
+    expect(
+      [...main.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/g)].map(([, t = ""]) => readable(t)),
+    ).toEqual([
+      "¡Gracias! Tu negocio está en revisión. Te contactaremos por WhatsApp para confirmar tus datos antes de publicarlo.",
+    ]);
+    const links = [...main.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)];
+    expect(links.map(([, href, text = ""]) => [href, readable(text)])).toEqual([
+      ["/hidalgo/tizayuca", "Volver al inicio"],
+    ]);
+    // Scenario: reload after success: nothing to send again
+    expect(main).not.toMatch(/<form\b/);
+    expect(html).not.toMatch(/<script\b/);
+  });
+
+  it("it is never indexed, and its title is static", async () => {
+    const html = await renderThanks(OTHER);
+
+    expect(html).toContain('<meta name="robots" content="noindex, follow">');
+    expect(html).not.toContain('rel="canonical"');
+    expect(/<title>([^<]*)<\/title>/.exec(html)?.[1]).toBe(
+      "Gracias por registrar tu negocio — enmirumbo",
+    );
+    expect(mainOf(html)).toContain('href="/estado-de-prueba-91/pueblo-uno"');
+  });
+});

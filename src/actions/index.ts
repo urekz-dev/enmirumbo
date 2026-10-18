@@ -7,8 +7,10 @@
 import { ActionError, defineAction } from "astro:actions";
 import { env, waitUntil } from "cloudflare:workers";
 import { withDb } from "../core/db/client.ts";
+import { submitRegistration } from "../core/registration/submit.ts";
 import { submitReport } from "../core/report/submit.ts";
 import { takeQuota } from "../lib/quota/quota.ts";
+import { registrationActionError, registrationLocality } from "../lib/registration.ts";
 import { reportActionError, reportTarget } from "../lib/report.ts";
 
 export const server = {
@@ -29,6 +31,28 @@ export const server = {
         takeQuota: () => takeQuota(env, context.request.headers, "report"),
       });
       const error = reportActionError(outcome);
+      if (error !== null) throw error;
+    },
+  }),
+
+  // A business registering itself (docs/specs/business-registration.md),
+  // posted by the registration form of a locality. The locality is the one
+  // of the page's address (registrationLocality): no field of the submission
+  // chooses it. The core reads the submission and decides
+  // (src/core/registration/submit.ts); the write and the reads that lead to
+  // it go through HYPERDRIVE_FRESH, and the quota is the `registration`
+  // purpose. Nothing about the sender is read but the address the quota
+  // counts in memory.
+  register: defineAction({
+    accept: "form",
+    handler: async (form, context) => {
+      const locality = registrationLocality(context);
+      if (locality === null) throw new ActionError({ code: "NOT_FOUND" });
+      const outcome = await submitRegistration(form, locality, {
+        useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
+        takeQuota: () => takeQuota(env, context.request.headers, "registration"),
+      });
+      const error = registrationActionError(outcome);
       if (error !== null) throw error;
     },
   }),

@@ -16,9 +16,10 @@ import { collapseProblems } from "../responsive-rules.ts";
  * Where the crawl starts: the root, which leads to the home of the locality
  * (or, with two, to the list of localities), the panel (never linked), a 404,
  * the states of the search results (only the search box's form leads to
- * them, and the crawl follows links), the thank-you page of a report (only a
- * received report leads there), and every page of the sitemap, so a page
- * nothing links to yet is checked too, and the report forms of its cards.
+ * them, and the crawl follows links), the thank-you pages of a report and of
+ * a registration (only a received submission leads there), and every page of
+ * the sitemap, so a page nothing links to yet is checked too, and the report
+ * forms of its cards.
  */
 const START = [
   "/",
@@ -28,6 +29,7 @@ const START = [
   "/hidalgo/tizayuca/buscar?q=plomero",
   "/hidalgo/tizayuca/buscar?q=veterinario%20espacial",
   "/hidalgo/tizayuca/reportar/gracias?negocio=b5q68b2e72",
+  "/hidalgo/tizayuca/registro/gracias",
 ];
 /** Enough for every page the seeded directory links to, with two localities. */
 const MAX_PAGES = 150;
@@ -65,7 +67,7 @@ test.beforeEach(async ({ page }) => {
   if (pages.length === 0) pages = await crawl(page);
 });
 
-test("the crawl reaches the start pages, the home, the legal pages, the listings, the cards and their reports", () => {
+test("the crawl reaches the start pages, the home, the legal pages, the listings, the cards, their reports and the registration", () => {
   expect(pages).toEqual(
     expect.arrayContaining([
       "/hidalgo/tizayuca",
@@ -84,6 +86,8 @@ test("the crawl reaches the start pages, the home, the legal pages, the listings
       "/hidalgo/tizayuca/negocio/plomeria-los-fontaneros-ficticios-b5q68b2e72",
       "/hidalgo/tizayuca/negocio/plomeria-los-fontaneros-ficticios-b5q68b2e72/reportar",
       "/hidalgo/tizayuca/reportar/gracias?negocio=b5q68b2e72",
+      "/hidalgo/tizayuca/registro",
+      "/hidalgo/tizayuca/registro/gracias",
     ]),
   );
   expect(pages.length).toBeLessThan(MAX_PAGES);
@@ -125,10 +129,20 @@ test("every page is an es-MX document inside the layout, with its base metadata"
     // layout's (the analytics, docs/specs/base-layout.md), and a card's
     // Schema.org block is data, which no browser runs (public-directory,
     // "Directory in Server Components, mobile-first and usable without
-    // JavaScript").
-    await expect
-      .soft(page.locator('script:not([src^="https://"]):not([type="application/ld+json"])'), path)
-      .toHaveCount(0);
+    // JavaScript"). The registration form of a locality is the one page with
+    // a script of the site, one bundled file (business-registration,
+    // "Registration works without client JavaScript": scenario "JS limited
+    // to the example field").
+    const own = page.locator('script:not([src^="https://"]):not([type="application/ld+json"])');
+    if (/^\/[^/]+\/[^/]+\/registro$/.test(new URL(page.url()).pathname)) {
+      await expect.soft(own, path).toHaveCount(1);
+      await expect.soft(own, path).toHaveAttribute("type", "module");
+      await expect
+        .soft(own, path)
+        .toHaveAttribute("src", /^\/_astro\/RegistrationForm\.[^/]*\.js$/);
+    } else {
+      await expect.soft(own, path).toHaveCount(0);
+    }
   }
 });
 

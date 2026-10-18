@@ -1,0 +1,62 @@
+---
+// The consent block of the registration form
+// (docs/specs/business-registration.md, "Consent with a visible simplified
+// notice and a consent record" and "Nobody consents to a notice version they
+// did not have in front of them"; docs/specs/legal-pages.md, "The privacy
+// notice has a stable version declared in a single place"): the simplified
+// notice, with the municipality of the form's locality; "Lee el aviso de
+// privacidad completo", to the full notice in the same tab; which version is
+// being accepted; and the consent checkbox with its literal. The texts and
+// the version are the versioned ones of src/core/legal/, never retyped here.
+//
+// The version the form was rendered with travels back in a hidden field of
+// the same submission, without JavaScript: the server only compares it with
+// the version in force, and always stores its own. The checkbox is never
+// checked when the form is rendered, also when it comes back with an error.
+import { PRIVACY_NOTICE_PATH } from "../core/legal/document.ts";
+import { CONSENT_CHECKBOX, simplifiedNotice } from "../core/legal/privacy-notice.ts";
+import { NOTICE_VERSION } from "../core/legal/version.ts";
+import { REGISTRATION_FIELDS } from "../core/registration/submission.ts";
+
+interface Props {
+  /** The name of the municipality of the form's locality. */
+  municipality: string;
+  /** The id of the checkbox. */
+  checkboxId: string;
+  /** Whether the checkbox takes the focus: it has the first error. */
+  autofocus: boolean;
+  /** Whether the checkbox has an error, shown under the block. */
+  invalid: boolean;
+  /** The id of that error. */
+  errorId: string;
+}
+
+const { municipality, checkboxId, autofocus, invalid, errorId } = Astro.props;
+---
+
+<div class="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
+  <p class="text-sm text-ink-muted">{simplifiedNotice(municipality)}</p>
+  <a
+    href={PRIVACY_NOTICE_PATH}
+    class="inline-flex min-h-11 w-fit items-center text-sm font-semibold text-action-strong underline underline-offset-4"
+  >
+    Lee el aviso de privacidad completo
+  </a>
+  <p class="text-sm font-semibold text-ink">
+    {`Estás aceptando la versión ${NOTICE_VERSION} del aviso de privacidad.`}
+  </p>
+  <input type="hidden" name={REGISTRATION_FIELDS.noticeVersion} value={NOTICE_VERSION} />
+  <label for={checkboxId} class="flex min-h-11 cursor-pointer items-start gap-3 text-sm text-ink">
+    <input
+      type="checkbox"
+      id={checkboxId}
+      name={REGISTRATION_FIELDS.consent}
+      required
+      autofocus={autofocus}
+      aria-invalid={invalid ? "true" : undefined}
+      aria-describedby={invalid ? errorId : undefined}
+      class="mt-0.5 h-5 w-5 shrink-0"
+    />
+    <span>{CONSENT_CHECKBOX}</span>
+  </label>
+</div>

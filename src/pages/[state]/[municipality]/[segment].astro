@@ -5,16 +5,18 @@
 // a trade (`/plomeria`) and the page of a trade in a zone
 // (`/plomeria-haciendas-de-tizayuca`), 20 cards a page (`?pagina=<n>`). The
 // middleware has already resolved the active locality, or answered 404. The
-// site's own pages (`negocio`, and `buscar`, `registro`… as they land) are
-// static routes, which Astro prefers to this one; their segments are
-// reserved, so no catalogue slug takes them.
+// site's own pages (`negocio`, `buscar`, `registro`…) are static routes,
+// which Astro prefers to this one; their segments are reserved, so no
+// catalogue slug takes them.
 //
 // src/core/business/listing-page.ts decides everything, through the cached
 // HYPERDRIVE like every public read: a segment that is no category, trade
 // or trade and zone pair, a `pagina` that is not a later page, and a page
 // past the last answer the site's 404. A trade page without published cards
 // answers 200 with its empty state, `noindex` and no canonical, and nothing
-// links to it.
+// links to it. The empty states of a category and of a trade, with or
+// without a zone, invite to register ("Registra tu negocio gratis"); a
+// category filtered by a zone only leads back to all the zones.
 //
 // No client JavaScript: the zone navigation and "Ver más" are links.
 import { env, waitUntil } from "cloudflare:workers";
@@ -24,8 +26,10 @@ import ZoneNav from "../../../components/ZoneNav.astro";
 import { listingPage, PAGE_PARAM, ZONE_PARAM } from "../../../core/business/listing-page.ts";
 import { withDb } from "../../../core/db/client.ts";
 import { parsePage } from "../../../core/pagination.ts";
+import { registrationPath } from "../../../core/registration/paths.ts";
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { pageAnalytics } from "../../../lib/analytics.ts";
+import { PRIMARY_BUTTON } from "../../../lib/buttons.ts";
 import { notFound, requireLocality } from "../../../lib/locality.ts";
 
 const locality = requireLocality(Astro.locals);
@@ -67,9 +71,11 @@ const backLink =
           {empty.kind === "trade-zone" &&
             "Todavía no hay negocios publicados de esto en esta colonia."}
         </p>
-        {/* "Registra tu negocio gratis" joins these empty states with the
-            registration page (epic E): a link to a page that does not exist
-            yet fails the link checks. */}
+        {empty.kind !== "category-zone" && (
+          <a href={registrationPath(locality)} class={`${PRIMARY_BUTTON} px-6 py-3 text-base`}>
+            Registra tu negocio gratis
+          </a>
+        )}
         {(empty.kind === "category-zone" || empty.kind === "trade-zone") &&
           empty.allZonesPath !== null && (
             <a href={empty.allZonesPath} class={backLink}>

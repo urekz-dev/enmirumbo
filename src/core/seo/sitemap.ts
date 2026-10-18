@@ -13,6 +13,7 @@ import type { Db } from "../db/client.ts";
 import { PRIVACY_NOTICE_PATH, TERMS_PATH } from "../legal/document.ts";
 import { localityPath } from "../locality/paths.ts";
 import { activeLocalities, type ServedLocality } from "../locality/served.ts";
+import { registrationPath } from "../registration/paths.ts";
 
 export interface SitemapEntry {
   /** A path of this site, such as `/hidalgo/tizayuca`. */
@@ -30,14 +31,15 @@ export type LocalityPages = (
 /**
  * Every indexable page of a locality, by kind. A page of a locality that
  * search engines may index adds its kind here when it lands, and nowhere
- * else. Still to come: the registration page (`/registro`, epic E). Never
- * the search results, the report form, the thank-you pages, the edit mode,
- * a trade page without published cards, a page of a list after the first,
- * or anything unpublished.
+ * else. Never the search results, the report form, the thank-you pages, the
+ * edit mode, a trade page without published cards, a page of a list after
+ * the first, or anything unpublished.
  */
 export const LOCALITY_PAGES: readonly LocalityPages[] = [
   // The home of the locality.
   (locality) => [{ path: localityPath(locality) }],
+  // The registration form (not its thank-you page).
+  (locality) => [{ path: registrationPath(locality) }],
   // The listings of the categories, even when empty.
   async (locality, db) =>
     (await allCategories(db)).map((category) => ({ path: localityPath(locality, category.slug) })),

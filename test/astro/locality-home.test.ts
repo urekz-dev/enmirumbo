@@ -183,18 +183,34 @@ describe("Home of the site inside the layout, with the entry to registration", (
       "h1 ¿Qué necesitas en Tizayuca?",
       "h2 Busca por categoría",
       "h2 Deporte en Tizayuca",
+      "h2 ¿Tienes un negocio en Tizayuca?",
     ]);
   });
 
-  // Scenario: entry to registration from the home. The registration page
-  // arrives with epic E, and a link to a page that does not exist fails the
-  // link checks, so until then the home has no entry to it: every link of
-  // the home leads to a listing.
-  it("no link to the registration page until it exists", async () => {
+  // Scenario: entry to registration from the home; business-registration,
+  // "Public registration page on a single screen": scenario "the owner
+  // reaches registration from the home page"
+  it('the last section asks "¿Tienes un negocio en Tizayuca?" and leads to the registration page', async () => {
     const html = await render();
+    const section = html.slice(html.indexOf("¿Tienes un negocio en"), html.indexOf("</main>"));
 
-    expect(html).not.toContain("Registra tu negocio gratis");
-    expect(html).not.toContain("/registro");
+    expect(anchors(section)).toEqual([
+      ["/hidalgo/tizayuca/registro", "Registra tu negocio gratis"],
+    ]);
+    // The last section of the home, after the sports block, at its heading level.
+    expect(html.indexOf("¿Tienes un negocio en")).toBeGreaterThan(html.indexOf("Deporte en"));
+    const [categories = "", , registration = ""] = headingClasses(html, 2);
+    expect(registration).toBe(categories);
+  });
+
+  // base-layout, "Home of the site inside the layout, with the entry to
+  // registration": the primary action style and a touch area of at least 44px
+  it('"Registra tu negocio gratis" is the primary action, in WhatsApp green, at least 44px tall', async () => {
+    const classes = (
+      /\bclass="([^"]*)"/.exec(linkTag(await render(), "Registra tu negocio gratis"))?.[1] ?? ""
+    ).split(" ");
+
+    expect(classes).toEqual(expect.arrayContaining(["bg-action", "text-ink", "min-h-11"]));
   });
 });
 
@@ -277,13 +293,14 @@ describe("The home page shows the 8 categories as large buttons", () => {
   });
 
   // Scenario: no dead controls on the home page
-  it("every control leads somewhere: the listings and the results page, nothing else", async () => {
+  it("every control leads somewhere: the listings, the results page and the registration, nothing else", async () => {
     const html = await render();
     const sports = "/hidalgo/tizayuca/clubes-y-escuelas-deportivas";
 
     expect(links(html)).toEqual([
       ...categoryLinks(TIZAYUCA),
       [sports, "Ver clubes y escuelas deportivas"],
+      ["/hidalgo/tizayuca/registro", "Registra tu negocio gratis"],
     ]);
     expect(main(html)).not.toMatch(/<(select|textarea)\b/);
     expect(main(html).match(/<button\b/g)).toHaveLength(1);
@@ -345,6 +362,7 @@ describe("The home of a locality lives under it and names it from the record (v2
       "h1 ¿Qué necesitas en Pueblo Uno?",
       "h2 Busca por categoría",
       "h2 Deporte en Pueblo Uno",
+      "h2 ¿Tienes un negocio en Pueblo Uno?",
     ]);
     expect(links(html)).toEqual([
       ...categoryLinks(OTHER),
@@ -352,6 +370,7 @@ describe("The home of a locality lives under it and names it from the record (v2
         "/estado-de-prueba-95/pueblo-uno/clubes-y-escuelas-deportivas",
         "Ver clubes y escuelas deportivas",
       ],
+      ["/estado-de-prueba-95/pueblo-uno/registro", "Registra tu negocio gratis"],
     ]);
     expect(html).toMatch(/<form action="\/estado-de-prueba-95\/pueblo-uno\/buscar"/);
     expect(html).not.toMatch(/tizayuca|hidalgo/i);

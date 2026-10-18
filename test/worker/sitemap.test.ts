@@ -70,6 +70,16 @@ describe("The sitemap lists the pages that exist, from the database (v2)", () =>
     }
   });
 
+  // business-registration, "The registration page of a locality lives under
+  // it, and lands on its thank-you page (v2)"
+  it("lists the registration page of every active locality once, and never its thank-you page", async () => {
+    const paths = ours(await db(sitemapEntries));
+
+    expect(paths.filter((path) => path === `${PREFIX}pueblo-uno/registro`)).toHaveLength(1);
+    expect(paths.filter((path) => path.includes("/registro/"))).toEqual([]);
+    expect(paths.filter((path) => path.startsWith(`${PREFIX}pueblo-dos`))).toEqual([]);
+  });
+
   it("activating a locality adds its pages on the next read, with no other change", async () => {
     await db((tx) =>
       tx.update(localities).set({ active: true }).where(eq(localities.code, f.localityB)),

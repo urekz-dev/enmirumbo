@@ -343,6 +343,7 @@ describe("The checks of the quota counter fail on a change that could run up a b
       "src/pages/a.astro:3 — takeQuota takes purpose: the purpose must be one of QUOTAS (src/core/quota/quotas.ts), written as a literal",
       'src/actions/b.ts:1 — takeQuota takes "signup": the purpose must be one of QUOTAS (src/core/quota/quotas.ts), written as a literal',
       'QUOTAS has "report", which no page or action takes: a purpose arrives with the surface it protects',
+      'QUOTAS has "registration", which no page or action takes: a purpose arrives with the surface it protects',
     ]);
   });
 

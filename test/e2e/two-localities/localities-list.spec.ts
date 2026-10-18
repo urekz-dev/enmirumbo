@@ -332,10 +332,41 @@ test.describe("The home of a locality lives under it and names it from the recor
     const hrefs = await main
       .getByRole("link")
       .evaluateAll((links) => links.map((link) => link.getAttribute("href") ?? ""));
-    expect(hrefs).toHaveLength(9);
+    expect(hrefs).toHaveLength(10);
     expect(hrefs.filter((href) => !href.startsWith(`${SECOND}/`))).toEqual([]);
-    expect(hrefs.at(-1)).toBe(`${SECOND}/clubes-y-escuelas-deportivas`);
+    expect(hrefs.slice(-2)).toEqual([
+      `${SECOND}/clubes-y-escuelas-deportivas`,
+      `${SECOND}/registro`,
+    ]);
+    await expect(
+      main.getByRole("heading", {
+        level: 2,
+        name: `¿Tienes un negocio en ${SECOND_LOCALITY.name}?`,
+      }),
+    ).toBeVisible();
     await expect(page.getByRole("search")).toHaveAttribute("action", `${SECOND}/buscar`);
+    expect(await page.content()).not.toMatch(/tizayuca|hidalgo/i);
+  });
+});
+
+test.describe("The registration page of a locality lives under it, and lands on its thank-you page (v2)", () => {
+  // business-registration, "The zone options come from the active locality
+  // (v2)" and "Consent with a visible simplified notice and a consent record"
+  test("the registration of the other locality names it, offers none of Tizayuca's zones, and says Tizayuca nowhere", async ({
+    page,
+  }) => {
+    const response = await page.goto(`${SECOND}/registro`);
+
+    expect(response?.status()).toBe(200);
+    await expect(page).toHaveTitle(
+      `Registra tu negocio gratis en ${SECOND_LOCALITY.name} — enmirumbo`,
+    );
+    await expect(
+      page.getByText(
+        `Aviso de privacidad (resumen): enmirumbo, el directorio de negocios de ${SECOND_LOCALITY.name}, usa`,
+      ),
+    ).toBeVisible();
+    await expect(page.locator("datalist option")).toHaveCount(0);
     expect(await page.content()).not.toMatch(/tizayuca|hidalgo/i);
   });
 });
