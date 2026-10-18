@@ -27,6 +27,24 @@ import { CONSENT_CHECKBOX, PRIVACY_NOTICE, SIMPLIFIED_NOTICE_TEMPLATE } from "./
  */
 export const NOTICE_VERSION = "2";
 
+/** A version as a number, or null when it is none (missing, or not a whole number). */
+function versionNumber(version: string | null): number | null {
+  return version !== null && /^[0-9]+$/.test(version) ? Number(version) : null;
+}
+
+/**
+ * Whether `current` is later than `earlier` (docs/specs/business-registration.md,
+ * "One card per WhatsApp number": when a resubmission records a
+ * re-acceptance). An ordering, not an inequality: an earlier version (a
+ * rolled-back deployment) is not later, and a consent record without a
+ * version, from before versioning, is comparable with none.
+ */
+export function isLaterNoticeVersion(current: string, earlier: string | null): boolean {
+  const now = versionNumber(current);
+  const before = versionNumber(earlier);
+  return now !== null && before !== null && now > before;
+}
+
 /** What the notice page prepends to its last-update line. */
 export function versionPrefix(version: string): string {
   return `Versión ${version} · `;

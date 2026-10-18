@@ -21,6 +21,7 @@
 // Nothing here writes the comment, the address or anything about the card to
 // the log: a failure is logged by its kind alone.
 import type { Db } from "../db/client.ts";
+import { failureKind } from "../db/failure.ts";
 import type { QuotaDecision } from "../quota/window.ts";
 import { saveReport, reportableCard } from "./save.ts";
 import { readReportSubmission, type ReportFormError } from "./submission.ts";
@@ -51,14 +52,8 @@ export type SubmitReportOutcome =
 const RECEIVED: SubmitReportOutcome = { kind: "received" };
 const NOT_FOUND: SubmitReportOutcome = { kind: "not-found" };
 
-/** The kind of a failure, for the log: a PostgreSQL error code, or the error's name. */
-export function failureKind(error: unknown): string {
-  for (let cause: unknown = error; cause instanceof Error; cause = cause.cause) {
-    const code = (cause as Error & { code?: unknown }).code;
-    if (typeof code === "string" && /^[0-9A-Z]{5}$/.test(code)) return `PostgreSQL ${code}`;
-  }
-  return error instanceof Error ? error.name : "unknown";
-}
+/** The kind of a failure, for the log (src/core/db/failure.ts), shared with the registration. */
+export { failureKind };
 
 export async function submitReport(
   form: FormData,

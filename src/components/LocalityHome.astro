@@ -10,8 +10,8 @@
 // renders them, so the home is tested with the Container API.
 //
 // - One h1, "¿Qué necesitas en {municipio}?", and one h2 per section:
-//   "Busca por categoría" and "Deporte en {municipio}", with the same
-//   heading style. Every text that names the locality reads it from its
+//   "Busca por categoría", "Deporte en {municipio}" and "¿Tienes un negocio
+//   en {municipio}?", with the same heading style. Every text that names the locality reads it from its
 //   record.
 // - The search box comes first, empty, and submits to the results page of
 //   the locality; it adds no heading of its own.
@@ -21,6 +21,9 @@
 //   (SPORTS_CATEGORY_SLUG): its entry leads to the same listing as that
 //   category's button. It is a secondary action, never the WhatsApp green,
 //   which is kept for the main action.
+// - Its last section is the entry to registration: "¿Tienes un negocio en
+//   {municipio}?" and "Registra tu negocio gratis", the primary action, to
+//   the registration page of the locality.
 // - The title and the description are the site's in the locality (the
 //   layout's), and the canonical is the home's own path.
 // No client JavaScript.
@@ -28,8 +31,9 @@ import { SPORTS_CATEGORY_SLUG } from "../core/catalogue/categories.ts";
 import { categoryEmoji } from "../core/catalogue/category-emoji.ts";
 import type { CatalogueEntry } from "../core/catalogue/root-urls.ts";
 import { localityPath } from "../core/locality/paths.ts";
+import { registrationPath } from "../core/registration/paths.ts";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { SECONDARY_BUTTON } from "../lib/buttons.ts";
+import { PRIMARY_BUTTON, SECONDARY_BUTTON } from "../lib/buttons.ts";
 import { requireLocality } from "../lib/locality.ts";
 import CategoryGrid from "./CategoryGrid.astro";
 import SearchBox from "./SearchBox.astro";
@@ -83,12 +87,11 @@ const sectionHeading = "text-xl font-bold tracking-tight break-words";
       </a>
     </section>
 
-    {/* The entry to registration joins the home with the registration page
-        (epic E), here, as its last section: "¿Tienes un negocio en
-        {municipio}?" as an h2 with sectionHeading, and "Registra tu negocio
-        gratis" with PRIMARY_BUTTON (px-6 py-3 text-base), linked with
-        localityPath(locality, "registro"), centred above a top border
-        (border-t border-line pt-8). A link to a page that does not exist yet
-        fails the link checks. */}
+    <section class="flex flex-col items-center gap-3 border-t border-line pt-8 text-center">
+      <h2 class={sectionHeading}>{`¿Tienes un negocio en ${locality.name}?`}</h2>
+      <a href={registrationPath(locality)} class={`${PRIMARY_BUTTON} px-6 py-3 text-base`}>
+        Registra tu negocio gratis
+      </a>
+    </section>
   </div>
 </BaseLayout>

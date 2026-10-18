@@ -95,7 +95,35 @@ test.describe("Home of the site inside the layout, with the entry to registratio
       "h1 ¿Qué necesitas en Tizayuca?",
       "h2 Busca por categoría",
       "h2 Deporte en Tizayuca",
+      "h2 ¿Tienes un negocio en Tizayuca?",
     ]);
+  });
+
+  // Scenario: entry to registration from the home; business-registration,
+  // "Public registration page on a single screen": scenario "the owner
+  // reaches registration from the home page"
+  test('"¿Tienes un negocio en Tizayuca?" and "Registra tu negocio gratis", in WhatsApp green, lead to the registration page', async ({
+    page,
+  }) => {
+    await page.goto(HOME);
+    const main = page.getByRole("main");
+    const heading = main.getByRole("heading", {
+      level: 2,
+      name: "¿Tienes un negocio en Tizayuca?",
+    });
+    const entry = main.getByRole("link", { name: "Registra tu negocio gratis", exact: true });
+
+    await expect(heading).toBeVisible();
+    const [headingBox, entryBox] = [await box(heading), await box(entry)];
+    expect(entryBox.y).toBeGreaterThan(headingBox.y);
+    expect(entryBox.height).toBeGreaterThanOrEqual(44);
+    // The primary action: WhatsApp green with ink text.
+    expect(await entry.evaluate((link) => getComputedStyle(link).backgroundColor)).toBe(
+      "rgb(37, 211, 102)",
+    );
+    await entry.click();
+    await expect(page).toHaveURL(`${HOME}/registro`);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Registra tu negocio gratis");
   });
 
   // base-layout, "Server Component with a document in es-MX and base
@@ -210,7 +238,11 @@ test.describe("The home page shows the 8 categories as large buttons", () => {
     const hrefs = await main
       .getByRole("link")
       .evaluateAll((links) => links.map((link) => link.getAttribute("href") ?? ""));
-    expect(hrefs).toEqual([...CATEGORY_LINKS.map(([, href]) => href), SPORTS_LISTING]);
+    expect(hrefs).toEqual([
+      ...CATEGORY_LINKS.map(([, href]) => href),
+      SPORTS_LISTING,
+      `${HOME}/registro`,
+    ]);
     const forms = await main
       .locator("form")
       .evaluateAll((all) =>

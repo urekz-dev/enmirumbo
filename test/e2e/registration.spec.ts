@@ -1,0 +1,636 @@
+// Scenarios of docs/specs/business-registration.md on the built site, with
+// the seeded directory of Tizayuca: "Public registration page on a single
+// screen", "Required and optional form fields", "The "¿Qué ofreces?" example
+// adapts to the chosen category", "The server normalizes and validates the
+// WhatsApp to 10 digits", "The server validates every field and returns
+// per-field errors in Spanish", "One card per WhatsApp number", "Consent with
+// a visible simplified notice and a consent record", "Nobody consents to a
+// notice version they did not have in front of them", "Zone "Otra" with free
+// text pending normalization", "A successful submission queues the business
+// and shows the thank-you screen", "Form states and registration
+// accessibility", "The zone options come from the active locality (v2)",
+// "The zone is typed with the locality's zones as suggestions, and a name
+// that is none of them is kept as "Otra" (v2)", "The registration's honeypot
+// and per-IP quota are those of the public forms (v2)" and "The registration
+// page of a locality lives under it, and lands on its thank-you page (v2)".
+// The form is rendered state by state in test/astro/registration.test.ts,
+// and the submission is tested with the database in
+// test/worker/registration.test.ts; the layout rules of the registration
+// pages (390px, metadata, brand, the one script) are checked by
+// surfaces.spec.ts, the entries of the home and of the empty listings by
+// home.spec.ts and listings.spec.ts.
+//
+// Every business this file creates in Tizayuca has a number of the
+// 7719994xxx series, and is removed before and after. Miniflare gives every
+// request of this machine a loopback address, which the quota does not
+// count; the test of the quota sends the address Cloudflare would write, one
+// from the IPv6 range reserved for documentation, new on every run.
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { and, eq, like } from "drizzle-orm";
+import { newBusinessId } from "../../src/core/business/id.ts";
+import { businesses, categories, zones } from "../../src/core/db/schema/index.ts";
+import { NOTICE_VERSION } from "../../src/core/legal/version.ts";
+import { withDatabase } from "./database.ts";
+
+const TIZAYUCA = "13069";
+const HOME = "/hidalgo/tizayuca";
+const FORM = `${HOME}/registro`;
+const THANKS = `${FORM}/gracias`;
+const PHONES = "7719994";
+
+const THANK_YOU =
+  "¡Gracias! Tu negocio está en revisión. Te contactaremos por WhatsApp para confirmar tus datos antes de publicarlo.";
+const DUPLICATE =
+  "Este número ya tiene una ficha registrada. Si es tu negocio, no hace falta registrarlo otra vez: te vamos a pasar por WhatsApp el enlace para editarlo.";
+
+async function removeRegistrations(): Promise<void> {
+  await withDatabase(async (db) => {
+    await db
+      .delete(businesses)
+      .where(and(eq(businesses.localityCode, TIZAYUCA), like(businesses.whatsapp, `${PHONES}%`)));
+  });
+}
+
+type Business = typeof businesses.$inferSelect;
+
+/** The businesses of Tizayuca with `whatsapp`. */
+async function businessesOf(whatsapp: string): Promise<Business[]> {
+  let rows: Business[] = [];
+  await withDatabase(async (db) => {
+    rows = await db
+      .select()
+      .from(businesses)
+      .where(and(eq(businesses.localityCode, TIZAYUCA), eq(businesses.whatsapp, whatsapp)));
+  });
+  return rows;
+}
+
+/** The id of the zone of Tizayuca named `name`. */
+async function zoneIdOf(name: string): Promise<number> {
+  let id = 0;
+  await withDatabase(async (db) => {
+    const [zone] = await db
+      .select({ id: zones.id })
+      .from(zones)
+      .where(and(eq(zones.localityCode, TIZAYUCA), eq(zones.name, name)));
+    id = zone?.id ?? 0;
+  });
+  return id;
+}
+
+/** What the form of the page is filled with; a field left out is not touched. */
+interface Fields {
+  name?: string;
+  category?: string;
+  whatsapp?: string;
+  zone?: string;
+  whatYouOffer?: string;
+  homeDelivery?: boolean;
+  landline?: string;
+  address?: string;
+  openingHours?: string;
+  facebookUrl?: string;
+  consent?: boolean;
+}
+
+const LABELS = {
+  name: "¿Cómo se llama tu negocio?",
+  category: "¿A qué se dedica?",
+  whatsapp: "Tu WhatsApp (10 dígitos)",
+  zone: "¿En qué colonia estás?",
+  whatYouOffer: "¿Qué ofreces? (opcional)",
+  homeDelivery: "¿Haces entregas o vas a domicilio? (opcional)",
+  landline: "Teléfono fijo (opcional)",
+  address: "Dirección o referencias (opcional)",
+  openingHours: "Horario (opcional)",
+  facebookUrl: "Link de tu Facebook (opcional)",
+  consent:
+    "Acepto el aviso de privacidad y confirmo que este negocio es mío o que tengo permiso para registrarlo.",
+} as const;
+
+const field = (page: Page, key: keyof typeof LABELS) =>
+  page.getByLabel(LABELS[key], { exact: true });
+
+/** Fills the form of the page as a person would. */
+async function fill(page: Page, fields: Fields): Promise<void> {
+  for (const key of [
+    "name",
+    "whatsapp",
+    "zone",
+    "whatYouOffer",
+    "landline",
+    "address",
+    "openingHours",
+    "facebookUrl",
+  ] as const) {
+    const value = fields[key];
+    if (value !== undefined) await field(page, key).fill(value);
+  }
+  if (fields.category !== undefined) {
+    await field(page, "category").selectOption({ label: fields.category });
+  }
+  if (fields.homeDelivery !== undefined)
+    await field(page, "homeDelivery").setChecked(fields.homeDelivery);
+  if (fields.consent !== undefined) await field(page, "consent").setChecked(fields.consent);
+}
+
+const submitButton = (page: Page) =>
+  page.getByRole("button", { name: "Registrar mi negocio", exact: true });
+
+/** Sends the form of the page, and gives the answer to the POST. */
+async function send(page: Page) {
+  const [response] = await Promise.all([
+    page.waitForResponse((answer) => answer.request().method() === "POST"),
+    submitButton(page).click(),
+  ]);
+  return response;
+}
+
+/** The five required fields of a valid registration. */
+const REQUIRED = (whatsapp: string): Fields => ({
+  name: "Taller de Prueba Inventado",
+  category: "Talleres",
+  whatsapp,
+  zone: "Huicalco",
+  consent: true,
+});
+
+/** Posts the registration form as a browser would, without following the answer. */
+function post(request: APIRequestContext, form: Record<string, string>, path = FORM) {
+  return request.post(`${path}?_action=register`, { form, maxRedirects: 0 });
+}
+
+/** A valid submission, as posted. */
+const posted = (whatsapp: string, extra: Record<string, string> = {}) => ({
+  website: "",
+  name: "Taller Posteado de Mentiras",
+  category: "talleres",
+  whatsapp,
+  zone: "Huicalco",
+  noticeVersion: NOTICE_VERSION,
+  consent: "on",
+  ...extra,
+});
+
+/** The error next to the field labelled `label`, by its aria-describedby. */
+async function errorOf(page: Page, key: keyof typeof LABELS): Promise<string> {
+  const control = field(page, key);
+  await expect(control).toHaveAttribute("aria-invalid", "true");
+  const ids = ((await control.getAttribute("aria-describedby")) ?? "").split(" ");
+  const id = ids.find((one) => one.endsWith("-error")) ?? "";
+  return ((await page.locator(`[id="${id}"]`).innerText()) ?? "").replace(/^⚠\s*/, "").trim();
+}
+
+test.beforeAll(removeRegistrations);
+test.afterAll(removeRegistrations);
+
+test.describe("Registering without JavaScript, from the home to the thank-you page", () => {
+  test.use({ javaScriptEnabled: false });
+
+  // Scenarios: the owner reaches registration from the home page; empty form
+  // on open; empty required fields; announced errors; what was entered is
+  // not lost; number with fewer than 10 digits; Facebook link with a
+  // disallowed scheme; landline phone with letters; variants of the same
+  // number are saved the same way; successful registration; reload after
+  // success; submission without JS
+  test("the errors come back next to their fields with what was written, then the registration is saved", async ({
+    page,
+    context,
+  }) => {
+    await page.goto(HOME);
+    await page.getByRole("link", { name: "Registra tu negocio gratis", exact: true }).click();
+    await expect(page).toHaveURL(FORM);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Registra tu negocio gratis");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+
+    // Nothing written: an error next to each required field, the focus on the first.
+    const empty = await send(page);
+    expect(empty.status()).toBe(400);
+    expect(empty.headers()["cache-control"]).toBe("no-store");
+    expect(empty.headers()["set-cookie"]).toBeUndefined();
+    expect(await errorOf(page, "name")).toBe("Escribe el nombre de tu negocio");
+    expect(await errorOf(page, "category")).toBe("Elige una categoría");
+    expect(await errorOf(page, "whatsapp")).toBe(
+      "Revisa tu número de WhatsApp: deben ser 10 dígitos",
+    );
+    expect(await errorOf(page, "zone")).toBe("Escribe el nombre de tu colonia");
+    expect(await errorOf(page, "consent")).toBe("Marca la casilla para poder registrar tu negocio");
+    await expect(field(page, "name")).toBeFocused();
+
+    // Some fields wrong: their errors, and everything that was written stays.
+    await fill(page, {
+      name: "Taller Mecánico Güicho de Mentiras",
+      category: "Talleres",
+      whatsapp: "771 999 40",
+      zone: "haciendas de tizayuca",
+      whatYouOffer: "afinación y frenos",
+      homeDelivery: true,
+      landline: "no tengo",
+      openingHours: "Lunes a sábado de 9 a 7",
+      facebookUrl: "facebook.com/tallerguicho",
+      consent: true,
+    });
+    const wrong = await send(page);
+    expect(wrong.status()).toBe(400);
+    expect(await errorOf(page, "whatsapp")).toBe(
+      "Revisa tu número de WhatsApp: deben ser 10 dígitos",
+    );
+    expect(await errorOf(page, "landline")).toBe(
+      "Revisa el teléfono fijo: escribe solo números (puedes usar espacios, guiones o paréntesis)",
+    );
+    expect(await errorOf(page, "facebookUrl")).toBe(
+      "El link de Facebook debe empezar con http:// o https://",
+    );
+    await expect(field(page, "whatsapp")).toBeFocused();
+    await expect(field(page, "name")).toHaveValue("Taller Mecánico Güicho de Mentiras");
+    await expect(field(page, "category")).toHaveValue("talleres");
+    await expect(field(page, "zone")).toHaveValue("haciendas de tizayuca");
+    await expect(field(page, "whatYouOffer")).toHaveValue("afinación y frenos");
+    await expect(field(page, "homeDelivery")).toBeChecked();
+    await expect(field(page, "openingHours")).toHaveValue("Lunes a sábado de 9 a 7");
+    // The consent has to be checked again.
+    await expect(field(page, "consent")).not.toBeChecked();
+    // What was written stays in neither the address nor a cookie.
+    expect(decodeURIComponent(page.url())).not.toMatch(/Güicho|tallerguicho|haciendas/);
+    expect(await businessesOf("7719994001")).toEqual([]);
+
+    // Corrected: the thank-you page.
+    await fill(page, {
+      whatsapp: "+52 771 999 4001",
+      landline: "(775) 123-45-67",
+      facebookUrl: "https://facebook.com/tallerguicho",
+      consent: true,
+    });
+    await submitButton(page).click();
+    await expect(page).toHaveURL(THANKS);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(THANK_YOU);
+    const [saved, ...more] = await businessesOf("7719994001");
+    expect(more).toEqual([]);
+    expect(saved).toMatchObject({
+      name: "Taller Mecánico Güicho de Mentiras",
+      zoneId: await zoneIdOf("Haciendas de Tizayuca"),
+      zoneOther: null,
+      whatYouOffer: "afinación y frenos",
+      homeDelivery: true,
+      landline: "(775) 123-45-67",
+      openingHours: "Lunes a sábado de 9 a 7",
+      facebookUrl: "https://facebook.com/tallerguicho",
+      status: "in_review",
+      origin: "organic",
+      publishedAt: null,
+      managementTokenHash: null,
+      consentedToNoticeVersion: NOTICE_VERSION,
+      nameNormalized: "taller mecanico guicho de mentiras",
+    });
+
+    // Reloading the thank-you page creates nothing.
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(THANK_YOU);
+    expect(await businessesOf("7719994001")).toHaveLength(1);
+    expect(await context.cookies()).toEqual([]);
+
+    await page.getByRole("link", { name: "Volver al inicio" }).click();
+    await expect(page).toHaveURL(HOME);
+    // A card in review is nowhere in the directory.
+    const search = await page.request.get(`${HOME}/buscar?q=guicho`);
+    expect(await search.text()).not.toContain("Güicho");
+  });
+
+  // Scenarios: registration with zone "Otra"; options (v2); registration with
+  // required fields only
+  test("a colonia that is none of the suggestions is saved as written, for the admin to normalize", async ({
+    page,
+  }) => {
+    await page.goto(FORM);
+    const zone = field(page, "zone");
+    const list = await zone.getAttribute("list");
+    const suggestions = await page
+      .locator(`datalist[id="${list}"] option`)
+      .evaluateAll((options) => options.map((option) => option.getAttribute("value")));
+    expect(suggestions).toHaveLength(105);
+    expect(suggestions).toEqual(
+      expect.arrayContaining(["Haciendas de Tizayuca", "El Carmen (Colonia)", "Huicalco"]),
+    );
+    expect(suggestions).not.toContain("Otra");
+
+    await fill(page, { ...REQUIRED("7719994002"), zone: "Rinconada del Venado de Mentiras" });
+    await submitButton(page).click();
+    await expect(page).toHaveURL(THANKS);
+    expect(await businessesOf("7719994002")).toEqual([
+      expect.objectContaining({
+        zoneId: null,
+        zoneOther: "Rinconada del Venado de Mentiras",
+        whatYouOffer: null,
+        landline: null,
+        address: null,
+        openingHours: null,
+        facebookUrl: null,
+        homeDelivery: false,
+        photoKey: null,
+      }),
+    ]);
+  });
+
+  // Scenarios: number with a published card; number with a card in review;
+  // duplicate written in another format; registration does not hand out
+  // management links
+  test("a number whose card is published or in review is told so, and nothing is created", async ({
+    page,
+  }) => {
+    for (const [written, number] of [
+      ["+52 771 999 0101", "7719990101"],
+      ["771-999-0111", "7719990111"],
+    ] as const) {
+      await page.goto(FORM);
+      await fill(page, { ...REQUIRED(written), name: "Otro negocio de Mentiras" });
+      const response = await send(page);
+      expect(response.status(), number).toBe(400);
+      expect(await errorOf(page, "whatsapp"), number).toBe(DUPLICATE);
+      expect(await businessesOf(number), number).toHaveLength(1);
+      const links = await page
+        .getByRole("main")
+        .getByRole("link")
+        .evaluateAll((all) => all.map((link) => link.getAttribute("href")));
+      expect(links, number).toEqual(["/aviso-de-privacidad"]);
+    }
+  });
+
+  // Scenarios: resubmission after a rejection; the form does not give away
+  // the rejection
+  test("a rejected card resubmitted with the same number goes back to review, and the owner sees the usual thank-you page", async ({
+    page,
+  }) => {
+    const whatsapp = "7719994010";
+    const reason = "Motivo de rechazo de mentiras";
+    await withDatabase(async (db) => {
+      const [talleres] = await db
+        .select({ id: categories.id })
+        .from(categories)
+        .where(eq(categories.slug, "talleres"));
+      await db.insert(businesses).values({
+        id: newBusinessId(),
+        localityCode: TIZAYUCA,
+        name: "Taller Rechazado de Mentiras",
+        categoryId: talleres?.id ?? 0,
+        whatsapp,
+        zoneOther: "Colonia de Mentiras",
+        consentedToNoticeAt: new Date("2026-09-01T12:00:00Z"),
+        consentedToNoticeVersion: NOTICE_VERSION,
+        registeredAt: new Date("2026-09-01T12:00:00Z"),
+        status: "rejected",
+        rejectedAt: new Date("2026-09-02T12:00:00Z"),
+        rejectionReason: reason,
+      });
+    });
+
+    await page.goto(FORM);
+    expect(await page.content()).not.toContain(reason);
+    await fill(page, { ...REQUIRED(whatsapp), name: "Taller Corregido de Mentiras" });
+    await submitButton(page).click();
+    await expect(page).toHaveURL(THANKS);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(THANK_YOU);
+    expect(await page.content()).not.toContain(reason);
+    expect(await businessesOf(whatsapp)).toEqual([
+      expect.objectContaining({
+        name: "Taller Corregido de Mentiras",
+        status: "in_review",
+        rejectedAt: null,
+        rejectionReason: null,
+        consentedToNoticeAt: new Date("2026-09-01T12:00:00Z"),
+      }),
+    ]);
+  });
+});
+
+test.describe("What a submission cannot do", () => {
+  // Scenario: the notice changed mid-entry; invented version in the
+  // submission; retry after the change
+  test("a submission with another notice version saves nothing and asks to read the notice again", async ({
+    request,
+  }) => {
+    for (const noticeVersion of [String(Number(NOTICE_VERSION) - 1), "", "99"]) {
+      const response = await post(request, posted("7719994020", { noticeVersion }));
+      expect(response.status(), noticeVersion).toBe(400);
+      expect(await response.text(), noticeVersion).toContain(
+        "El aviso de privacidad cambió mientras llenabas esto. Léelo otra vez y vuelve a marcar la casilla.",
+      );
+    }
+    expect(await businessesOf("7719994020")).toEqual([]);
+    const retry = await post(request, posted("7719994020"));
+    expect(retry.status()).toBe(303);
+    expect((await businessesOf("7719994020"))[0]?.consentedToNoticeVersion).toBe(NOTICE_VERSION);
+  });
+
+  // Scenarios: the client cannot publish itself; the client cannot set the
+  // search text; the submission does not choose where to return
+  test("fields a submission adds change nothing, and the answer is always the thank-you page of its locality", async ({
+    request,
+  }) => {
+    const response = await post(
+      request,
+      posted("7719994021", {
+        status: "published",
+        origin: "seeded",
+        publishedAt: "2026-01-01",
+        managementTokenHash: "a".repeat(64),
+        nameNormalized: "otra cosa",
+        consentedToNoticeVersion: "1",
+        redirect: "https://evil.example",
+        next: "//evil.example",
+      }),
+    );
+    expect(response.status()).toBe(303);
+    expect(response.headers()["location"]).toBe(THANKS);
+    expect(response.headers()["cache-control"]).toBe("no-store");
+    expect(response.headers()["set-cookie"]).toBeUndefined();
+    expect(await businessesOf("7719994021")).toEqual([
+      expect.objectContaining({
+        status: "in_review",
+        origin: "organic",
+        publishedAt: null,
+        managementTokenHash: null,
+        nameNormalized: "taller posteado de mentiras",
+        consentedToNoticeVersion: NOTICE_VERSION,
+      }),
+    ]);
+  });
+
+  test("the action reached any other way saves nothing", async ({ request }) => {
+    for (const path of [HOME, `${HOME}/servicios-del-hogar`, THANKS]) {
+      const response = await post(request, posted("7719994022"), path);
+      expect(response.status(), path).toBe(404);
+    }
+    const endpoint = await request.post("/_actions/register", { form: posted("7719994022") });
+    expect(endpoint.status()).toBe(404);
+    expect(endpoint.headers()["set-cookie"]).toBeUndefined();
+    expect(await businessesOf("7719994022")).toEqual([]);
+  });
+
+  test("the registration page of a municipality that is not served answers 404", async ({
+    request,
+  }) => {
+    const nowhere = "/hidalgo/municipio-inventado/registro";
+    expect((await request.get(nowhere)).status()).toBe(404);
+    expect((await post(request, posted("7719994023"), nowhere)).status()).toBe(404);
+    expect(await businessesOf("7719994023")).toEqual([]);
+  });
+});
+
+test.describe("The registration's honeypot and per-IP quota are those of the public forms (v2)", () => {
+  // Scenario: honeypot filled in a registration
+  test("a filled trap field lands on the same thank-you page and saves nothing", async ({
+    request,
+  }) => {
+    const response = await post(request, posted("7719994030", { website: "https://spam.example" }));
+
+    expect(response.status()).toBe(303);
+    expect(response.headers()["location"]).toBe(THANKS);
+    expect(await businessesOf("7719994030")).toEqual([]);
+  });
+
+  // Scenario: honeypot with only spaces
+  test("a trap field of only spaces is no trap: the registration is saved", async ({ request }) => {
+    const response = await post(request, posted("7719994031", { website: "   " }));
+
+    expect(response.status()).toBe(303);
+    expect(await businessesOf("7719994031")).toHaveLength(1);
+  });
+
+  // Scenarios: registration quota; independent counters
+  test("a fourth registration from one address in the hour saves nothing and says so", async ({
+    browser,
+  }) => {
+    const hex = () => Math.floor(Math.random() * 0x10000).toString(16);
+    const address = `2001:db8:${hex()}:${hex()}::39`;
+    const context = await browser.newContext({
+      javaScriptEnabled: false,
+      extraHTTPHeaders: { "CF-Connecting-IP": address },
+    });
+    const page = await context.newPage();
+    for (let n = 1; n <= 3; n++) {
+      await page.goto(FORM);
+      await fill(page, REQUIRED(`771999410${n}`));
+      await submitButton(page).click();
+      await expect(page).toHaveURL(THANKS);
+    }
+
+    await page.goto(FORM);
+    await fill(page, { ...REQUIRED("7719994104"), name: "El Cuarto de Mentiras" });
+    const over = await send(page);
+    expect(over.status()).toBe(429);
+    expect(over.headers()["cache-control"]).toBe("no-store");
+    await expect(page.getByRole("alert")).toHaveText(
+      /Ya recibimos varios registros desde aquí\. Espera un rato y vuelve a intentar\./,
+    );
+    await expect(field(page, "name")).toHaveValue("El Cuarto de Mentiras");
+    expect(await businessesOf("7719994104")).toEqual([]);
+
+    // The search and the reports of the same address are not held back.
+    expect((await page.goto(`${HOME}/buscar?q=taller`))?.status()).toBe(200);
+    expect(
+      (
+        await page.goto(`${HOME}/negocio/plomeria-los-fontaneros-ficticios-b5q68b2e72/reportar`)
+      )?.status(),
+    ).toBe(200);
+    await context.close();
+  });
+});
+
+test.describe("Registering with JavaScript", () => {
+  // Scenarios: home services example; sports example; the example changes
+  // when the category changes
+  test("the example of ¿Qué ofreces? follows the category, without erasing what was written", async ({
+    page,
+  }) => {
+    await page.goto(FORM);
+    const offer = field(page, "whatYouOffer");
+
+    await expect(offer).toHaveAttribute("placeholder", "ej. palabras clave de lo que ofreces");
+    await field(page, "category").selectOption({ label: "Servicios del hogar" });
+    await expect(offer).toHaveAttribute(
+      "placeholder",
+      "ej. plomería, destape de drenajes, bombas de agua",
+    );
+    await offer.fill("destape de drenajes");
+    await field(page, "category").selectOption({ label: "Clubes y escuelas deportivas" });
+    await expect(offer).toHaveAttribute(
+      "placeholder",
+      "ej. futbol infantil 6-12 años, entrenamientos martes y jueves",
+    );
+    await expect(offer).toHaveValue("destape de drenajes");
+    await field(page, "category").selectOption({ label: "Elige una categoría" });
+    await expect(offer).toHaveAttribute("placeholder", "ej. palabras clave de lo que ofreces");
+  });
+
+  // Scenario: submitting state
+  test("while the form is sent the button says Enviando... and is disabled, so a second tap sends nothing", async ({
+    page,
+  }) => {
+    await page.goto(FORM);
+    await fill(page, REQUIRED("7719994040"));
+    // The test keeps the form on the page: after the form's own script, a
+    // listener counts each submission and cancels its navigation.
+    await page.locator("form[data-registration-form]").evaluate((form) => {
+      const counted = form as HTMLFormElement & { submissions?: number };
+      counted.submissions = 0;
+      form.addEventListener("submit", (event) => {
+        counted.submissions = (counted.submissions ?? 0) + 1;
+        event.preventDefault();
+      });
+    });
+
+    await submitButton(page).click();
+    const sending = page.getByRole("button", { name: "Enviando...", exact: true });
+    await expect(sending).toBeDisabled();
+    // A second tap sends nothing.
+    await sending.click({ force: true });
+    const submissions = await page
+      .locator("form[data-registration-form]")
+      .evaluate((form) => (form as HTMLFormElement & { submissions?: number }).submissions);
+    expect(submissions).toBe(1);
+  });
+
+  // Registration works without client JavaScript: scenario "JS limited to
+  // the example field" (the script changes nothing else)
+  test("with the page's script the registration lands on the thank-you page as without it", async ({
+    page,
+  }) => {
+    await page.goto(FORM);
+    await fill(page, { ...REQUIRED("7719994041"), category: "Servicios del hogar" });
+    await submitButton(page).click();
+    await expect(page).toHaveURL(THANKS);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(THANK_YOU);
+    expect(await businessesOf("7719994041")).toHaveLength(1);
+  });
+
+  // Scenario: mobile-first at 390px; the content security policy lets the
+  // form's own script run
+  test("on a 390px phone every control is at least 44px, nothing scrolls sideways, and the policy allows the script", async ({
+    page,
+  }) => {
+    const response = await page.goto(FORM);
+    expect(response?.headers()["content-security-policy"]).toMatch(/script-src 'self'/);
+    const main = page.getByRole("main");
+
+    for (const control of await main
+      .locator(
+        "input:not([type=hidden]):not([type=checkbox]):not([tabindex='-1']), select, textarea, button, form a",
+      )
+      .all()) {
+      const box = await control.boundingBox();
+      expect(
+        box?.height ?? 0,
+        await control.evaluate((el) => el.outerHTML.slice(0, 80)),
+      ).toBeGreaterThanOrEqual(44);
+    }
+    for (const label of await main.locator("label:has(input[type=checkbox])").all()) {
+      expect((await label.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    await expect(page.locator("script")).toHaveCount(1);
+  });
+});

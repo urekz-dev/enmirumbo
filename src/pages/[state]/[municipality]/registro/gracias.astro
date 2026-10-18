@@ -1,0 +1,31 @@
+---
+// The thank-you page of a registration, /{estado}/{municipio}/registro/gracias
+// (docs/specs/business-registration.md, "A successful submission queues the
+// business and shows the thank-you screen" and "The registration page of a
+// locality lives under it, and lands on its thank-you page (v2)"). The
+// registration form answers a received registration with a 303 here, so
+// reloading this page creates nothing: it has no form, and no query.
+//
+// It says the same whatever happened to the submission (a new card, the
+// resubmission of a rejected one or a bot caught by the trap): the literal
+// of PRD §6.1, and "Volver al inicio" to the home of the locality. It reads
+// nothing, is never indexed and its title is static. No client JavaScript.
+import { localityPath } from "../../../../core/locality/paths.ts";
+import { THANK_YOU_MESSAGE } from "../../../../core/registration/submission.ts";
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { requireLocality } from "../../../../lib/locality.ts";
+
+const locality = requireLocality(Astro.locals);
+---
+
+<BaseLayout title="Gracias por registrar tu negocio" noindex>
+  <section class="flex flex-1 flex-col items-center justify-center gap-6 py-12 text-center">
+    <h1 class="max-w-md text-2xl font-bold tracking-tight sm:text-3xl">{THANK_YOU_MESSAGE}</h1>
+    <a
+      href={localityPath(locality)}
+      class="inline-flex min-h-11 items-center justify-center px-4 text-base font-semibold text-action-strong underline underline-offset-4"
+    >
+      Volver al inicio
+    </a>
+  </section>
+</BaseLayout>

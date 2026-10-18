@@ -1,0 +1,60 @@
+---
+// The registration page of a locality, in the global layout
+// (docs/specs/business-registration.md, "Public registration page on a
+// single screen" and "The registration page of a locality lives under it,
+// and lands on its thank-you page (v2)"): "Registra tu negocio gratis" as its
+// only `h1`, the phrase under it and the form (RegistrationForm.astro). The
+// page (src/pages/[state]/[municipality]/registro.astro) reads the catalogue
+// and the submission; this renders them, so each state is tested with the
+// Container API.
+//
+// It may be indexed and is in the sitemap: its canonical is its own address,
+// and its title and description name the locality from its record. Neither
+// carries anything the owner wrote.
+import type { RegistrationCatalogue } from "../core/registration/catalogue.ts";
+import { registrationPath } from "../core/registration/paths.ts";
+import type {
+  GeneralError,
+  RegistrationDraft,
+  RegistrationErrors,
+} from "../core/registration/submission.ts";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { requireLocality } from "../lib/locality.ts";
+import RegistrationForm from "./RegistrationForm.astro";
+
+interface Props {
+  catalogue: RegistrationCatalogue;
+  /** Where the form posts (`actions.register`). */
+  action: string;
+  draft: RegistrationDraft;
+  errors: RegistrationErrors;
+  general: GeneralError | null;
+}
+
+const { catalogue, action, draft, errors, general } = Astro.props;
+const locality = requireLocality(Astro.locals);
+---
+
+<BaseLayout
+  title={`Registra tu negocio gratis en ${locality.name}`}
+  description={`Registra gratis tu negocio de ${locality.name} en enmirumbo: un solo formulario, sin cuenta ni contraseña. Lo revisamos y te contactamos por WhatsApp.`}
+  canonicalPath={registrationPath(locality)}
+>
+  <section class="flex flex-col gap-6 py-4">
+    <div class="flex flex-col gap-2">
+      <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">Registra tu negocio gratis</h1>
+      <p class="text-ink-muted">
+        Llena este formulario en un par de minutos, sin cuenta ni contraseña. En cuanto lo
+        revisemos, te contactamos por WhatsApp.
+      </p>
+    </div>
+    <RegistrationForm
+      action={action}
+      catalogue={catalogue}
+      municipality={locality.name}
+      draft={draft}
+      errors={errors}
+      general={general}
+    />
+  </section>
+</BaseLayout>

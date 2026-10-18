@@ -435,6 +435,8 @@ The version that is stored MUST always be the one the server has in force, never
 
 ### Requirement: Zone "Otra" with free text pending normalization
 
+Superseded in v2 by The zone is typed with the locality's zones as suggestions, and a name that is none of them is kept as "Otra" (v2) — source: decision of the product owner, 2026-10-18.
+
 If the owner chooses "Otra" in the zone list, the form MUST ask for the name as free text and that text is required. The registration MUST be saved with the free text and without a catalogue zone, so that the admin normalizes it later (PRD §6.3, Appendix A). If they choose a catalogue zone, the free text MUST be ignored.
 
 #### Scenario: registration with zone "Otra"
@@ -760,21 +762,21 @@ Nothing the owner writes in the registration —business name, WhatsApp, phone, 
 
 ### Requirement: The zone options come from the active locality (v2)
 
-Added in v2 — source: ADR 0006, PRD §3 (Flow A).
+Added in v2 — source: ADR 0006, PRD §3 (Flow A). Amended on 2026-10-18 by EMR-39 and the decision of the product owner of that date: the field that offers the zones is designed ("The zone is typed with the locality's zones as suggestions, and a name that is none of them is kept as "Otra" (v2)"): the zones are suggestions of a text field, there is no option "Otra" to choose, and a submission names a zone by its name, so a zone of another locality is kept as free text instead of being an error.
 
-The registration page of a locality MUST offer as zones the visible zones of that locality, plus the option "Otra" as before. A business MUST be created in the locality of the page where it registered.
+The registration page of a locality MUST offer as zones the visible zones of that locality, and nothing else: no zone of another locality and no hidden zone. A business MUST be created in the locality of the page where it registered.
 
-This replaces the zones of the scenario "closed catalogue lists" of "Required and optional form fields": the list is not the prototype's 21 zones but the visible zones of the locality (Tizayuca has 105, from SEPOMEX), plus "Otra". How the field lets the owner find their zone among them is designed with the registration form (epic E).
+This replaces the zones of the scenario "closed catalogue lists" of "Required and optional form fields": the list is not the prototype's 21 zones but the visible zones of the locality (Tizayuca has 105, from SEPOMEX), offered as the suggestions of the zone field.
 
 #### Scenario: options
 
 - **WHEN** an owner opens the registration page of Tizayuca
-- **THEN** the zone options are the visible zones of Tizayuca and "Otra", and no zone of another locality or hidden zone
+- **THEN** the zone suggestions are the visible zones of Tizayuca, and no zone of another locality or hidden zone
 
 #### Scenario: a zone of another locality
 
-- **WHEN** a submission to the registration of Tizayuca carries a zone of another locality
-- **THEN** nothing is saved and the zone field shows an error
+- **WHEN** a submission to the registration of Tizayuca carries the name of a zone of another locality, or of a hidden zone of Tizayuca
+- **THEN** no catalogue zone is linked to the business: it is saved with that name as the free text of "Otra", pending the admin's normalization
 
 #### Scenario: the locality of the new business
 
@@ -888,3 +890,134 @@ The Worker MUST validate the type and size of the uploaded photo and transform i
 
 - **WHEN** the transformation fails
 - **THEN** the owner sees "No pudimos preparar tu foto. Intenta con otra.", no business is created and no object remains in the bucket
+
+### Requirement: The registration page of a locality lives under it, and lands on its thank-you page (v2)
+
+Added in v2 — source: ADR 0007, ADR 0019, EMR-39; `public-directory`, "The report form posts to its own address, which names the card (v2)", whose pattern every public form follows. It takes the place of the prototype's `/registro` and `/registro/gracias` at the root, and amends "No form data travels to the measurement" on the address of the answer with errors.
+
+The registration form of a locality is `/{estado}/{municipio}/registro`, and its thank-you page `/{estado}/{municipio}/registro/gracias`; both segments are reserved (`data-model`, "The slugs of the catalogues do not produce ambiguous URLs at the root of a locality (v2)"). The page MUST be headed with the literal text "Registra tu negocio gratis" as its only `h1`, followed by the literal phrase "Llena este formulario en un par de minutos, sin cuenta ni contraseña. En cuanto lo revisemos, te contactamos por WhatsApp.", and then the form. The form page may be indexed: it declares its own address as canonical, its title is "Registra tu negocio gratis en {municipio}", its description "Registra gratis tu negocio de {municipio} en enmirumbo: un solo formulario, sin cuenta ni contraseña. Lo revisamos y te contactamos por WhatsApp.", both with the municipality read from the locality record, and the sitemap lists it (`base-layout`, "The sitemap lists the pages that exist, from the database (v2)").
+
+The form posts to the address of its own page with the server action of the registration, and the business is created in the locality of that address: no field of the submission chooses or changes the locality. The action reached any other way —posted from another page, or at its own endpoint `/_actions/register`— MUST save nothing and answer 404, and so does the registration page of a municipality that is not an active locality. A received submission —a new card, the resubmission of a rejected card or a submission caught by the trap field, which MUST look the same— MUST be answered with a `303` to the thank-you page, with `Cache-Control: no-store`, so that reloading it never sends the form again; the server builds that address, and no field of the submission can change it. Any other answer renders the form again in the answer to that same submission, with the error next to each field and what the owner had written, read from that submission, with the status of its error (`400` for the fields, a number that already has a card included; `429` over the quota; `500` when it could not be saved), `Cache-Control: no-store` and no `Set-Cookie`. What the owner wrote MUST NOT travel in an address or a cookie, and MUST NOT be kept on the server: the address of that answer is the form's with the name of the action alone (`/registro?_action=register`), which carries no value, and the measurement leaves the query out of the addresses it records (`base-layout`, "The measurement carries no personal data or text typed by people"), so only `/registro` and `/registro/gracias` reach it.
+
+The thank-you page MUST show the literal message of "A successful submission queues the business and shows the thank-you screen" as its only `h1` and a link "Volver al inicio" to the home of the locality, and nothing else. It has no form and no query, reads nothing, declares `noindex, follow` and no canonical, has the static title "Gracias por registrar tu negocio", is left out of the sitemap and is disallowed by `robots.txt` (`base-layout`, "The open `robots.txt` allows the public site and excludes what is not relevant (v2)").
+
+Until the anti-bot check arrives (EMR-42) with "The registration and edit forms require JavaScript for the anti-bot check and say so (v2)", the form is submitted and validated without client JavaScript, as "Registration works without client JavaScript" describes.
+
+#### Scenario: the registration of Tizayuca
+
+- **WHEN** an owner taps "Registra tu negocio gratis" on the home of Tizayuca
+- **THEN** they land on `/hidalgo/tizayuca/registro`, headed "Registra tu negocio gratis", whose canonical is that address
+
+#### Scenario: a valid registration
+
+- **WHEN** an owner sends the form filled in correctly, with client JavaScript disabled
+- **THEN** the answer is a `303` to `/hidalgo/tizayuca/registro/gracias`, which shows "¡Gracias! Tu negocio está en revisión. Te contactaremos por WhatsApp para confirmar tus datos antes de publicarlo." and "Volver al inicio", and the business is saved in Tizayuca
+
+#### Scenario: a submission with errors
+
+- **WHEN** an owner sends the form with a field wrong
+- **THEN** the answer is the form again, with status `400`, `Cache-Control: no-store`, no cookie, the error next to that field and what they wrote still in the form, at an address that carries only the name of the action
+
+#### Scenario: the action reached from elsewhere
+
+- **WHEN** the registration action is posted to the home of a locality, to another page or to `/_actions/register`
+- **THEN** the answer is a 404 and no business is created
+
+#### Scenario: the submission does not choose where to return
+
+- **WHEN** a valid submission arrives with extra fields that point to a foreign site
+- **THEN** the answer is the thank-you page of the same locality, which the server builds, and no cookie goes out
+
+#### Scenario: the thank-you page is not indexed
+
+- **WHEN** a search engine reads the thank-you page
+- **THEN** it asks not to be indexed, declares no canonical, appears in no sitemap and is disallowed by `robots.txt`, while the form page is indexable and listed in the sitemap
+
+### Requirement: The zone is typed with the locality's zones as suggestions, and a name that is none of them is kept as "Otra" (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-39); ADR 0006. With 105 zones in Tizayuca, a list to scroll is no way to find one's own. It takes the place of "Zone "Otra" with free text pending normalization", and in "Required and optional form fields" of the zone as "closed catalogue list with an "Otra" option + free text" and of "Otra" at the end of the zones in the scenario "closed catalogue lists"; and in "The server validates every field and returns per-field errors in Spanish", of the zone outside the catalogue as a rejection, and of the literal "Elige tu colonia", which no field shows any more.
+
+The zone MUST be one text field, labelled "¿En qué colonia estás?", whose suggestions are the browser's own (a `datalist`, with no JavaScript of the site): the visible zones of the locality ("The zone options come from the active locality (v2)"), each by the name the directory shows it with (`public-directory`, "A zone whose name repeats in its locality is shown with its settlement type (v2)"), in alphabetical order. Typing part of a name offers the zones that contain it: typing "hacien" offers "Haciendas de Tizayuca". Below the field, the literal help line MUST always be visible: "Empieza a escribirla y elígela de la lista. Si no aparece, escríbela completa y nosotros la acomodamos." There is no option "Otra" to choose and no second field for it.
+
+The server MUST decide the zone from the text that arrives, compared as the site compares zone names, ignoring capitals, accents and punctuation: a text that is the display name of one visible zone of the locality ("El Carmen (Fraccionamiento)"), or else the name of exactly one ("El Chopo", when the zone that shares its name is hidden), selects that zone, and nothing else is kept. A text that names no visible zone of the locality, or names several ("El Carmen", which two share), is kept as the free text of "Otra", trimmed, with no catalogue zone, so that the admin normalizes it later (PRD §6.3, Appendix A; `data-model`, "The zone allows "Otra" with free text pending normalization"). The submission carries a name, never an identifier, so no submission can link a business to a zone of another locality or to a hidden zone. An empty zone MUST NOT be saved and MUST show the literal message "Escribe el nombre de tu colonia" next to the field; a zone of more than 80 characters, "Deja esto en 80 caracteres o menos".
+
+#### Scenario: the suggestions
+
+- **WHEN** an owner of Tizayuca types "hacien" in "¿En qué colonia estás?"
+- **THEN** the browser suggests "Haciendas de Tizayuca", among the visible zones of Tizayuca, and the help line is in view
+
+#### Scenario: a zone typed without capitals or accents
+
+- **WHEN** an owner writes "haciendas de tizayuca" and sends the form
+- **THEN** the business is saved with the catalogue zone "Haciendas de Tizayuca" and without free text
+
+#### Scenario: registration with zone "Otra"
+
+- **WHEN** an owner writes "Rinconada del Venado", which is no zone of the locality, and sends the form
+- **THEN** the business is saved with that free text and without a catalogue zone, pending normalization
+
+#### Scenario: a name two zones share
+
+- **WHEN** an owner writes "El Carmen", and the locality has "El Carmen (Colonia)" and "El Carmen (Fraccionamiento)"
+- **THEN** the business is saved with "El Carmen" as the free text of "Otra", and the admin decides which one it is
+
+#### Scenario: no zone
+
+- **WHEN** an owner sends the form with the zone empty
+- **THEN** nothing is saved and they see "Escribe el nombre de tu colonia" next to the field
+
+### Requirement: Every check of the registration form is the server's, with fixed limits (v2)
+
+Added in v2 — source: EMR-39. It settles what "The server validates every field and returns per-field errors in Spanish", "The server normalizes and validates the WhatsApp to 10 digits", "Consent with a visible simplified notice and a consent record" and "Form states and registration accessibility" leave open.
+
+The form MUST leave every check to the server (`novalidate`), so that each error is its literal Spanish message next to its field and never a browser's tooltip, while the required fields keep `required` for screen readers and every field keeps the type and keyboard of its kind. Each free-text field has a limit, the same for the browser (`maxlength`) and the server, counted as `maxlength` counts (a line break counts once): the name 80 characters, the zone 80, "¿Qué ofreces?" 200, the landline 20, the address or references 200, the opening hours 100 and the Facebook link 300; past it the field shows "Deja esto en <límite> caracteres o menos" (for "¿Qué ofreces?", the literal "Deja esto en 200 caracteres o menos"). A WhatsApp of more than 30 characters, or with any character other than digits, spaces, hyphens, dots, brackets and `+` (a letter, "no tengo"), is the WhatsApp error. The Facebook link MUST start with `http://` or `https://`, parse as such and carry no credentials (`https://facebook.com@evil.example` leads elsewhere), and it is saved in its canonical form. The category is sent as its slug and MUST be one of the catalogue. The checkboxes count as checked only with what a browser sends for them (`on`): `consent=false` or `consent=yes` is no consent. The form carries the version of the notice it was rendered with in a hidden field, `noticeVersion`, which only detects a mismatch. Every field is read once, its first value, and a field that is not text is empty.
+
+When the form comes back, the first field with an error, in the order of the screen, MUST take the focus (`autofocus`, which needs no JavaScript), every field with an error MUST be marked invalid and point to its message, and what was written MUST be shown bounded to each field's limit, as text. The page's own client JavaScript is one bundled file of the site, never inline (`deployment`, "Every response carries the security headers and the content security policy (v2)"), and does only the two things "Registration works without client JavaScript" allows: the example of "¿Qué ofreces?", and "Enviando..." on the disabled button. When the form comes back with a category chosen, the server already writes that category's example.
+
+#### Scenario: a link without its scheme
+
+- **WHEN** an owner writes "facebook.com/minegocio" in the Facebook link and sends the form
+- **THEN** the browser lets it through, and the server answers "El link de Facebook debe empezar con http:// o https://" next to the field
+
+#### Scenario: a field past its limit
+
+- **WHEN** a submission forged without the form carries a name of thousands of characters
+- **THEN** nothing is saved, the name shows "Deja esto en 80 caracteres o menos" and its first 80 characters
+
+#### Scenario: the focus after an error
+
+- **WHEN** the form comes back with errors in the WhatsApp and the landline, with client JavaScript disabled
+- **THEN** the focus is on the WhatsApp field, and each error is announced with its field
+
+#### Scenario: the consent is what a browser sends
+
+- **WHEN** a submission forged without the form carries `consent=false`
+- **THEN** nothing is saved and the form says "Marca la casilla para poder registrar tu negocio"
+
+### Requirement: The registration's honeypot and per-IP quota are those of the public forms (v2)
+
+Added in v2 — source: ADR 0012; `deployment`, "Anti-abuse counters live in a Durable Object and never in PostgreSQL (v2)", which also says how the address is read. It settles, for the registration, the honeypot and the quota of "The registration and edit forms are protected by quotas, honeypot and Turnstile (v2)"; Turnstile, its kill switch and the alert of the daily threshold stay there (EMR-42).
+
+The registration form carries the trap field of the public forms, the same as the report form's: invisible, out of the keyboard's order, hidden from screen readers and away from autofill, and trimmed before it is checked, so that a value of only spaces counts as empty. A submission with it filled MUST be answered as a received registration —the `303` to the thank-you page— without saving anything and without reaching the database.
+
+The per-IP quota of the registrations is its own purpose of the quota counter, `registration`: 3 per address in a window of one hour that starts with its first counted registration, counted apart from the search, the reports, the edits and the SMS. Only a submission that passed the trap field and the validation of every field counts, whether it then creates a card, resubmits a rejected one or meets a number that already has a card; so a typo spends no quota, and finding out which numbers have a card takes one counted submission each. The quota is checked before the number is looked up. Over it, nothing is saved and the form comes back with the literal text "Ya recibimos varios registros desde aquí. Espera un rato y vuelve a intentar." above it, with what the owner had written, status `429` and `Cache-Control: no-store`. A request that carries no address of its visitor —only possible on a developer's machine— is not counted. When the counter cannot answer, the registration goes on as if it were within the quota.
+
+#### Scenario: the fourth registration of the hour
+
+- **WHEN** an address that sent three valid registrations this hour sends a fourth
+- **THEN** nothing is saved, the answer is a `429` with "Ya recibimos varios registros desde aquí. Espera un rato y vuelve a intentar." and what the owner had written, and another address registers normally
+
+#### Scenario: what does not count
+
+- **WHEN** an address sends submissions caught by the trap field and submissions with a field wrong
+- **THEN** none of them spends its quota
+
+#### Scenario: independent counters
+
+- **WHEN** an address over its report quota registers, or an address over its registration quota reports or searches
+- **THEN** the registration is saved, or the report and the search go on
+
+#### Scenario: the trap field
+
+- **WHEN** a registration arrives with the trap field filled, or with only spaces in it
+- **THEN** the first lands on the thank-you page and saves nothing; the second is saved normally
