@@ -76,6 +76,7 @@ import {
   type SubmitRegistrationOutcome,
 } from "../../src/core/registration/submit.ts";
 import { chooseZone, type ZoneOption } from "../../src/core/registration/zone.ts";
+import { TURNSTILE_DUMMY_TOKEN, TURNSTILE_RESPONSE_FIELD } from "../../src/core/turnstile/keys.ts";
 import { RESERVED_SEGMENTS } from "../../src/core/catalogue/root-urls.ts";
 import { CLIENT_IP_HEADER, takeQuota } from "../../src/lib/quota/quota.ts";
 import {
@@ -87,6 +88,7 @@ import {
   registrationPageFailure,
 } from "../../src/lib/registration.ts";
 import { LOCALITY_DISALLOW } from "../../src/lib/robots.ts";
+import { turnstileVerifier } from "../../src/lib/turnstile.ts";
 import { cleanup, createFixture, db, type Fixture, insertBusiness } from "./fixtures.ts";
 
 const STATE = "83";
@@ -142,12 +144,17 @@ let phone = 0;
 /** A fictitious number of this file, 7719995xxx. */
 const newPhone = () => `771999${5000 + ++phone}`;
 
-/** The five required fields of a valid submission, with the trap field empty. */
+/**
+ * The five required fields of a valid submission, with the trap field empty
+ * and the token the local Worker's Turnstile accepts (test/worker/
+ * turnstile.test.ts tests the check itself).
+ */
 function required(
   overrides: Record<string, string | string[] | Blob> = {},
 ): Record<string, string | string[] | Blob> {
   return {
     [HONEYPOT_FIELD]: "",
+    [TURNSTILE_RESPONSE_FIELD]: TURNSTILE_DUMMY_TOKEN,
     [F.name]: "Plomería de Mentiras",
     [F.category]: category.slug,
     [F.whatsapp]: newPhone(),
@@ -165,15 +172,21 @@ const valid = (overrides: Record<string, string | string[] | Blob> = {}) =>
 let lastAddress = 100;
 const newAddress = () => `198.51.100.${++lastAddress}`;
 
-/** What the action gives the core: a fresh connection and the registration quota of `address`. */
+/** The local Worker's Turnstile check, which emulates the always-pass test secret. */
+const verifyTurnstile = turnstileVerifier(env);
+
+/**
+ * What the action gives the core: a fresh connection, the registration quota
+ * of `address` and the Turnstile check.
+ */
 function deps(address: string | null = newAddress()): SubmitRegistrationDeps {
   const headers = new Headers(address === null ? {} : { [CLIENT_IP_HEADER]: address });
-  return { useDb: db, takeQuota: () => takeQuota(env, headers, "registration") };
+  return { useDb: db, takeQuota: () => takeQuota(env, headers, "registration"), verifyTurnstile };
 }
 
 /** Dependencies that count what they are asked; the quota always lets it go on. */
 function counted() {
-  const calls = { connections: 0, quota: 0 };
+  const calls = { connections: 0, quota: 0, turnstile: 0 };
   const using: SubmitRegistrationDeps = {
     useDb: (run) => {
       calls.connections += 1;
@@ -182,6 +195,10 @@ function counted() {
     takeQuota: async () => {
       calls.quota += 1;
       return { allowed: true };
+    },
+    verifyTurnstile: (token, action) => {
+      calls.turnstile += 1;
+      return verifyTurnstile(token, action);
     },
   };
   return { calls, using };
@@ -449,6 +466,7 @@ describe("The server validates every field and returns per-field errors in Spani
     expect(errorMessage("name", "duplicate")).toBe("");
     expect(errorMessage("name", "toString")).toBe("");
     expect(GENERAL_ERROR_MESSAGES).toEqual({
+      turnstile: "No pudimos comprobar que eres una persona. Vuelve a intentarlo.",
       quota: "Ya recibimos varios registros desde aquí. Espera un rato y vuelve a intentar.",
       server: "No pudimos guardar tu registro. Vuelve a intentarlo en un momento.",
     });
@@ -621,7 +639,11 @@ describe("The server validates every field and returns per-field errors in Spani
     });
     const outcome = await submit(
       valid({ [F.name]: "Plomería Secreta", [F.whatsapp]: "7719994999" }),
-      { useDb: () => Promise.reject(failure), takeQuota: async () => ({ allowed: true }) },
+      {
+        useDb: () => Promise.reject(failure),
+        takeQuota: async () => ({ allowed: true }),
+        verifyTurnstile,
+      },
     );
     expect(outcome).toEqual({ kind: "server" });
     expect(log).toHaveBeenCalledTimes(1);
@@ -1103,6 +1125,7 @@ describe("One card per WhatsApp number", () => {
       await submit(valid({ [F.whatsapp]: whatsapp }), {
         useDb: db,
         takeQuota: async () => ({ allowed: false, retryAfterSeconds: 60 }),
+        verifyTurnstile,
       }),
     ).toEqual({ kind: "quota" });
     expect(await businessOf(whatsapp)).toEqual(before);
@@ -1131,7 +1154,7 @@ describe("The registration's honeypot and per-IP quota are those of the public f
         await submit(valid({ [F.whatsapp]: whatsapp, [HONEYPOT_FIELD]: trap }), using),
       ).toEqual(RECEIVED);
     }
-    expect(calls).toEqual({ connections: 0, quota: 0 });
+    expect(calls).toEqual({ connections: 0, quota: 0, turnstile: 0 });
     expect(await businessOf(whatsapp)).toBeUndefined();
   });
 

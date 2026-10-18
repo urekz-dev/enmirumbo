@@ -18,7 +18,9 @@
 // longer than a page is tested in many-cards/pagination.spec.ts, which runs
 // alone. The 390px layout of every listing the sitemap names is checked by
 // surfaces.spec.ts.
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+// The empty listings lead to the registration form, whose Turnstile widget gets the local fake.
+import { expect, test } from "./turnstile.ts";
 
 const HOME = "/hidalgo/tizayuca";
 const SITE_URL = "http://localhost:4321";

@@ -14,7 +14,9 @@
 // every request, empty (no location) unless a test places the request
 // somewhere. Tizayuca's seat comes from the migrations and the second
 // locality's is made up.
-import { expect, test, type APIResponse, type Page } from "@playwright/test";
+import type { APIResponse, Page } from "@playwright/test";
+// The registration form of each locality gets the local fake of Turnstile.
+import { expect, test } from "../turnstile.ts";
 import { SECOND_LOCALITY, setSecondLocalitySeat } from "./second-locality.ts";
 
 const TIZAYUCA = "/hidalgo/tizayuca";

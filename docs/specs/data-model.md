@@ -594,14 +594,14 @@ The fictitious business seed MUST leave at least one published business **with a
 
 ### Requirement: The locality is a first-class record keyed by the INEGI municipality code (v2)
 
-Added in v2 — source: ADR 0006, PRD §8, ADR 0021. Amended on 2026-10-15 by decision of the product owner: the database holds only the reference data of the localities it serves (see "The database holds only the reference data of the localities it serves (v2)"); until then the municipality of a locality came from INEGI's full catalogue.
+Added in v2 — source: ADR 0006, PRD §8, ADR 0021. Amended on 2026-10-15 by decision of the product owner: the database holds only the reference data of the localities it serves (see "The database holds only the reference data of the localities it serves (v2)"); until then the municipality of a locality came from INEGI's full catalogue. Amended on 2026-10-18 by EMR-42 and the decision of the product owner of that date: the daily registrations threshold is 20 unless a super admin sets another, and the locality keeps the day of its last alert (`business-registration`, "The daily registrations alert goes out once per local day (v2)").
 
-The system MUST persist each locality as its own record from the first migration. The identity of a locality MUST be the INEGI code of its municipality: the two-digit state code followed by the three-digit municipality code (Tizayuca, Hidalgo, is `13069`). Its name, its slug and its state MUST be those of its municipality, which the database holds with its INEGI code, so they cannot disagree with the reference data. The record MUST also hold its IANA time zone, its contact WhatsApp, the daily registrations threshold that triggers the alert (none when unset), an active flag and, optionally, the coordinates of its municipal seat (latitude and longitude in decimal degrees, both or neither, within range), which place the locality for the suggestion of the nearest one on the root (`public-directory`, "Geolocation is only a suggestion of the nearest locality (v2)"). The seat is the locality of the INEGI catalogue that heads the municipality (locality `0001` for Tizayuca), and its coordinates are INEGI's, loaded by a data migration that cites the source with the rest of that locality's reference data; a locality without them is never suggested. The contact WhatsApp is the public number of the locality's admins, the one "Perdí mi enlace" opens; a locality MUST NOT be active without it. Who administers a locality is not a field of the locality: it comes from the role assignments of "Panel users, roles and permissions live in the database (v2)". Municipality names repeat across states, so the slug of a locality MUST be unique within its state; the public URL always carries both, `/{estado}/{municipio}`. The contact WhatsApp is a real number of the team: a super admin sets it in the database, never in the repository. The data migrations that load the reference data of Tizayuca also create its locality, inactive and without a contact WhatsApp, so that every environment has it, production included; a super admin then sets its contact WhatsApp and turns its flag on, which is a data change (ADR 0021). No text, catalogue or route of the system MAY assume that a single locality exists.
+The system MUST persist each locality as its own record from the first migration. The identity of a locality MUST be the INEGI code of its municipality: the two-digit state code followed by the three-digit municipality code (Tizayuca, Hidalgo, is `13069`). Its name, its slug and its state MUST be those of its municipality, which the database holds with its INEGI code, so they cannot disagree with the reference data. The record MUST also hold its IANA time zone, its contact WhatsApp, the daily registrations threshold that triggers the alert (a whole number above zero, 20 for a new locality and for those the migration of EMR-42 found without one; none disables the alert), the local day of its last alert (none until the first), an active flag and, optionally, the coordinates of its municipal seat (latitude and longitude in decimal degrees, both or neither, within range), which place the locality for the suggestion of the nearest one on the root (`public-directory`, "Geolocation is only a suggestion of the nearest locality (v2)"). The seat is the locality of the INEGI catalogue that heads the municipality (locality `0001` for Tizayuca), and its coordinates are INEGI's, loaded by a data migration that cites the source with the rest of that locality's reference data; a locality without them is never suggested. The contact WhatsApp is the public number of the locality's admins, the one "Perdí mi enlace" opens; a locality MUST NOT be active without it. Who administers a locality is not a field of the locality: it comes from the role assignments of "Panel users, roles and permissions live in the database (v2)". Municipality names repeat across states, so the slug of a locality MUST be unique within its state; the public URL always carries both, `/{estado}/{municipio}`. The contact WhatsApp is a real number of the team: a super admin sets it in the database, never in the repository. The data migrations that load the reference data of Tizayuca also create its locality, inactive and without a contact WhatsApp, so that every environment has it, production included; a super admin then sets its contact WhatsApp and turns its flag on, which is a data change (ADR 0021). No text, catalogue or route of the system MAY assume that a single locality exists.
 
 #### Scenario: Tizayuca as a locality
 
 - **WHEN** the migrations are applied to an empty database
-- **THEN** a locality exists with code `13069`, slug `tizayuca`, name "Tizayuca", state Hidalgo (slug `hidalgo`), the IANA time zone `America/Mexico_City`, no contact WhatsApp and the active flag off
+- **THEN** a locality exists with code `13069`, slug `tizayuca`, name "Tizayuca", state Hidalgo (slug `hidalgo`), the IANA time zone `America/Mexico_City`, no contact WhatsApp, a daily registrations threshold of 20 and the active flag off
 - **AND** it has the coordinates of its municipal seat, INEGI's locality `130690001`: latitude 19.8410889, longitude -98.9815842
 - **AND** it is not served until a super admin sets its contact WhatsApp and turns its flag on
 
@@ -1199,3 +1199,24 @@ Locally, and in the end-to-end tests, the seed MUST write them to the local medi
 
 - **WHEN** a business of Tizayuca already holds the WhatsApp of a fake business with a photo
 - **THEN** the seed writes no photo for that fake business
+
+### Requirement: The site's switches live in one row of the database (v2)
+
+Added in v2 — source: ADR 0012; decision of the product owner, 2026-10-18 (EMR-42).
+
+The switches of the whole site MUST live in the database, so an admin changes them without a deploy: one table, `site_settings`, with exactly one row, whose key `singleton` can only be true, and one typed column per switch, `NOT NULL` with the default the switch takes when its migration adds it. Today it holds one switch, `turnstile_enabled`, on (`business-registration`, "Turnstile is checked on the server, fails closed and has a switch in the database (v2)"); the migration that creates the table inserts the row. A later switch, such as the SMS verification flag (E6), is a new column with its default, in its own migration, and needs no new table. A switch is changed today with one SQL statement in the database of each environment (README, Operations), later from the panel (epic F). Code reads each switch through one function of the core; when the row is missing, which no migrated database allows on purpose, each switch takes its safe value: Turnstile on. A public page reads the switches through the cached `HYPERDRIVE`, so a change reaches it within a minute; an action that depends on one reads it through `HYPERDRIVE_FRESH`.
+
+#### Scenario: the migrations
+
+- **WHEN** the migrations are applied to an empty database
+- **THEN** `site_settings` holds one row, with `turnstile_enabled` true
+
+#### Scenario: one row
+
+- **WHEN** a second row is inserted, with any key
+- **THEN** the database rejects it
+
+#### Scenario: no row
+
+- **WHEN** the row is missing
+- **THEN** Turnstile counts as on

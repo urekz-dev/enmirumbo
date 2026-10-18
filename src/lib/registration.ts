@@ -10,8 +10,8 @@
 //   page, `/_actions/register`) is not found.
 // - The outcome of the core (src/core/registration/submit.ts) travels to the
 //   page as an ActionError, whose status Astro gives the page: 400 for the
-//   fields (a duplicate number among them), 429 over the quota and 500 when
-//   it could not be saved. Its message names the field errors, never
+//   fields (a duplicate number among them), 403 when Turnstile refused it,
+//   429 over the quota and 500 when it could not be saved. Its message names the field errors, never
 //   anything the owner wrote, so the page can show each one next to its
 //   field and read what was written from the same submission.
 import { ActionError } from "astro:actions";
@@ -66,6 +66,7 @@ export function decodeErrors(message: string): RegistrationErrors | null {
 
 /** The message of the errors above the form. */
 const GENERAL: Readonly<Record<GeneralError, { code: ActionError["code"]; message: string }>> = {
+  turnstile: { code: "FORBIDDEN", message: "turnstile" },
   quota: { code: "TOO_MANY_REQUESTS", message: "quota" },
   server: { code: "INTERNAL_SERVER_ERROR", message: "server" },
 };
@@ -77,6 +78,7 @@ export function registrationActionError(outcome: SubmitRegistrationOutcome): Act
       return null;
     case "invalid":
       return new ActionError({ code: "BAD_REQUEST", message: encodeErrors(outcome.errors) });
+    case "turnstile":
     case "quota":
     case "server":
       return new ActionError(GENERAL[outcome.kind]);

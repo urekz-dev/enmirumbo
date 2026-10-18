@@ -29,9 +29,11 @@ interface Props {
   draft: RegistrationDraft;
   errors: RegistrationErrors;
   general: GeneralError | null;
+  /** Turnstile while its switch is on, with the environment's site key; null when it is off. */
+  turnstile: { siteKey: string | null } | null;
 }
 
-const { catalogue, action, draft, errors, general } = Astro.props;
+const { catalogue, action, draft, errors, general, turnstile } = Astro.props;
 const locality = requireLocality(Astro.locals);
 ---
 
@@ -55,6 +57,7 @@ const locality = requireLocality(Astro.locals);
       draft={draft}
       errors={errors}
       general={general}
+      turnstile={turnstile}
     />
   </section>
 </BaseLayout>

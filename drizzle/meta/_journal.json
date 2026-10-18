@@ -78,6 +78,13 @@
       "when": 1792117183041,
       "tag": "0010_tizayuca_only",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792361774814,
+      "tag": "0011_turnstile_switch_registration_alert",
+      "breakpoints": true
     }
   ]
 }

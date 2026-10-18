@@ -78,14 +78,17 @@ jobs:
           SEED_MEDIA_DIR: ${{ runner.temp }}/seed-media
         run: scripts/deploy/upload-seed-media.sh dev "${SEED_MEDIA_DIR}"
       # Wrangler checks that CLOUDFLARE_ENV matches the environment of the build.
+      # The Worker secrets travel with the deploy (ADR 0020), written to a file
+      # of the runner's temporary directory that the script removes.
       - name: Deploy
         env:
           CLOUDFLARE_ENV: dev
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
           DEPLOY_BRANCH: ${{ github.ref_name }}
         run: >-
-          ./node_modules/.bin/wrangler deploy
+          scripts/deploy/deploy-worker.sh dev
           --var "DEPLOY_BRANCH:${DEPLOY_BRANCH}"
           --var "DEPLOY_COMMIT:${GITHUB_SHA}"
       - name: Smoke test

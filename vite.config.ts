@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vite-plus";
 import { LOCAL_TEST_DATABASE_URL } from "./src/core/db/url.ts";
+import { TURNSTILE_TEST_SECRET_KEYS } from "./src/core/turnstile/keys.ts";
 
 // Tests use their own database, never the development one. The Hyperdrive
 // bindings of the workers project and the global setup (test/global-setup.ts)
@@ -15,6 +16,10 @@ const testDatabaseUrl = process.env["DATABASE_URL"] ?? LOCAL_TEST_DATABASE_URL;
 for (const binding of ["HYPERDRIVE", "HYPERDRIVE_FRESH"]) {
   process.env[`CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_${binding}`] = testDatabaseUrl;
 }
+// The Worker secret of Turnstile is Cloudflare's always-pass test secret,
+// which the local Worker emulates without network (src/core/turnstile/).
+// Wrangler reads it from the environment when there is no .dev.vars.
+process.env["TURNSTILE_SECRET_KEY"] ??= TURNSTILE_TEST_SECRET_KEYS.alwaysPasses;
 
 const generated = ["dist/**", ".astro/**", "worker-configuration.d.ts"];
 

@@ -12,6 +12,7 @@ import { submitReport } from "../core/report/submit.ts";
 import { takeQuota } from "../lib/quota/quota.ts";
 import { registrationActionError, registrationLocality } from "../lib/registration.ts";
 import { reportActionError, reportTarget } from "../lib/report.ts";
+import { turnstileVerifier } from "../lib/turnstile.ts";
 
 export const server = {
   // A resident's report about a card (docs/specs/public-directory.md, the
@@ -40,9 +41,11 @@ export const server = {
   // of the page's address (registrationLocality): no field of the submission
   // chooses it. The core reads the submission and decides
   // (src/core/registration/submit.ts); the write and the reads that lead to
-  // it go through HYPERDRIVE_FRESH, and the quota is the `registration`
-  // purpose. Nothing about the sender is read but the address the quota
-  // counts in memory.
+  // it go through HYPERDRIVE_FRESH, the switch of Turnstile included, so
+  // turning it off lets submissions through at once; the token is checked
+  // with siteverify (src/lib/turnstile.ts), and the quota is the
+  // `registration` purpose. Nothing about the sender is read but the address
+  // the quota counts in memory, which siteverify is never sent.
   register: defineAction({
     accept: "form",
     handler: async (form, context) => {
@@ -51,6 +54,7 @@ export const server = {
       const outcome = await submitRegistration(form, locality, {
         useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
         takeQuota: () => takeQuota(env, context.request.headers, "registration"),
+        verifyTurnstile: turnstileVerifier(env),
       });
       const error = registrationActionError(outcome);
       if (error !== null) throw error;

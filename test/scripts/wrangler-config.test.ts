@@ -2,11 +2,19 @@
 // environments, each with its own Worker, bindings and variables (v2)",
 // "Public media live in R2, in one bucket for production and one for dev and
 // stage (v2)" and "Scheduled work runs from one hourly Cron Trigger per
-// environment (v2)" (scenario "one trigger"). Reads wrangler.jsonc the way Wrangler resolves it
+// environment (v2)" (scenario "one trigger"); and of docs/specs/
+// business-registration.md, "Turnstile is checked on the server, fails
+// closed and has a switch in the database (v2)" (the keys of each
+// environment). Reads wrangler.jsonc the way Wrangler resolves it
 // for each environment, so a binding or variable that an environment only
 // inherits, or forgets, fails here instead of in a deploy.
 import { experimental_readRawConfig, unstable_readConfig } from "wrangler";
 import { describe, expect, it } from "vite-plus/test";
+import {
+  isTurnstileTestKey,
+  TURNSTILE_SITE_KEY_PATTERN,
+  TURNSTILE_TEST_SITE_KEYS,
+} from "../../src/core/turnstile/keys.ts";
 
 const DEV_MEDIA = { bucket: "enmirumbo-media-dev", url: "https://media-dev-enmirumbo.urekz.com" };
 const PROD_MEDIA = { bucket: "enmirumbo-media", url: "https://media-enmirumbo.urekz.com" };
@@ -24,7 +32,9 @@ const VARIABLES = [
   "SITE_URL",
   "MEDIA_URL",
   "UMAMI_WEBSITE_ID",
+  "TURNSTILE_SITE_KEY",
 ];
+const SECRETS = ["TURNSTILE_SECRET_KEY"];
 const HYPERDRIVE_BINDINGS = ["HYPERDRIVE", "HYPERDRIVE_FRESH"];
 
 // The fields these tests read. Wrangler's own Config type comes from a package
@@ -42,6 +52,7 @@ interface ResolvedConfig {
   exports?: Record<string, unknown>;
   migrations: unknown[];
   r2_buckets: { binding: string; bucket_name?: string }[];
+  secrets?: { required?: string[] };
 }
 
 function read(env?: string): ResolvedConfig {
@@ -172,6 +183,45 @@ describe("Three deployed environments, each with its own Worker, bindings and va
     expect(config.preview_urls).toBe(false);
     expect(config.triggers.crons ?? []).toEqual([]);
   });
+});
+
+describe("Turnstile is checked on the server, fails closed and has a switch in the database (v2): the keys", () => {
+  it.for(ENVIRONMENTS)(
+    "$env names a real site key of its own widget, never a test key or a placeholder",
+    ({ env }) => {
+      const key = String(read(env).vars["TURNSTILE_SITE_KEY"]);
+      expect(key).toMatch(TURNSTILE_SITE_KEY_PATTERN);
+      expect(isTurnstileTestKey(key)).toBe(false);
+    },
+  );
+
+  it("dev and stage share the widget enmirumbo-dev; production has its own", () => {
+    const [dev, stage, prod] = ["dev", "stage", "prod"].map(
+      (env) => read(env).vars["TURNSTILE_SITE_KEY"],
+    );
+    expect(stage).toBe(dev);
+    expect(prod).not.toBe(dev);
+  });
+
+  it("the local Worker uses Cloudflare's always-pass test site key", () => {
+    expect(read().vars["TURNSTILE_SITE_KEY"]).toBe(TURNSTILE_TEST_SITE_KEYS.alwaysPasses);
+  });
+
+  it.for([{ env: undefined }, ...ENVIRONMENTS])(
+    "the secret is required by name in $env, never given a value in the configuration",
+    ({ env }) => {
+      const config = read(env);
+      expect(config.secrets?.required).toEqual(SECRETS);
+      for (const secret of SECRETS) expect(config.vars).not.toHaveProperty(secret);
+      if (env !== undefined) {
+        // Wrangler does not inherit `secrets`; each environment declares it.
+        const raw = experimental_readRawConfig({ config: "wrangler.jsonc" }).rawConfig as {
+          env: Record<string, Record<string, unknown>>;
+        };
+        expect(raw.env[env]).toHaveProperty("secrets");
+      }
+    },
+  );
 });
 
 describe("Public media live in R2, in one bucket for production and one for dev and stage (v2)", () => {

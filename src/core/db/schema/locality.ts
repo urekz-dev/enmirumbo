@@ -6,6 +6,7 @@ import {
   boolean,
   char,
   check,
+  date,
   doublePrecision,
   integer,
   pgTable,
@@ -62,7 +63,11 @@ export const municipalities = pgTable(
  * a locality is in `role_assignments` (./access.ts). The coordinates are those
  * of its municipal seat in INEGI's catalogue of localities, loaded by a data
  * migration; the root highlights the active locality nearest to the visitor
- * among those that have them (src/core/locality/nearest.ts).
+ * among those that have them (src/core/locality/nearest.ts). The daily
+ * registrations threshold is the number of registrations of one local day
+ * past which the hourly job alerts the admin (src/core/registration/
+ * threshold.ts); a super admin changes it with SQL until the panel does, and
+ * none disables the alert. The day of the last alert keeps it to one a day.
  */
 export const localities = pgTable(
   "localities",
@@ -72,7 +77,8 @@ export const localities = pgTable(
       .references(() => municipalities.code),
     timeZone: text("time_zone").notNull(),
     contactWhatsapp: text("contact_whatsapp"),
-    dailyRegistrationThreshold: integer("daily_registration_threshold"),
+    dailyRegistrationThreshold: integer("daily_registration_threshold").default(20),
+    dailyRegistrationAlertedOn: date("daily_registration_alerted_on", { mode: "string" }),
     active: boolean("active").notNull().default(false),
     latitude: doublePrecision("latitude"),
     longitude: doublePrecision("longitude"),

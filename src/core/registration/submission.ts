@@ -14,6 +14,7 @@
 import { nationalNumber } from "../business/contact.ts";
 import { boundedText, formText, isChecked } from "../forms/text.ts";
 import { NOTICE_VERSION } from "../legal/version.ts";
+import { TURNSTILE_FAILED_MESSAGE } from "../turnstile/keys.ts";
 import type { RegistrationCatalogue } from "./catalogue.ts";
 import { chooseZone } from "./zone.ts";
 
@@ -124,12 +125,20 @@ export function errorMessage(field: ErrorField, code: string): string {
 }
 
 /** Why the whole form comes back, above it, rather than next to a field. */
-export type GeneralError = "quota" | "server";
+export type GeneralError = "turnstile" | "quota" | "server";
 
 export const GENERAL_ERROR_MESSAGES: Readonly<Record<GeneralError, string>> = {
+  turnstile: TURNSTILE_FAILED_MESSAGE,
   quota: "Ya recibimos varios registros desde aquí. Espera un rato y vuelve a intentar.",
   server: "No pudimos guardar tu registro. Vuelve a intentarlo en un momento.",
 };
+
+/**
+ * What the registration page says, above the form, to a browser that does
+ * not run JavaScript while Turnstile is on: the form cannot be sent then.
+ */
+export const NO_JAVASCRIPT_MESSAGE =
+  "Para registrar tu negocio, activa JavaScript en tu navegador. Lo usamos para comprobar que eres una persona.";
 
 /**
  * What the thank-you page says, the literal of PRD §6.1, whatever the

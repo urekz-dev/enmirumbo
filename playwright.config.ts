@@ -2,6 +2,7 @@
 // runs in workerd. Run them with `vp run e2e`, which builds first.
 import { defineConfig, devices } from "@playwright/test";
 import { LOCAL_DATABASE_URL } from "./src/core/db/url.ts";
+import { TURNSTILE_TEST_SECRET_KEYS } from "./src/core/turnstile/keys.ts";
 
 // E2E_PORT lets parallel worktrees run their end-to-end tests at once: outside
 // CI, Playwright reuses a server already listening on its port, which would be
@@ -15,6 +16,11 @@ const databaseUrl = process.env["DATABASE_URL"] ?? LOCAL_DATABASE_URL;
 for (const binding of ["HYPERDRIVE", "HYPERDRIVE_FRESH"]) {
   process.env[`CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_${binding}`] = databaseUrl;
 }
+// The preview's Turnstile secret is Cloudflare's always-pass test secret,
+// which the local Worker emulates without network; the browser side is a
+// local fake of Turnstile's script (test/e2e/turnstile.ts). Wrangler reads it
+// from the environment when there is no .dev.vars.
+process.env["TURNSTILE_SECRET_KEY"] ??= TURNSTILE_TEST_SECRET_KEYS.alwaysPasses;
 
 const PHONE = { ...devices["Pixel 7"], viewport: { width: 390, height: 844 } };
 
@@ -31,7 +37,13 @@ export default defineConfig({
       // active locality, Tizayuca.
       name: "phone",
       use: PHONE,
-      testIgnore: ["two-localities/**", "many-cards/**", "search-pages/**"],
+      testIgnore: [
+        "two-localities/**",
+        "many-cards/**",
+        "search-pages/**",
+        "registration.spec.ts",
+        "turnstile-real.spec.ts",
+      ],
     },
     // A listing longer than a page (test/e2e/many-cards/): it publishes
     // fictitious cards in Tizayuca and removes them, so it runs after "phone",
@@ -52,16 +64,26 @@ export default defineConfig({
       testMatch: "search-pages/*.spec.ts",
       dependencies: ["phone, many cards"],
     },
+    // The registration (test/e2e/registration.spec.ts): its flows without
+    // JavaScript turn Turnstile's switch off for a while, which every page
+    // with the form would see, so it runs alone, after "phone, search pages"
+    // and before the second locality.
+    {
+      name: "phone, registration",
+      use: PHONE,
+      testMatch: "registration.spec.ts",
+      dependencies: ["phone, search pages"],
+    },
     // The same site with a second, fictitious active locality
     // (test/e2e/two-localities/): the list of localities at the root, the
     // locality cookie and the link to change municipality, and the crawls
-    // again, now through the list. It runs after "phone", "phone, many cards"
-    // and "phone, search pages", whose tests expect Tizayuca alone, and its
-    // teardown removes the second locality.
+    // again, now through the list. It runs after "phone", "phone, many cards",
+    // "phone, search pages" and "phone, registration", whose tests expect
+    // Tizayuca alone, and its teardown removes the second locality.
     {
       name: "second locality",
       testMatch: "two-localities/second-locality.setup.ts",
-      dependencies: ["phone, search pages"],
+      dependencies: ["phone, registration"],
       teardown: "no second locality",
     },
     {
@@ -78,6 +100,13 @@ export default defineConfig({
         "internal-links.spec.ts",
         "seo.spec.ts",
       ],
+    },
+    // The real Turnstile script under the site's policy, which needs the
+    // network: only by hand, with E2E_TURNSTILE_REAL=1 (README, Registration).
+    {
+      name: "phone, real Turnstile",
+      use: PHONE,
+      testMatch: "turnstile-real.spec.ts",
     },
   ],
   webServer: {
