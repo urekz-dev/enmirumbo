@@ -14,8 +14,8 @@
 #   whose MEDIA binding names the bucket.
 #
 # Environment (the dev and stage GitHub Environments hold the secrets):
-#   R2_ACCESS_KEY_ID       an R2 token with Object Read & Write on the media
-#   R2_SECRET_ACCESS_KEY   bucket of dev and stage only
+#   MEDIA_R2_ACCESS_KEY_ID      an R2 token with Object Read & Write on the media
+#   MEDIA_R2_SECRET_ACCESS_KEY  bucket of dev and stage only
 #   CLOUDFLARE_ACCOUNT_ID  the account of the bucket
 set -euo pipefail
 
@@ -33,7 +33,7 @@ dev | stage) ;;
 *) fail "the seed's photos go to dev or stage only (got '${env_name}')" ;;
 esac
 
-for name in R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY CLOUDFLARE_ACCOUNT_ID; do
+for name in MEDIA_R2_ACCESS_KEY_ID MEDIA_R2_SECRET_ACCESS_KEY CLOUDFLARE_ACCOUNT_ID; do
   [ -n "${!name:-}" ] || fail "${name} is not set"
 done
 [[ "${CLOUDFLARE_ACCOUNT_ID}" =~ ^[0-9a-f]{32}$ ]] || fail "CLOUDFLARE_ACCOUNT_ID is not a Cloudflare account id"
@@ -53,8 +53,8 @@ manifest="${directory}/manifest.json"
 jq -e 'type == "array"' "${manifest}" >/dev/null 2>&1 || fail "${manifest} is not a list of objects"
 
 endpoint="https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com"
-export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
-export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+export AWS_ACCESS_KEY_ID="${MEDIA_R2_ACCESS_KEY_ID}"
+export AWS_SECRET_ACCESS_KEY="${MEDIA_R2_SECRET_ACCESS_KEY}"
 export AWS_DEFAULT_REGION="auto"
 export AWS_EC2_METADATA_DISABLED="true"
 export AWS_PAGER=""

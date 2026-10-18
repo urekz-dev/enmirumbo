@@ -825,8 +825,8 @@ describe("Each environment is built and deployed by its own workflow (v2): the s
 const ACCOUNT = "f".repeat(32);
 const R2_SECRET = "fictional-r2-secret-access-key";
 const R2_ENV = {
-  R2_ACCESS_KEY_ID: "fictional-r2-access-key-id",
-  R2_SECRET_ACCESS_KEY: R2_SECRET,
+  MEDIA_R2_ACCESS_KEY_ID: "fictional-r2-access-key-id",
+  MEDIA_R2_SECRET_ACCESS_KEY: R2_SECRET,
   CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
 };
 
@@ -940,10 +940,10 @@ describe("The demo seed leaves cards with a photo to see the directory as the re
     const missing = run("upload-seed-media.sh", media.args, {
       ...media.env,
       ...R2_ENV,
-      R2_SECRET_ACCESS_KEY: "",
+      MEDIA_R2_SECRET_ACCESS_KEY: "",
     });
     expect(missing.status).toBe(1);
-    expect(missing.stderr).toContain("R2_SECRET_ACCESS_KEY is not set");
+    expect(missing.stderr).toContain("MEDIA_R2_SECRET_ACCESS_KEY is not set");
 
     const other = run("upload-seed-media.sh", ["stage", ...media.args.slice(1)], {
       ...media.env,

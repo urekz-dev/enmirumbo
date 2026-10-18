@@ -68,8 +68,8 @@ jobs:
         run: ./node_modules/.bin/vp run db:seed
       - name: Upload the seeded photos
         env:
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          MEDIA_R2_ACCESS_KEY_ID: ${{ secrets.MEDIA_R2_ACCESS_KEY_ID }}
+          MEDIA_R2_SECRET_ACCESS_KEY: ${{ secrets.MEDIA_R2_SECRET_ACCESS_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SEED_MEDIA_DIR: ${{ runner.temp }}/seed-media
         run: scripts/deploy/upload-seed-media.sh stage "${SEED_MEDIA_DIR}"
