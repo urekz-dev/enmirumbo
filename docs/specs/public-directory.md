@@ -1341,7 +1341,7 @@ While two or more localities are active, the footer of every page of a locality 
 
 ### Requirement: The search endpoint has a per-IP quota (v2)
 
-Added in v2 — source: ADR 0012, PRD §8, prototype backlog E5-5. Amended on 2026-10-15 by EMR-36: the limit, the window, the message and the answer over the quota, which were not settled.
+Added in v2 — source: ADR 0012, PRD §8, prototype backlog E5-5. Amended on 2026-10-15 by EMR-36: the limit, the window, the message and the answer over the quota, which were not settled. Amended on 2026-10-15 by EMR-71: the scenario of the first search over the quota counted the 61st, a leftover of an earlier limit; with 100 searches it is the 101st.
 
 The search MUST have its own per-IP quota, separate from the quotas of registration, edits, reports and SMS, to hold back the mass harvesting of the directory. The counter is kept as described in "Anti-abuse counters live in a Durable Object and never in PostgreSQL (v2)", which also says how the address is read. A request over the quota MUST NOT run the query, MUST NOT produce a server error and MUST show a message in plain Spanish asking to try again later. Exhausting this quota MUST NOT affect any other surface.
 
@@ -1357,9 +1357,9 @@ The quota is **100 searches per address in a window of 10 minutes** (decision of
 - **WHEN** the same IP exceeds the quota of the search in its window
 - **THEN** the query is not run, the resident sees the message and no error page, and no results are returned
 
-#### Scenario: the 61st search
+#### Scenario: the 101st search
 
-- **WHEN** an address searches for the 61st time within 10 minutes of its first search
+- **WHEN** an address searches for the 101st time within 10 minutes of its first search
 - **THEN** the answer is a `429` with `Retry-After` and `Cache-Control: no-store`, showing "Recibimos muchas búsquedas desde aquí. Espera un rato y vuelve a intentar." and the 8 categories, and no business
 
 #### Scenario: what is not counted

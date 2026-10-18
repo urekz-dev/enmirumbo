@@ -1,9 +1,10 @@
 // Fixed-window counters, kept in memory and nowhere else (docs/specs/
 // deployment.md, "Anti-abuse counters live in a Durable Object and never in
-// PostgreSQL (v2)"). The Durable Object of a purpose (src/lib/quota/counter.ts)
-// holds one of these, keyed by the codes it makes from each IP address; this
-// module only counts, with the time passed in, so it is tested without
-// waiting. Everything here is pure: no database, no clock, no storage.
+// PostgreSQL (v2)"). The quota counter (src/lib/quota/counter.ts), one
+// Durable Object for every purpose, holds one of these, keyed by the codes it
+// makes from each purpose and IP address; this module only counts, with the
+// time passed in, so it is tested without waiting. Everything here is pure: no
+// database, no clock, no storage.
 import type { Quota } from "./quotas.ts";
 
 /** The answer of a quota: go on, or wait until the window ends. */
@@ -16,9 +17,10 @@ interface Counter {
 }
 
 /**
- * Counters past this number make room by dropping the oldest. A flood of
- * distinct addresses can then only make the quota forget some of them, never
- * block more people or exhaust the memory of the Durable Object.
+ * Counters past this number, of every purpose together, make room by dropping
+ * the oldest. A flood of distinct addresses can then only make the quotas
+ * forget some of them, never block more people or exhaust the memory of the
+ * Durable Object.
  */
 export const MAX_COUNTERS = 100_000;
 

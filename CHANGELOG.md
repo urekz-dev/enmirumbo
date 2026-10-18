@@ -54,6 +54,7 @@ All notable changes to this product are documented here. Format: [Keep a Changel
 - The smoke test after each deploy follows the redirect of the home page, which leads to the locality while only one is active.
 - The database keeps only the reference data of Tizayuca, the one city the directory serves: the state of Hidalgo, the municipality of Tizayuca, its locality and its 105 zones. The other 31 states and 2,477 municipalities of INEGI's catalogue are removed from every environment; their addresses answer 404, as before. Cities are added one at a time, each in its own data migration. ADR 0006 is amended.
 - Locally, `/robots.txt` is the open one that production will serve after the cut-over.
+- The quota counter is one single Durable Object for every purpose, instead of one per purpose: each purpose still counts apart, with the same limits, answers and privacy. Written rules, checked by tests, make a runaway bill impossible: nothing in its storage, no alarm, a timer only while it counts and never more than 10 minutes ahead, and no preview URLs. At most one object is ever awake, inside what Workers Free and Workers Paid include. ADR 0012 is amended.
 
 ### Removed
 

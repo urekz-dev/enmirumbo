@@ -17,6 +17,8 @@
   "compatibility_date": "2026-10-01",
   // The local Worker is never deployed. If it were, by mistake, it would get no
   // workers.dev URL and no Version URLs. The environments turn workers.dev on.
+  // `preview_urls` stays false here and in every environment, each writing it
+  // (ADR 0012, amended on 2026-10-15; test/scripts/quota-guardrails.test.ts).
   "workers_dev": false,
   "preview_urls": false,
   "assets": {
@@ -39,11 +41,11 @@
       "localConnectionString": "postgres://enmirumbo:enmirumbo@localhost:5432/enmirumbo",
     },
   ],
-  // The per-IP quotas (ADR 0012, src/lib/quota/): one Durable Object per
-  // purpose, which keeps its counters and the key of its codes in memory and
-  // never writes to its storage. Declared with `exports`, SQLite-backed as
-  // every new Durable Object must be; Wrangler would let an environment
-  // inherit both, so each environment declares them again.
+  // The per-IP quotas (ADR 0012, src/lib/quota/): one single Durable Object
+  // for every purpose, which keeps its counters and the key of its codes in
+  // memory and never writes to its storage. Declared with `exports`,
+  // SQLite-backed as every new Durable Object must be; Wrangler would let an
+  // environment inherit both, so each environment declares them again.
   "durable_objects": {
     "bindings": [{ "name": "QUOTA_COUNTER", "class_name": "QuotaCounter" }],
   },

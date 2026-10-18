@@ -1,11 +1,13 @@
 // The per-IP quotas of the site (ADR 0012; docs/specs/deployment.md,
 // "Anti-abuse counters live in a Durable Object and never in PostgreSQL
-// (v2)"). Each purpose has its own counter, so exhausting one never affects
-// another, and its own limit: at most `limit` requests from one IP address
-// in a fixed window of `windowSeconds`, which starts with the first request.
-// A purpose arrives with the surface it protects: the search and the report
-// form have theirs; the registration and the edit (EMR-42) and the SMS add
-// theirs here.
+// (v2)"). Each purpose counts apart in the one quota counter, so exhausting
+// one never affects another, and has its own limit: at most `limit` requests
+// from one IP address in a fixed window of `windowSeconds`, which starts with
+// the first request. The purposes are this fixed list, each named as a literal
+// by the page or the action that takes it, and never built from a request
+// (test/scripts/quota-guardrails.test.ts). A purpose arrives with the surface
+// it protects: the search and the report form have theirs; the registration
+// and the edit (EMR-42) and the SMS add theirs here.
 
 export interface Quota {
   /** Requests allowed in one window. */

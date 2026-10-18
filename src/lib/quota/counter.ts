@@ -1,7 +1,9 @@
 // The Durable Object that keeps the per-IP quotas (ADR 0012; docs/specs/
 // deployment.md, "Anti-abuse counters live in a Durable Object and never in
-// PostgreSQL (v2)"). There is one object per purpose (`QUOTA_COUNTER`,
-// `getByName(purpose)`), so each purpose counts apart.
+// PostgreSQL (v2)"). There is one single instance for every purpose
+// (`QUOTA_COUNTER`, `getByName(QUOTA_COUNTER_NAME)` in src/lib/quota/
+// quota.ts); the purpose is part of the code of each counter, so each purpose
+// counts apart, with its own limit and window.
 //
 // What the privacy notice promises about the IP address holds here: the
 // address is used in memory only, to make a code with a secret key, and that
@@ -16,17 +18,35 @@
 // - The counters are FixedWindowCounters (src/core/quota/window.ts), keyed by
 //   that code, which mixes the purpose and the address.
 // - A timer deletes each counter when its window ends. A pending timer also
-//   keeps the object in memory while it has counters (a timer prevents the
-//   eviction of a Durable Object for up to 15 minutes, so it is never set
-//   further than `MAX_TIMER_MS` ahead); with no counter left, it may be
-//   evicted, and there is nothing to lose.
+//   keeps the object in memory while it has counters; with no counter left,
+//   it may be evicted, and there is nothing to lose.
+//
+// The rules that keep its cost bounded (ADR 0012, amended on 2026-10-15;
+// test/scripts/quota-guardrails.test.ts and test/worker/quota.test.ts check
+// them). Duration is billed for every second an object is in memory and
+// cannot hibernate, and a pending timer prevents hibernation, so:
+//
+// - One instance, never one per visitor, address, user or purpose.
+// - Nothing in `ctx.storage`, and no alarm (`setAlarm`, `alarm()`): an alarm
+//   outlives the object and wakes it again, which is how a Durable Object
+//   runs up a bill on its own.
+// - One timer, which exists only while at least one counter exists. Each
+//   arming is at most `MAX_TIMER_MS` ahead, under the 15 minutes for which a
+//   pending timer keeps a Durable Object from being evicted, and once no
+//   counter remains it is cleared and never armed again until a request
+//   brings a new counter. So a request keeps the object in memory at most
+//   until its window ends, an hour later at most, and then for the minute or
+//   two Cloudflare waits before it evicts an idle object.
 //
 // Nothing here is logged: neither the address nor its code.
 import { DurableObject } from "cloudflare:workers";
 import { isQuotaPurpose, QUOTAS, type QuotaPurpose } from "../../core/quota/quotas.ts";
 import { FixedWindowCounters, type QuotaDecision } from "../../core/quota/window.ts";
 
-/** The longest a sweep timer is set ahead: under the 15 minutes one keeps the object alive. */
+/**
+ * The longest the sweep timer is set ahead: under the 15 minutes for which a
+ * pending timer keeps a Durable Object from being evicted.
+ */
 export const MAX_TIMER_MS = 10 * 60 * 1000;
 
 /** Bytes of the HMAC kept as the code: 128 bits, as hex. */
@@ -74,7 +94,11 @@ export class QuotaCounter extends DurableObject<Env> {
     this.schedule(now);
   }
 
-  /** Sets the timer for the next window that ends, unless one fires earlier. */
+  /**
+   * Sets the timer for the next window that ends, at most `MAX_TIMER_MS`
+   * ahead, unless one fires earlier. With no counter left it clears the
+   * timer and sets none: only a new counter arms it again.
+   */
   private schedule(now: number): void {
     const next = this.counters.nextEnd();
     if (next === null) {

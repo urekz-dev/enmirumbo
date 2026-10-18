@@ -3,19 +3,31 @@
 // public-directory.md, "The search endpoint has a per-IP quota (v2)": what a
 // quota counts (src/core/quota/subject.ts), how it counts
 // (src/core/quota/window.ts), the Durable Object that keeps the counters in
-// memory (src/lib/quota/counter.ts) and how a page asks for it
-// (src/lib/quota/quota.ts). The results page over its quota is served in
-// test/e2e/search.spec.ts. Every address is from the ranges reserved for
-// documentation (RFC 5737 and RFC 3849), so none is a real person's.
+// memory (src/lib/quota/counter.ts), the rules that bound its cost, and how a
+// page asks for it (src/lib/quota/quota.ts). test/scripts/
+// quota-guardrails.test.ts checks the same rules on the source. The results
+// page over its quota is served in test/e2e/search.spec.ts. Every address is
+// from the ranges reserved for documentation (RFC 5737 and RFC 3849), so none
+// is a real person's.
 import { env } from "cloudflare:workers";
 import { abortAllDurableObjects, runInDurableObject } from "cloudflare:test";
 import { sql } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
-import { isQuotaPurpose, MAX_WINDOW_SECONDS, QUOTAS } from "../../src/core/quota/quotas.ts";
+import {
+  isQuotaPurpose,
+  MAX_WINDOW_SECONDS,
+  QUOTAS,
+  type QuotaPurpose,
+} from "../../src/core/quota/quotas.ts";
 import { quotaSubject } from "../../src/core/quota/subject.ts";
 import { FixedWindowCounters, MAX_COUNTERS } from "../../src/core/quota/window.ts";
 import { MAX_TIMER_MS, type QuotaCounter } from "../../src/lib/quota/counter.ts";
-import { CLIENT_IP_HEADER, overQuotaHeaders, takeQuota } from "../../src/lib/quota/quota.ts";
+import {
+  CLIENT_IP_HEADER,
+  overQuotaHeaders,
+  QUOTA_COUNTER_NAME,
+  takeQuota,
+} from "../../src/lib/quota/quota.ts";
 import { db } from "./fixtures.ts";
 
 afterEach(() => {
@@ -28,15 +40,28 @@ const MINUTE = 60_000;
 /** The headers of a request from `address`, as Cloudflare writes them. */
 const from = (address: string) => new Headers({ [CLIENT_IP_HEADER]: address });
 
-/** The counter of the search, the object every search request reaches. */
-const searchCounter = () => env.QUOTA_COUNTER.getByName("search");
+/** The quota counter: the one object every request of every purpose reaches. */
+const counter = () => env.QUOTA_COUNTER.getByName(QUOTA_COUNTER_NAME);
 
-/** What the counter of the search keeps in memory, read from inside it. */
+/**
+ * A counter of its own, for a test that needs one no other test touches. Only
+ * the tests make another instance; the site never does.
+ */
+const ownCounter = () => env.QUOTA_COUNTER.get(env.QUOTA_COUNTER.newUniqueId());
+
+/** What the quota counter keeps in memory, read from inside it. */
 const kept = () =>
-  runInDurableObject(searchCounter(), (instance: QuotaCounter) => ({
+  runInDurableObject(counter(), (instance: QuotaCounter) => ({
     keys: instance["counters"].keys(),
     timerAt: instance["timerAt"],
   }));
+
+/** Whether a counter holds a timer, when it fires and how many counters it keeps. */
+const timerOf = (instance: QuotaCounter) => ({
+  timer: instance["timer"] !== undefined,
+  timerAt: instance["timerAt"],
+  counters: instance["counters"].size,
+});
 
 /** Takes the search quota `times` times from `address`; the last answer. */
 async function search(address: string, times = 1) {
@@ -154,7 +179,7 @@ describe("The search endpoint has a per-IP quota (v2)", () => {
     expect(SEARCH).toEqual({ limit: 100, windowSeconds: 600 });
   });
 
-  // Scenarios: within the quota; over the quota
+  // Scenarios: within the quota; over the quota; the 101st search
   it("every search within the quota goes on, and the next one waits for the window", async () => {
     const address = "192.0.2.21";
     expect(await search(address, SEARCH.limit)).toEqual({ allowed: true });
@@ -221,7 +246,7 @@ describe("Anti-abuse counters live in a Durable Object and never in PostgreSQL (
       expect(key).not.toContain(address);
       expect(key).not.toContain("198");
     }
-    const codes = await runInDurableObject(searchCounter(), (instance: QuotaCounter) =>
+    const codes = await runInDurableObject(counter(), (instance: QuotaCounter) =>
       Promise.all([
         instance["code"]("search", address),
         instance["code"]("search", address),
@@ -238,7 +263,8 @@ describe("Anti-abuse counters live in a Durable Object and never in PostgreSQL (
     await search("198.51.100.34");
     const { timerAt } = await kept();
     expect(timerAt).toBeLessThanOrEqual(Date.now() + MAX_TIMER_MS);
-    const left = await runInDurableObject(searchCounter(), (instance: QuotaCounter) => {
+    const left = await runInDurableObject(ownCounter(), async (instance: QuotaCounter) => {
+      await instance.take("search", "198.51.100.34");
       instance["sweep"](Date.now() + SEARCH.windowSeconds * 1000);
       return { keys: instance["counters"].keys(), timerAt: instance["timerAt"] };
     });
@@ -246,17 +272,20 @@ describe("Anti-abuse counters live in a Durable Object and never in PostgreSQL (
     expect(left.timerAt).toBe(Number.POSITIVE_INFINITY);
   });
 
-  it("the counters and the key live in memory only: nothing is written to storage", async () => {
+  // Scenario: nothing in the storage of the Durable Object
+  it("the counters and the key live in memory only: nothing is written to storage, and no alarm is set", async () => {
     await search("198.51.100.35", 3);
-    const stored = await runInDurableObject(searchCounter(), async (_instance, state) => ({
+    await takeQuota(env, from("198.51.100.35"), "report");
+    const stored = await runInDurableObject(counter(), async (_instance, state) => ({
       entries: (await state.storage.list()).size,
       tables: state.storage.sql
         .exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'")
         .toArray()
         .map(({ name }) => name)
         .filter((name) => !name.startsWith("_cf_") && !name.startsWith("sqlite_")),
+      alarm: await state.storage.getAlarm(),
     }));
-    expect(stored).toEqual({ entries: 0, tables: [] });
+    expect(stored).toEqual({ entries: 0, tables: [], alarm: null });
   });
 
   it("a restart forgets every counter and the key, so a quota can only forget", async () => {
@@ -279,5 +308,126 @@ describe("Anti-abuse counters live in a Durable Object and never in PostgreSQL (
       return result.rows;
     });
     expect(columns).toEqual([]);
+  });
+});
+
+describe("Anti-abuse counters live in a Durable Object and never in PostgreSQL (v2): a bounded cost", () => {
+  // Scenario: one object for every purpose
+  it("every purpose, from every address, reaches the one object named QUOTA_COUNTER_NAME", async () => {
+    const log = vi.spyOn(console, "error");
+    const reached: string[] = [];
+    // Only getByName answers: any other way to reach an object would throw,
+    // and takeQuota would log that the counter did not answer.
+    const recording = {
+      QUOTA_COUNTER: {
+        getByName: (name: string) => {
+          reached.push(name);
+          return env.QUOTA_COUNTER.getByName(name);
+        },
+      },
+    } as unknown as Pick<Env, "QUOTA_COUNTER">;
+    const addresses = ["203.0.113.61", "203.0.113.62", "2001:db8:61::1", "2001:db8:62::1"];
+    const purposes = Object.keys(QUOTAS) as QuotaPurpose[];
+    for (const purpose of purposes) {
+      for (const address of addresses) {
+        expect(await takeQuota(recording, from(address), purpose)).toEqual({ allowed: true });
+      }
+    }
+    expect(log).not.toHaveBeenCalled();
+    expect(reached).toHaveLength(purposes.length * addresses.length);
+    expect(new Set(reached)).toEqual(new Set([QUOTA_COUNTER_NAME]));
+    // The one object keeps a counter for each purpose and address, apart.
+    const held = await runInDurableObject(counter(), async (instance: QuotaCounter) => {
+      const keys = new Set(instance["counters"].keys());
+      const codes = await Promise.all(
+        purposes.flatMap((purpose) =>
+          addresses.map((address) => instance["code"](purpose, quotaSubject(address)!)),
+        ),
+      );
+      return { codes: new Set(codes).size, held: codes.every((code) => keys.has(code)) };
+    });
+    expect(held).toEqual({ codes: purposes.length * addresses.length, held: true });
+  });
+
+  // Scenario: a purpose outside the list
+  it("the object refuses a purpose that QUOTAS does not have, and keeps nothing for it", async () => {
+    const result = await runInDurableObject(ownCounter(), async (instance: QuotaCounter) => {
+      const refused = await instance.take("signup" as QuotaPurpose, "203.0.113.63").then(
+        () => false,
+        (error: unknown) => error instanceof Error && error.message === "quota: unknown purpose",
+      );
+      return { refused, ...timerOf(instance) };
+    });
+    expect(result).toEqual({
+      refused: true,
+      timer: false,
+      timerAt: Number.POSITIVE_INFINITY,
+      counters: 0,
+    });
+  });
+
+  // Scenarios: no timer without a counter; a timer never set far ahead
+  it("the timer exists only while a counter exists, is set at most MAX_TIMER_MS ahead, and is not set again once no counter remains", async () => {
+    // Under the 15 minutes for which a pending timer keeps an object from
+    // being evicted.
+    expect(MAX_TIMER_MS).toBeGreaterThan(0);
+    expect(MAX_TIMER_MS).toBeLessThan(15 * MINUTE);
+
+    const result = await runInDurableObject(ownCounter(), async (instance: QuotaCounter) => {
+      // Every timer the object sets is recorded instead of left to fire, so
+      // the test decides when each one fires.
+      const armed: { fire: () => void; delay: number }[] = [];
+      const realSetTimeout = globalThis.setTimeout;
+      const spy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+        fire: () => void,
+        delay?: number,
+      ) => {
+        armed.push({ fire, delay: delay ?? 0 });
+        return realSetTimeout(() => {}, 0);
+      }) as typeof setTimeout);
+      try {
+        const before = timerOf(instance);
+        // A report's window ends an hour later, a search's ten minutes later.
+        await instance.take("report", "203.0.113.64");
+        await instance.take("search", "203.0.113.65");
+        const now = Date.now();
+        const counting = { ...timerOf(instance), ahead: instance["timerAt"] - now };
+        const armedWhileCounting = armed.length;
+        // The timer fires while counters remain: it is set again.
+        armed.at(-1)!.fire();
+        const refired = { ...timerOf(instance), armed: armed.length - armedWhileCounting };
+        // Every window ends: the last counter goes, and so does the timer.
+        const beforeEnd = armed.length;
+        instance["sweep"](now + 2 * MAX_WINDOW_SECONDS * 1000);
+        const ended = { ...timerOf(instance), armed: armed.length - beforeEnd };
+        // A timer that fires with no counter left sets none.
+        for (const { fire } of armed) fire();
+        const fired = { ...timerOf(instance), armed: armed.length - beforeEnd };
+        return {
+          before,
+          counting,
+          refired,
+          ended,
+          fired,
+          delays: armed.map(({ delay }) => delay),
+        };
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    const none = { timer: false, timerAt: Number.POSITIVE_INFINITY };
+    expect(result.before).toEqual({ ...none, counters: 0 });
+    expect(result.counting).toMatchObject({ timer: true, counters: 2 });
+    expect(result.counting.ahead).toBeGreaterThan(0);
+    expect(result.counting.ahead).toBeLessThanOrEqual(MAX_TIMER_MS);
+    expect(result.refired).toMatchObject({ timer: true, counters: 2, armed: 1 });
+    expect(result.ended).toEqual({ ...none, counters: 0, armed: 0 });
+    expect(result.fired).toEqual({ ...none, counters: 0, armed: 0 });
+    expect(result.delays.length).toBeGreaterThan(0);
+    for (const delay of result.delays) {
+      expect(delay).toBeGreaterThanOrEqual(0);
+      expect(delay).toBeLessThanOrEqual(MAX_TIMER_MS);
+    }
   });
 });
