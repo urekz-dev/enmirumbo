@@ -59,6 +59,11 @@
   // .wrangler/state, and the local Worker serves it under /_media/
   // (src/lib/photos.ts).
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "enmirumbo-media-local" }],
+  // Cloudflare Images (ADR 0011): the registration transforms an uploaded
+  // photo into the two WebP variants it stores in MEDIA
+  // (src/core/photos/upload.ts). Locally, and in the tests, Wrangler runs an
+  // offline version with sharp; a deployed environment uses the real service.
+  "images": { "binding": "IMAGES" },
   "vars": {
     // local, dev, stage or prod. Only "local" lets /admin open with the fixed
     // identity admin@enmirumbo.test, and only on a loopback host (ADR 0010).
@@ -115,6 +120,8 @@
       },
       // The public media: the bucket and hostname it shares with stage, whose database dev copies.
       "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "enmirumbo-media-dev" }],
+      // Cloudflare Images, which transforms the uploaded photos.
+      "images": { "binding": "IMAGES" },
       "vars": {
         "ENVIRONMENT": "dev",
         "ACCESS_TEAM_DOMAIN": "urekz.cloudflareaccess.com",
@@ -159,6 +166,8 @@
       },
       // The public media: the bucket and hostname it shares with dev.
       "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "enmirumbo-media-dev" }],
+      // Cloudflare Images, which transforms the uploaded photos.
+      "images": { "binding": "IMAGES" },
       "vars": {
         "ENVIRONMENT": "stage",
         "ACCESS_TEAM_DOMAIN": "urekz.cloudflareaccess.com",
@@ -199,6 +208,8 @@
       },
       // The public media: its own bucket and hostname, which no other environment reaches.
       "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "enmirumbo-media" }],
+      // Cloudflare Images, which transforms the uploaded photos.
+      "images": { "binding": "IMAGES" },
       "vars": {
         "ENVIRONMENT": "prod",
         "ACCESS_TEAM_DOMAIN": "urekz.cloudflareaccess.com",

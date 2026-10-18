@@ -7,15 +7,20 @@
 //
 // - A new number in the locality creates the business in `in_review`, with
 //   origin `organic`, its consent record (the moment the server saved it and
-//   the version of the notice in force) and nothing else the server owns: no
-//   trades, no publication date, no management link, no photo. The database
-//   derives the search text (`name_normalized`, `what_you_offer_normalized`).
+//   the version of the notice in force), the photo key of the photo just
+//   stored, if any, and nothing else the server owns: no trades, no
+//   publication date, no management link. The database derives the search
+//   text (`name_normalized`, `what_you_offer_normalized`).
 // - A number whose card was rejected is a resubmission: that same card takes
 //   the new data and goes back to `in_review`, its rejection trace is
 //   cleared and its wait restarts (`registered_at`), and its consent record
 //   is kept whole. When the notice in force is later than the record's, the
 //   re-acceptance is noted beside it. Its origin, trades, management link,
-//   publication date, unpublishing trace and photo do not change.
+//   publication date and unpublishing trace do not change. Its photo is
+//   replaced by the one just stored, removed ("Dejar mi ficha sin foto") or
+//   kept, as the submission asks; the photo it no longer names is given back
+//   so its objects are deleted once the card is saved (business-registration,
+//   "Resubmission after a rejection allows changing or removing the photo").
 // - A number whose card is in review or published is a duplicate, and
 //   nothing changes.
 //
@@ -31,10 +36,28 @@ import { newBusinessId } from "../business/id.ts";
 import type { Db } from "../db/client.ts";
 import { businesses } from "../db/schema/index.ts";
 import { isLaterNoticeVersion, NOTICE_VERSION } from "../legal/version.ts";
+import { isPhotoKey } from "../photos/photo.ts";
 import type { NewRegistration } from "./submission.ts";
 
-/** What happened to a registration. */
-export type SaveRegistrationOutcome = "created" | "resubmitted" | "duplicate";
+/**
+ * What a registration does to the card's photo: leave it (a new card has
+ * none), name the photo just stored under `key`, or leave the card without
+ * one.
+ */
+export type PhotoChange = { kind: "keep" } | { kind: "set"; key: string } | { kind: "remove" };
+
+/**
+ * What happened to a registration. A resubmission that replaced or removed
+ * the card's photo gives back the key it no longer names, whose objects are
+ * then deleted; a stored value that is not a photo key names no objects.
+ */
+export type SaveRegistrationOutcome =
+  | { kind: "created" }
+  | { kind: "resubmitted"; droppedPhotoKey: string | null }
+  | { kind: "duplicate" };
+
+const CREATED: SaveRegistrationOutcome = { kind: "created" };
+const DUPLICATE: SaveRegistrationOutcome = { kind: "duplicate" };
 
 /** The PostgreSQL code of a unique violation, and the constraint of the identifier. */
 const UNIQUE_VIOLATION = "23505";
@@ -53,6 +76,8 @@ function isRepeatedId(error: unknown): boolean {
 const ATTEMPTS = 3;
 
 export interface SaveRegistrationOptions {
+  /** What the registration does to the photo; it keeps it unless told otherwise. */
+  photo?: PhotoChange;
   /** The version of the notice in force; the server's, never a submission's. */
   noticeVersion?: string;
   /** Where identifiers come from (newBusinessId); tests pass their own. */
@@ -67,8 +92,13 @@ export async function saveRegistration(
   db: Db,
   localityCode: string,
   registration: NewRegistration,
-  { noticeVersion = NOTICE_VERSION, newId = newBusinessId }: SaveRegistrationOptions = {},
+  {
+    photo = { kind: "keep" },
+    noticeVersion = NOTICE_VERSION,
+    newId = newBusinessId,
+  }: SaveRegistrationOptions = {},
 ): Promise<SaveRegistrationOutcome> {
+  const newPhotoKey = photo.kind === "set" ? photo.key : null;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     let created: { id: string }[];
     try {
@@ -78,6 +108,7 @@ export async function saveRegistration(
           id: newId(),
           localityCode,
           ...registration,
+          photoKey: newPhotoKey,
           // The consent record is one pair, written at once: the moment of
           // this statement, the same as `registered_at`, and the version in
           // force on the server.
@@ -92,7 +123,7 @@ export async function saveRegistration(
       if (isRepeatedId(error) && attempt < ATTEMPTS) continue;
       throw error;
     }
-    if (created.length > 0) return "created";
+    if (created.length > 0) return CREATED;
 
     // The number already has a card in this locality.
     const [card] = await db
@@ -100,6 +131,7 @@ export async function saveRegistration(
         id: businesses.id,
         status: businesses.status,
         consentedToNoticeVersion: businesses.consentedToNoticeVersion,
+        photoKey: businesses.photoKey,
       })
       .from(businesses)
       .where(
@@ -110,16 +142,18 @@ export async function saveRegistration(
       );
     // Deleted in the meantime: the number is free again.
     if (card === undefined) continue;
-    if (card.status !== "rejected") return "duplicate";
+    if (card.status !== "rejected") return DUPLICATE;
 
     const reconsent = isLaterNoticeVersion(noticeVersion, card.consentedToNoticeVersion)
       ? { reconsentedToNoticeAt: sql`now()`, reconsentedToNoticeVersion: noticeVersion }
       : {};
+    const photoChange = photo.kind === "keep" ? {} : { photoKey: newPhotoKey };
     const resubmitted = await db
       .update(businesses)
       .set({
         ...registration,
         ...reconsent,
+        ...photoChange,
         status: "in_review",
         rejectedAt: null,
         rejectionReason: null,
@@ -129,7 +163,12 @@ export async function saveRegistration(
       .where(and(eq(businesses.id, card.id), eq(businesses.status, "rejected")))
       .returning({ id: businesses.id });
     // Resolved by the admin a moment before: no longer a resubmission.
-    return resubmitted.length > 0 ? "resubmitted" : "duplicate";
+    if (resubmitted.length === 0) return DUPLICATE;
+    const dropped = photo.kind !== "keep" && card.photoKey !== newPhotoKey;
+    return {
+      kind: "resubmitted",
+      droppedPhotoKey: dropped && isPhotoKey(card.photoKey) ? card.photoKey : null,
+    };
   }
   throw new Error("registration: the business could not be saved after several attempts");
 }

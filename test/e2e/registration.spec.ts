@@ -703,8 +703,10 @@ test.describe("Turnstile is checked on the server, fails closed and has a switch
         page.waitForRequest((sent) => sent.method() === "POST"),
         submitButton(page).click(),
       ]);
-      expect(new URLSearchParams(request.postData() ?? "").get(TURNSTILE_RESPONSE_FIELD)).toBe(
-        TURNSTILE_DUMMY_TOKEN,
+      // The form is multipart, for the photo: the token is one of its parts.
+      expect(request.headers()["content-type"]).toMatch(/^multipart\/form-data; boundary=/);
+      expect(request.postData()).toContain(
+        `name="${TURNSTILE_RESPONSE_FIELD}"\r\n\r\n${TURNSTILE_DUMMY_TOKEN}\r\n`,
       );
       await expect(page).toHaveURL(THANKS);
       expect(await businessesOf("7719994050")).toHaveLength(1);

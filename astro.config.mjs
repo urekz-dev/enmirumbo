@@ -2,6 +2,7 @@
 import cloudflare from "@astrojs/cloudflare";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
+import { ACTION_BODY_LIMIT } from "./src/core/photos/limits.ts";
 import { staticHeaders } from "./src/integrations/static-headers.ts";
 
 // The build prerenders pages in a local workerd with the bindings of the
@@ -21,8 +22,9 @@ if (process.env["CLOUDFLARE_ENV"]) {
 export default defineConfig({
   output: "server",
   adapter: cloudflare({
-    // Photos are transformed on upload (ADR 0011), not by Astro, so the
-    // adapter does not add an IMAGES binding.
+    // Photos are transformed once, on upload, by the registration through
+    // the IMAGES binding of wrangler.jsonc (ADR 0011,
+    // src/core/photos/upload.ts), never by Astro's image service.
     imageService: "passthrough",
   }),
   build: {
@@ -42,6 +44,11 @@ export default defineConfig({
   integrations: [staticHeaders()],
   // No sessions, so the adapter does not require a KV binding.
   session: false,
+  security: {
+    // The registration form uploads a photo of up to 5 MB, over Astro's
+    // default of 1 MiB for an action's body (src/core/photos/limits.ts).
+    actionBodySizeLimit: ACTION_BODY_LIMIT,
+  },
   vite: {
     plugins: [tailwindcss()],
     // Nor any inline script or data: URL: a small script or image stays a

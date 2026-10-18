@@ -175,13 +175,21 @@ const newAddress = () => `198.51.100.${++lastAddress}`;
 /** The local Worker's Turnstile check, which emulates the always-pass test secret. */
 const verifyTurnstile = turnstileVerifier(env);
 
+/** The local Images binding and media bucket, as the action passes them. */
+const PHOTOS = { images: env.IMAGES, bucket: env.MEDIA };
+
 /**
  * What the action gives the core: a fresh connection, the registration quota
- * of `address` and the Turnstile check.
+ * of `address`, the Turnstile check and what the photo needs.
  */
 function deps(address: string | null = newAddress()): SubmitRegistrationDeps {
   const headers = new Headers(address === null ? {} : { [CLIENT_IP_HEADER]: address });
-  return { useDb: db, takeQuota: () => takeQuota(env, headers, "registration"), verifyTurnstile };
+  return {
+    useDb: db,
+    takeQuota: () => takeQuota(env, headers, "registration"),
+    verifyTurnstile,
+    photos: PHOTOS,
+  };
 }
 
 /** Dependencies that count what they are asked; the quota always lets it go on. */
@@ -200,6 +208,7 @@ function counted() {
       calls.turnstile += 1;
       return verifyTurnstile(token, action);
     },
+    photos: PHOTOS,
   };
   return { calls, using };
 }
@@ -324,6 +333,8 @@ describe("Required and optional form fields", () => {
       address: "address",
       openingHours: "openingHours",
       facebookUrl: "facebookUrl",
+      photo: "photo",
+      removePhoto: "removePhoto",
       noticeVersion: "noticeVersion",
       consent: "consent",
     });
@@ -459,6 +470,10 @@ describe("The server validates every field and returns per-field errors in Spani
       "openingHours.length": "Deja esto en 100 caracteres o menos",
       "facebookUrl.invalid": "El link de Facebook debe empezar con http:// o https://",
       "facebookUrl.length": "Deja esto en 300 caracteres o menos",
+      "photo.too-large": "Esa foto pesa más de 5 MB. Sube una más ligera.",
+      "photo.unreadable": "No pudimos leer esa foto. Sube una imagen JPG, PNG o WebP.",
+      "photo.busy": "Estamos recibiendo muchas fotos, intenta de nuevo en un momento",
+      "photo.failed": "No pudimos procesar tu foto. Intenta con otra o envía tu registro sin foto.",
       "consent.required": "Marca la casilla para poder registrar tu negocio",
       "consent.notice-changed":
         "El aviso de privacidad cambió mientras llenabas esto. Léelo otra vez y vuelve a marcar la casilla.",
@@ -613,6 +628,8 @@ describe("The server validates every field and returns per-field errors in Spani
       address: "</textarea><script>x</script>",
       openingHours: "L-S",
       facebookUrl: "facebook.com/x",
+      photo: false,
+      removePhoto: false,
     });
     expect(Object.keys(EMPTY_REGISTRATION_DRAFT)).not.toContain("consent");
     expect(registrationDraft(new FormData())).toEqual(EMPTY_REGISTRATION_DRAFT);
@@ -643,6 +660,7 @@ describe("The server validates every field and returns per-field errors in Spani
         useDb: () => Promise.reject(failure),
         takeQuota: async () => ({ allowed: true }),
         verifyTurnstile,
+        photos: PHOTOS,
       },
     );
     expect(outcome).toEqual({ kind: "server" });
@@ -954,7 +972,7 @@ describe("A successful submission queues the business and shows the thank-you sc
       await db((tx) =>
         saveRegistration(tx, f.localityA, registration, { newId: () => ids.shift() ?? "" }),
       ),
-    ).toBe("created");
+    ).toEqual({ kind: "created" });
     expect((await businessOf(whatsapp))?.id).toBe("x9x9x9x9x9");
   });
 });
@@ -1126,6 +1144,7 @@ describe("One card per WhatsApp number", () => {
         useDb: db,
         takeQuota: async () => ({ allowed: false, retryAfterSeconds: 60 }),
         verifyTurnstile,
+        photos: PHOTOS,
       }),
     ).toEqual({ kind: "quota" });
     expect(await businessOf(whatsapp)).toEqual(before);
@@ -1289,8 +1308,12 @@ describe("The registration page of a locality lives under it, and lands on its t
     });
     expect(of({ kind: "quota" })).toEqual({ errors: {}, general: "quota", keepsDraft: true });
     expect(of({ kind: "server" })).toEqual({ errors: {}, general: "server", keepsDraft: true });
+    // A body over the limit of the actions, refused unread: the photo was
+    // too large, and there is no draft to read.
+    expect(
+      registrationPageFailure(new ActionError({ code: "CONTENT_TOO_LARGE", message: "too large" })),
+    ).toEqual({ errors: { photo: "too-large" }, general: null, keepsDraft: false });
     for (const error of [
-      new ActionError({ code: "CONTENT_TOO_LARGE", message: "too large" }),
       new ActionError({ code: "UNSUPPORTED_MEDIA_TYPE" }),
       new ActionError({ code: "BAD_REQUEST", message: "Plomería Güicho" }),
       new ActionError({ code: "TOO_MANY_REQUESTS", message: "server" }),

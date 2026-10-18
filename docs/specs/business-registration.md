@@ -872,9 +872,9 @@ The registration and edit forms require client JavaScript, because the anti-bot 
 
 ### Requirement: Photos are stored as two WebP sizes in R2 under opaque keys (v2)
 
-Added in v2 — source: ADR 0011, PRD §6.8. Amended on 2026-10-18 by EMR-35 and the decision of the product owner of that date: the bucket is the environment's public media bucket, and the objects, their sizes and their caching are the ones the directory serves.
+Added in v2 — source: ADR 0011, PRD §6.8. Amended on 2026-10-18 by EMR-35 and the decision of the product owner of that date: the bucket is the environment's public media bucket, and the objects, their sizes and their caching are the ones the directory serves. Amended on 2026-10-18 by EMR-40 and the decision of the product owner of that date: the message of a failure while transforming, and the original is opened once, into a working copy from which both sizes are cut ("Photos are uploaded through the Images binding, within a ceiling of work (v2)").
 
-The Worker MUST validate the type and size of the uploaded photo and transform it once with the Images binding into two WebP sizes (card and full) with the metadata stripped. Only those two files MUST be stored, in the public media bucket of the environment (`deployment`, "Public media live in R2, in one bucket for production and one for dev and stage (v2)"), under the opaque photo key the server generates (`data-model`, "A photo key is 24 characters of the identifier alphabet, and names two objects under `photos/` (v2)"): `photos/<photo key>/card.webp`, 400×400, the listing card's, and `photos/<photo key>/full.webp`, 1200×900, the card's, each within the weight of `public-directory`, "Photo weight does not break the 4G budget", with the media type `image/webp` and `Cache-Control: public, max-age=31536000, immutable`. The original MUST NOT be kept. This replaces the storage described in "The photo is stored compressed, without metadata and with a server-generated reference" only as to the format and the store.
+The Worker MUST validate the type and size of the uploaded photo and transform it with the Images binding, opening the original once, into two WebP sizes (card and full) with the metadata stripped. Only those two files MUST be stored, in the public media bucket of the environment (`deployment`, "Public media live in R2, in one bucket for production and one for dev and stage (v2)"), under the opaque photo key the server generates (`data-model`, "A photo key is 24 characters of the identifier alphabet, and names two objects under `photos/` (v2)"): `photos/<photo key>/card.webp`, 400×400, the listing card's, and `photos/<photo key>/full.webp`, 1200×900, the card's, each within the weight of `public-directory`, "Photo weight does not break the 4G budget", with the media type `image/webp` and `Cache-Control: public, max-age=31536000, immutable`. The original MUST NOT be kept. This replaces the storage described in "The photo is stored compressed, without metadata and with a server-generated reference" only as to the format and the store.
 
 #### Scenario: what is stored
 
@@ -889,15 +889,15 @@ The Worker MUST validate the type and size of the uploaded photo and transform i
 #### Scenario: a failure while transforming
 
 - **WHEN** the transformation fails
-- **THEN** the owner sees "No pudimos preparar tu foto. Intenta con otra.", no business is created and no object remains in the bucket
+- **THEN** the owner sees "No pudimos procesar tu foto. Intenta con otra o envía tu registro sin foto." next to the photo field, no business is created and no object remains in the bucket
 
 ### Requirement: The registration page of a locality lives under it, and lands on its thank-you page (v2)
 
-Added in v2 — source: ADR 0007, ADR 0019, EMR-39; `public-directory`, "The report form posts to its own address, which names the card (v2)", whose pattern every public form follows. It takes the place of the prototype's `/registro` and `/registro/gracias` at the root, and amends "No form data travels to the measurement" on the address of the answer with errors. Amended on 2026-10-18 by EMR-42: the answer refused by Turnstile (`403`), and the form needs JavaScript while Turnstile is on.
+Added in v2 — source: ADR 0007, ADR 0019, EMR-39; `public-directory`, "The report form posts to its own address, which names the card (v2)", whose pattern every public form follows. It takes the place of the prototype's `/registro` and `/registro/gracias` at the root, and amends "No form data travels to the measurement" on the address of the answer with errors. Amended on 2026-10-18 by EMR-42: the answer refused by Turnstile (`403`), and the form needs JavaScript while Turnstile is on. Amended on 2026-10-18 by EMR-40: the statuses of the photo's answers (`413`, `502`, `503`).
 
 The registration form of a locality is `/{estado}/{municipio}/registro`, and its thank-you page `/{estado}/{municipio}/registro/gracias`; both segments are reserved (`data-model`, "The slugs of the catalogues do not produce ambiguous URLs at the root of a locality (v2)"). The page MUST be headed with the literal text "Registra tu negocio gratis" as its only `h1`, followed by the literal phrase "Llena este formulario en un par de minutos, sin cuenta ni contraseña. En cuanto lo revisemos, te contactamos por WhatsApp.", and then the form. The form page may be indexed: it declares its own address as canonical, its title is "Registra tu negocio gratis en {municipio}", its description "Registra gratis tu negocio de {municipio} en enmirumbo: un solo formulario, sin cuenta ni contraseña. Lo revisamos y te contactamos por WhatsApp.", both with the municipality read from the locality record, and the sitemap lists it (`base-layout`, "The sitemap lists the pages that exist, from the database (v2)").
 
-The form posts to the address of its own page with the server action of the registration, and the business is created in the locality of that address: no field of the submission chooses or changes the locality. The action reached any other way —posted from another page, or at its own endpoint `/_actions/register`— MUST save nothing and answer 404, and so does the registration page of a municipality that is not an active locality. A received submission —a new card, the resubmission of a rejected card or a submission caught by the trap field, which MUST look the same— MUST be answered with a `303` to the thank-you page, with `Cache-Control: no-store`, so that reloading it never sends the form again; the server builds that address, and no field of the submission can change it. Any other answer renders the form again in the answer to that same submission, with the error next to each field and what the owner had written, read from that submission, with the status of its error (`400` for the fields, a number that already has a card included; `403` when Turnstile refused it; `429` over the quota; `500` when it could not be saved), `Cache-Control: no-store` and no `Set-Cookie`. What the owner wrote MUST NOT travel in an address or a cookie, and MUST NOT be kept on the server: the address of that answer is the form's with the name of the action alone (`/registro?_action=register`), which carries no value, and the measurement leaves the query out of the addresses it records (`base-layout`, "The measurement carries no personal data or text typed by people"), so only `/registro` and `/registro/gracias` reach it.
+The form posts to the address of its own page with the server action of the registration, and the business is created in the locality of that address: no field of the submission chooses or changes the locality. The action reached any other way —posted from another page, or at its own endpoint `/_actions/register`— MUST save nothing and answer 404, and so does the registration page of a municipality that is not an active locality. A received submission —a new card, the resubmission of a rejected card or a submission caught by the trap field, which MUST look the same— MUST be answered with a `303` to the thank-you page, with `Cache-Control: no-store`, so that reloading it never sends the form again; the server builds that address, and no field of the submission can change it. Any other answer renders the form again in the answer to that same submission, with the error next to each field and what the owner had written, read from that submission, with the status of its error (`400` for the fields, a number that already has a card and a photo too large or unreadable included; `403` when Turnstile refused it; `413` for a body over the limit of the form; `429` over the quota; `500` when it could not be saved; `502` when Images could not process the photo; `503` when the server was busy with other photos), `Cache-Control: no-store` and no `Set-Cookie`. What the owner wrote MUST NOT travel in an address or a cookie, and MUST NOT be kept on the server: the address of that answer is the form's with the name of the action alone (`/registro?_action=register`), which carries no value, and the measurement leaves the query out of the addresses it records (`base-layout`, "The measurement carries no personal data or text typed by people"), so only `/registro` and `/registro/gracias` reach it.
 
 The thank-you page MUST show the literal message of "A successful submission queues the business and shows the thank-you screen" as its only `h1` and a link "Volver al inicio" to the home of the locality, and nothing else. It has no form and no query, reads nothing, declares `noindex, follow` and no canonical, has the static title "Gracias por registrar tu negocio", is left out of the sitemap and is disallowed by `robots.txt` (`base-layout`, "The open `robots.txt` allows the public site and excludes what is not relevant (v2)").
 
@@ -1127,3 +1127,96 @@ Until the email to the admin arrives (EMR-55), the alert MUST be one structured 
 
 - **WHEN** one locality passes its threshold
 - **THEN** only it is alerted; another locality under its own threshold, an inactive one and one without a threshold are not
+
+### Requirement: Photos are uploaded through the Images binding, within a ceiling of work (v2)
+
+Added in v2 — source: ADR 0011, EMR-40 and the decisions of the product owner of 2026-10-18 (the crops, the answer when Images cannot process a photo, the order of the checks and the cleanup). It settles, for the Worker and the Images binding, what "The photo field explains the PRD §6.1 policy and opens the phone gallery", "The server only accepts the photo if it is a real image of at most 5 MB", "Image work has a ceiling, and what does not fit is turned away with a message, not queued", "The photo is stored compressed, without metadata and with a server-generated reference", "Resubmission after a rejection allows changing or removing the photo" and "Photos are stored as two WebP sizes in R2 under opaque keys (v2)" leave open; and it replaces, in "The server only accepts the photo if it is a real image of at most 5 MB", the literal "No pudimos preparar tu foto. Intenta con otra."
+
+The photo field is a file field labelled "Foto de tu negocio (opcional)" that accepts `image/jpeg,image/png,image/webp`, the formats the server takes: a phone still offers its gallery, and iOS turns a HEIC photo into a JPEG before sending it. It has no `capture` and no `multiple`, and sits between "Link de tu Facebook (opcional)" and the consent block. The policy is its help text, above it and tied to it, and below it is the checkbox "Dejar mi ficha sin foto", unchecked when the form opens. The form is sent as `multipart/form-data`, and no script of the site touches the photo. When the form comes back, the checkbox comes back as it was sent and the photo field is empty: when the submission carried a photo and the photo is not what came back with an error, the field says "Tu foto no se quedó guardada: vuelve a elegirla antes de enviar.", a note tied to it that neither marks it invalid nor takes the focus. An error of the photo marks it invalid and takes the focus as any field's does.
+
+A submission is decided in this order, each step only when the one before let it through: the trap field; Turnstile, while its switch is on ("Turnstile is checked on the server, fails closed and has a switch in the database (v2)"); every field, where the photo is only weighed, never opened; the per-IP quota; the photo; and the save. So a submission refused by Turnstile (`403`) opens no image and stores no file. A file over 5 MB (counted as 5 × 1024 × 1024 bytes, so a phone's "5 MB" fits) is "Esa foto pesa más de 5 MB. Sube una más ligera." beside the errors of the other fields, so a typo sent with a photo spends neither quota nor image work. Then the photo's first bytes MUST be those of a JPEG, a PNG or a WebP, whatever its name or the type the browser declared, and its header, read by the Images binding (`info`, which is free), MUST say the same format and at most 40,000,000 pixels; anything else is "No pudimos leer esa foto. Sube una imagen JPG, PNG o WebP.", and no transformation is spent on it. Only the first file of the field is read, and an empty one (a file field left empty) is no photo. When "Dejar mi ficha sin foto" is checked, a file sent with it is ignored and never opened.
+
+The only step that opens the original is one transformation into a working copy: the whole photo scaled down, never up, into a 2400×2400 box, as WebP of quality 90, so both crops come out of it at their size for any photo between 1:2 and 2:1, whatever its orientation, and every later step works on at most 5.76 megapixels. At most 4 of these run at once in each instance of the Worker, whose memory the ceiling protects; one more is turned away at once with "Estamos recibiendo muchas fotos, intenta de nuevo en un momento" next to the photo field, never queued, and a slot a request abandoned is free again after 30 seconds. Each variant is cut from the working copy, never from the original: scaled to fill exactly its width and height and cropped from the centre (`fit: "cover"`, `gravity: "center"`), so the listing card's 400×400 square and the card's 1200×900 box never move while they load, as a still WebP, at the first quality of 75, 60, 45 and 30 at which it weighs within `public-directory`, "Photo weight does not break the 4G budget", and its size is checked with `info`. WebP keeps no metadata; Images applies the EXIF rotation before it discards it. A photo costs three transformations of the monthly allowance, and one more each time a variant is compressed again. On the Free plan the allowance is 5,000 unique transformations a month, after which Images answers with error 9422 and charges nothing.
+
+When Images fails on the photo (its monthly allowance spent, an outage, a file it cannot read), or a variant does not fit its weight at the lowest quality or comes back at another size, nothing is saved and the form comes back with "No pudimos procesar tu foto. Intenta con otra o envía tu registro sin foto." next to the photo field and everything else the owner wrote. The log says only the kind of the failure (the code of the Images error, or a fixed reason), never anything about the file or who sent it.
+
+The full variant is written first and then the card, under a new photo key; if either write fails, both keys are deleted. When the registration is then not saved (a number that already has a card, a card the admin resolved a moment before, a failure of the database), both objects are deleted. When a resubmission replaces the card's photo or removes it, the objects of the old photo are deleted once the card no longer names it; a stored value that is not a photo key names no objects. A deletion that fails is logged by its kind and does not fail the registration: what it leaves behind is an object that no card names, for the orphan sweep (`data-model`). The photo of a card in review lives in the public media bucket under its key, which no public page names until the card is published (`public-directory`, "The photo of an unpublished business is referenced on no public surface (v2)").
+
+The body of an action MAY be at most 10 MiB, twice the photo's limit, so a photo somewhat over 5 MB still reaches the registration, which answers next to the field with everything else that was written. A body over that limit is refused before it is read, from its `Content-Length` when it has one: the form comes back with "Esa foto pesa más de 5 MB. Sube una más ligera." next to the photo field and the rest of the form empty, since none of its fields was read, with status `413`. The other answers of the photo are `400` for a photo too large or unreadable, `503` when the server is busy with other photos and `502` when Images could not process it ("The registration page of a locality lives under it, and lands on its thank-you page (v2)").
+
+Locally and in the tests the binding is Wrangler's offline Images, which applies the sizes, the crop and the format with sharp, ignores the quality and spends none of the allowance; a deployed environment uses Cloudflare Images.
+
+#### Scenario: the field
+
+- **WHEN** an owner opens the registration form on their phone
+- **THEN** they see "Foto de tu negocio (opcional)" with the policy above it and "Dejar mi ficha sin foto" below it, unchecked, and tapping the field offers the gallery
+
+#### Scenario: a photo with another field wrong
+
+- **WHEN** an owner sends a photo with the WhatsApp wrong
+- **THEN** nothing is opened or stored, the WhatsApp takes the focus with its error, and the photo field is empty and says "Tu foto no se quedó guardada: vuelve a elegirla antes de enviar."
+
+#### Scenario: a photo over 5 MB with another field wrong
+
+- **WHEN** an owner sends a 6 MB photo and leaves the name empty
+- **THEN** the form comes back with "Escribe el nombre de tu negocio" and "Esa foto pesa más de 5 MB. Sube una más ligera.", and no quota or image work was spent
+
+#### Scenario: a photo Turnstile refused
+
+- **WHEN** a submission with a photo arrives without a valid Turnstile token while the switch is on
+- **THEN** the form comes back with status `403` and the Turnstile message, no image is opened, no file is stored and no quota is spent
+
+#### Scenario: a page named as a photo
+
+- **WHEN** a submission carries `foto.jpg`, declared `image/jpeg`, whose content is HTML
+- **THEN** it comes back with "No pudimos leer esa foto. Sube una imagen JPG, PNG o WebP." and Images was never called
+
+#### Scenario: 100 megapixels in a few bytes
+
+- **WHEN** a submission carries a PNG of 62 bytes whose header says 10,000×10,000 pixels
+- **THEN** its header is read for free and it comes back with the unreadable-photo message, and nothing is transformed
+
+#### Scenario: the slots are taken
+
+- **WHEN** a photo arrives while 4 originals are being opened in the same instance of the Worker
+- **THEN** it comes back at once with "Estamos recibiendo muchas fotos, intenta de nuevo en un momento", status `503`, with everything else that was written and nothing saved
+
+#### Scenario: both variants from one working copy
+
+- **WHEN** a photo is accepted
+- **THEN** Images opens the original once, into the working copy, and both variants are cut from that copy while its slot is already free
+
+#### Scenario: a portrait photo
+
+- **WHEN** an owner uploads a photo 900 pixels wide and 1600 tall
+- **THEN** the listing card's variant is its centre square and the card's its centre 4:3 band, both with its whole width, at exactly 400×400 and 1200×900
+
+#### Scenario: a photo hard to compress
+
+- **WHEN** the card's variant weighs more than 250 KB at quality 75
+- **THEN** it is compressed again from the working copy at 60, 45 and 30 until it fits, and it is stored at the first that fits
+
+#### Scenario: the monthly allowance is spent
+
+- **WHEN** Images answers error 9422 while the photo is transformed
+- **THEN** nothing is saved, the form comes back with "No pudimos procesar tu foto. Intenta con otra o envía tu registro sin foto." and what the owner wrote, with status `502`, and the log says only "Images 9422"
+
+#### Scenario: a number that already has a card
+
+- **WHEN** a submission with a photo meets a number whose card is published
+- **THEN** both objects just written are deleted and the owner sees the already-registered-number message
+
+#### Scenario: the old photo goes after the new one is saved
+
+- **WHEN** a rejected card is resubmitted with another photo
+- **THEN** the new objects are written, the card is saved with the new key, and then the objects of the old photo are deleted
+
+#### Scenario: the checkbox and a file
+
+- **WHEN** a resubmission checks "Dejar mi ficha sin foto" and also carries a file
+- **THEN** the card is left without a photo, the objects of the old one are deleted, and the file is never opened
+
+#### Scenario: a body far over the limit
+
+- **WHEN** an owner sends the form with an 11 MB photo
+- **THEN** the answer is a `413` with "Esa foto pesa más de 5 MB. Sube una más ligera." next to the photo field and the form empty, and nothing is saved
