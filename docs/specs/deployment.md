@@ -429,14 +429,16 @@ Photos MUST be stored in a Cloudflare R2 bucket and served from a dedicated host
 
 ### Requirement: The content security policy allows Turnstile as well as Umami (v2)
 
-Added in v2 — source: PRD §6.7, ADR 0012.
+Added in v2 — source: PRD §6.7, ADR 0012. Amended on 2026-10-18 by EMR-42, which brings the widget: what Turnstile needs, checked against Cloudflare's "Content Security Policy" page for Turnstile, read on 2026-10-18.
 
 The content security policy MUST allow the scripts of the analytics provider and of the Turnstile widget and no other external script origin. The directives about framing, plugins and forms stay.
+
+Turnstile needs `https://challenges.cloudflare.com` in `script-src` and in `frame-src`, which the policy of "Every response carries the security headers and the content security policy (v2)" already has, and nothing else: `style-src` stays `'self'`, because the widget's styles live in its frame, a document of Cloudflare's under its own policy, and its script on the page writes no inline style the policy forbids; `connect-src` would need `'self'` only for Turnstile's pre-clearance mode, which the widgets of enmirumbo do not use. No nonce is needed: the page loads `api.js` from a bundled script of the site, never inline. Cloudflare's real script is checked under the policy by hand (`test/e2e/turnstile-real.spec.ts`, README); the end-to-end tests of every run answer Turnstile's origin with a local stand-in, so they need no network.
 
 #### Scenario: Turnstile loads
 
 - **WHEN** the registration page is opened with the policy active
-- **THEN** the Turnstile widget loads without a violation
+- **THEN** the Turnstile widget loads without a violation, and gives its token
 
 #### Scenario: nothing else
 
@@ -445,7 +447,7 @@ The content security policy MUST allow the scripts of the analytics provider and
 
 ### Requirement: Scheduled work runs from one hourly Cron Trigger per environment (v2)
 
-Added in v2 — source: ADR 0013, PRD §4.
+Added in v2 — source: ADR 0013, PRD §4. Amended on 2026-10-18 by EMR-42, which brings the first task, the daily registrations alert (`business-registration`, "The daily registrations alert goes out once per local day (v2)"): every task runs at the time the trigger was scheduled for, so a repeated run decides the same.
 
 `stage` and production MUST each have exactly one Cron Trigger that fires every hour, declared inside its environment block. The `scheduled` handler MUST run every task, and each task MUST decide by the local hour of each locality, using its IANA time zone, whether it is its turn (for example, the pending-items email at 8:00 local time). The tasks are: the daily email to the admin, the purge of rejected registrations at 90 days, the purge at 30 days of pending edits and never-verified registrations, the orphan-photo sweep and the alert of the daily registrations threshold. Tasks MUST be idempotent and MUST log what they did and what they could not do, as counts only. `dev` has no trigger; a test-only route runs a task there.
 
@@ -593,14 +595,14 @@ The privacy notice says the IP is turned into a code with a secret key and that 
 
 ### Requirement: Three deployed environments, each with its own Worker, bindings and variables (v2)
 
-Added in v2 — source: ADR 0008, ADR 0005, ADR 0010. Amended on 2026-10-15 by EMR-36: the binding of the quota counter and its `exports` entry. Amended on 2026-10-18 by EMR-35 and the decision of the product owner of that date: the `MEDIA` binding of the public media bucket, and `MEDIA_URL`, which replaces `PHOTOS_URL` and which `dev` and `stage` share.
+Added in v2 — source: ADR 0008, ADR 0005, ADR 0010. Amended on 2026-10-15 by EMR-36: the binding of the quota counter and its `exports` entry. Amended on 2026-10-18 by EMR-35 and the decision of the product owner of that date: the `MEDIA` binding of the public media bucket, and `MEDIA_URL`, which replaces `PHOTOS_URL` and which `dev` and `stage` share. Amended on 2026-10-18 by EMR-42: the variable `TURNSTILE_SITE_KEY` and the first Worker secret, `TURNSTILE_SECRET_KEY`.
 
-The Worker configuration (`wrangler.jsonc`) MUST declare the deployed environments `dev`, `stage` and `prod` inside `env`, and each MUST declare for itself, without relying on the top level: its Worker name (`dev-enmirumbo`, `stage-enmirumbo` and `enmirumbo`), the `workers.dev` URL on, Version and Preview URLs off (`preview_urls: false`, so no URL can bypass Access), its `HYPERDRIVE` (cached) and `HYPERDRIVE_FRESH` (caching disabled) bindings with ids of its own, the `QUOTA_COUNTER` binding of the quotas and the `exports` entry of its class `QuotaCounter` ("Anti-abuse counters live in a Durable Object and never in PostgreSQL (v2)"), the `MEDIA` binding of its public media bucket ("Public media live in R2, in one bucket for production and one for dev and stage (v2)"), and the variables `ENVIRONMENT` (its own identifier), `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `SITE_URL` (its `workers.dev` URL, `https://<worker>.urekz.workers.dev`, the base of every absolute URL), `MEDIA_URL` (its media hostname, the same for `dev` and `stage`) and `UMAMI_WEBSITE_ID` (empty but in production, `base-layout`, "Cookieless measurement is loaded only in production and only when configured (v2)"). The Cron Trigger follows "Scheduled work runs from one hourly Cron Trigger per environment (v2)"; `dev` MUST declare an empty list, so a deploy also removes a trigger left on its Worker. No route or Custom Domain is declared until the DNS move. The top level is the local Worker (`enmirumbo-local`, `ENVIRONMENT` `local`) with the `workers.dev` URL and Version URLs off, so a deploy without an environment by mistake publishes nothing reachable. While the Access application does not exist, `ACCESS_AUD` is empty and the panel stays closed.
+The Worker configuration (`wrangler.jsonc`) MUST declare the deployed environments `dev`, `stage` and `prod` inside `env`, and each MUST declare for itself, without relying on the top level: its Worker name (`dev-enmirumbo`, `stage-enmirumbo` and `enmirumbo`), the `workers.dev` URL on, Version and Preview URLs off (`preview_urls: false`, so no URL can bypass Access), its `HYPERDRIVE` (cached) and `HYPERDRIVE_FRESH` (caching disabled) bindings with ids of its own, the `QUOTA_COUNTER` binding of the quotas and the `exports` entry of its class `QuotaCounter` ("Anti-abuse counters live in a Durable Object and never in PostgreSQL (v2)"), the `MEDIA` binding of its public media bucket ("Public media live in R2, in one bucket for production and one for dev and stage (v2)"), and the variables `ENVIRONMENT` (its own identifier), `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `SITE_URL` (its `workers.dev` URL, `https://<worker>.urekz.workers.dev`, the base of every absolute URL), `MEDIA_URL` (its media hostname, the same for `dev` and `stage`), `UMAMI_WEBSITE_ID` (empty but in production, `base-layout`, "Cookieless measurement is loaded only in production and only when configured (v2)") and `TURNSTILE_SITE_KEY` (the public site key of its Turnstile widget: `enmirumbo` for `prod`, `enmirumbo-dev` for `dev` and `stage`, `business-registration`, "Turnstile is checked on the server, fails closed and has a switch in the database (v2)"); and, in `secrets.required`, the names of its Worker secrets, today `TURNSTILE_SECRET_KEY`, whose values live in the GitHub Environment of the same name and never in the configuration (ADR 0020). The Cron Trigger follows "Scheduled work runs from one hourly Cron Trigger per environment (v2)"; `dev` MUST declare an empty list, so a deploy also removes a trigger left on its Worker. No route or Custom Domain is declared until the DNS move. The top level is the local Worker (`enmirumbo-local`, `ENVIRONMENT` `local`, Cloudflare's always-pass Turnstile test site key, and `TURNSTILE_SECRET_KEY` required by name, which a fresh clone does not need to set) with the `workers.dev` URL and Version URLs off, so a deploy without an environment by mistake publishes nothing reachable. While the Access application does not exist, `ACCESS_AUD` is empty and the panel stays closed.
 
 #### Scenario: per environment
 
 - **WHEN** the configuration of `dev`, `stage` and `prod` is read as Wrangler resolves it
-- **THEN** each has its Worker name, `workers_dev` on, `preview_urls` off, both Hyperdrive bindings with two ids that no other environment uses, the `QUOTA_COUNTER` binding with `QuotaCounter` declared in its own `exports`, the `MEDIA` binding of its media bucket, and the six variables with its own `ENVIRONMENT` and `SITE_URL`, and the `MEDIA_URL` of its media hostname
+- **THEN** each has its Worker name, `workers_dev` on, `preview_urls` off, both Hyperdrive bindings with two ids that no other environment uses, the `QUOTA_COUNTER` binding with `QuotaCounter` declared in its own `exports`, the `MEDIA` binding of its media bucket, the seven variables with its own `ENVIRONMENT` and `SITE_URL`, the `MEDIA_URL` of its media hostname and the real site key of its Turnstile widget, and `TURNSTILE_SECRET_KEY` in its own `secrets.required`
 
 #### Scenario: nothing inherited
 
@@ -614,9 +616,11 @@ The Worker configuration (`wrangler.jsonc`) MUST declare the deployed environmen
 
 ### Requirement: Each environment is built and deployed by its own workflow (v2)
 
-Added in v2 — source: ADR 0008, ADR 0005, ADR 0016. Amended on 2026-10-15 by EMR-36: the check of the quota counter. Amended on 2026-10-18 by EMR-35: the check of the media bucket and `MEDIA_URL`, and the upload of the seed's photos on `dev` and `stage`.
+Added in v2 — source: ADR 0008, ADR 0005, ADR 0016. Amended on 2026-10-15 by EMR-36: the check of the quota counter. Amended on 2026-10-18 by EMR-35: the check of the media bucket and `MEDIA_URL`, and the upload of the seed's photos on `dev` and `stage`. Amended on 2026-10-18 by EMR-42: the check of Turnstile's site key and secret, and the Worker secrets uploaded with the deploy (ADR 0020).
 
-Every deploy MUST build for its target with `CLOUDFLARE_ENV=<env>` and deploy, with the project's Wrangler, the configuration that build generated; a build is never promoted between environments and the top-level Worker is never deployed. Before it changes anything —a database or Cloudflare— the workflow MUST check the ref and the generated configuration, and stop, naming every problem, when the ref is not one the environment accepts, the build targets another environment, its Worker name, variables, `workers.dev`, Version URLs or triggers are not the ones of that environment, a Hyperdrive binding is missing, shares its id with the other, or still has a placeholder id, `QUOTA_COUNTER` is not bound to `QuotaCounter` or `exports` does not declare it as a Durable Object with SQLite storage, `MEDIA` is not bound to the media bucket of that environment (`enmirumbo-media` for `prod`, `enmirumbo-media-dev` for `dev` and `stage`) or `MEDIA_URL` is not an https origin, or the `_headers` file of its static assets does not give every one of them `X-Robots-Tag: noindex` (`base-layout`, "Deployed environments stay out of search engines until the cut-over (v2)") and the security headers ("Every response carries the security headers and the content security policy (v2)"). An empty `ACCESS_AUD` is only a warning.
+Every deploy MUST build for its target with `CLOUDFLARE_ENV=<env>` and deploy, with the project's Wrangler, the configuration that build generated; a build is never promoted between environments and the top-level Worker is never deployed. Before it changes anything —a database or Cloudflare— the workflow MUST check the ref and the generated configuration, and stop, naming every problem, when the ref is not one the environment accepts, the build targets another environment, its Worker name, variables, `workers.dev`, Version URLs or triggers are not the ones of that environment, a Hyperdrive binding is missing, shares its id with the other, or still has a placeholder id, `QUOTA_COUNTER` is not bound to `QuotaCounter` or `exports` does not declare it as a Durable Object with SQLite storage, `MEDIA` is not bound to the media bucket of that environment (`enmirumbo-media` for `prod`, `enmirumbo-media-dev` for `dev` and `stage`) or `MEDIA_URL` is not an https origin, `TURNSTILE_SITE_KEY` is not a real Turnstile site key (`0x` and its characters: never a placeholder or one of Cloudflare's test keys) or `secrets.required` does not name `TURNSTILE_SECRET_KEY`, or the `_headers` file of its static assets does not give every one of them `X-Robots-Tag: noindex` (`base-layout`, "Deployed environments stay out of search engines until the cut-over (v2)") and the security headers ("Every response carries the security headers and the content security policy (v2)"). An empty `ACCESS_AUD` is only a warning.
+
+The Worker secrets travel with the deploy (ADR 0020): the deploy step gets each secret the build names in `secrets.required` from the GitHub Environment, through its own `env:`, and MUST stop before deploying, naming them, when one is missing or empty, or when the build targets another environment. It writes them as JSON to a file of the runner's temporary directory that only its owner can read, takes them out of Wrangler's environment, deploys with `wrangler deploy --secrets-file` and removes the file however the deploy ends; no value is ever an argument or printed (`scripts/deploy/deploy-worker.sh`).
 
 The build prerenders the legal pages in a local workerd with the bindings of its environment. The Hyperdrive bindings of a deployed environment have no local connection string, so the build gives them an address where nothing answers: no prerendered page reads the database ("The production build does not need the database"), and one that tried would fail the build. The deployed Worker never sees that address.
 
@@ -667,6 +671,16 @@ After each deploy a smoke test MUST request the site URL and fail unless the hom
 
 - **WHEN** the dev or stage workflow seeds
 - **THEN** the seed's photos reach `enmirumbo-media-dev` with their media type and caching, the R2 token appears in no command line or log, and a failed upload fails the run before the deploy
+
+#### Scenario: a Turnstile site key that is not a real one
+
+- **WHEN** the configuration a build generated has a placeholder, an empty value or one of Cloudflare's test keys as `TURNSTILE_SITE_KEY`, or does not require `TURNSTILE_SECRET_KEY`
+- **THEN** the workflow stops before the migrations and the deploy, naming the variable or the secret and the environment
+
+#### Scenario: a Worker secret
+
+- **WHEN** a deploy runs with `TURNSTILE_SECRET_KEY` in its GitHub Environment
+- **THEN** the Worker is deployed with it, the value appears in no command line or log, and no file holding it remains; without it, nothing is deployed and the step names the missing secret
 
 #### Scenario: a build without the quota counter
 

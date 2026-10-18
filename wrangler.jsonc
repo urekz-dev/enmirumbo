@@ -80,7 +80,17 @@
     // loads the measurement, and only with a Website ID; empty everywhere
     // until the launch, so nothing is measured and no request leaves the site.
     "UMAMI_WEBSITE_ID": "",
+    // The public site key of the Turnstile widget of the registration and edit
+    // forms (ADR 0012). Locally, Cloudflare's always-pass test site key, whose
+    // dummy token only the local Worker accepts (src/core/turnstile/).
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
   },
+  // The Worker secrets, which Wrangler does not inherit: each environment
+  // lists them again, and its deploy uploads them (scripts/deploy/
+  // deploy-worker.sh). Locally none is needed: without TURNSTILE_SECRET_KEY the
+  // local Worker emulates Turnstile's always-pass test secret, and a
+  // .dev.vars file may set another test secret.
+  "secrets": { "required": ["TURNSTILE_SECRET_KEY"] },
   "env": {
     // Deployed by hand from any branch (deploy-dev.yml). Its database is reset
     // from stage on every deploy.
@@ -117,11 +127,16 @@
         "MEDIA_URL": "https://media-dev-enmirumbo.urekz.com",
         // Never measured (ADR 0014): only prod loads Umami.
         "UMAMI_WEBSITE_ID": "",
+        // The public site key of the Turnstile widget enmirumbo-dev (managed,
+        // for the dev and stage hostnames), which dev and stage share. The
+        // deploy refuses a placeholder and a test key.
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAFaqXxFK2fa7EiS4",
         // The branch and commit deployed, shown in the page footer of dev only.
         // deploy-dev.yml sets them with `wrangler deploy --var`.
         "DEPLOY_BRANCH": "",
         "DEPLOY_COMMIT": "",
       },
+      "secrets": { "required": ["TURNSTILE_SECRET_KEY"] },
     },
     // Deployed on every push to main (deploy-stage.yml).
     "stage": {
@@ -156,7 +171,12 @@
         "MEDIA_URL": "https://media-dev-enmirumbo.urekz.com",
         // Never measured (ADR 0014): only prod loads Umami.
         "UMAMI_WEBSITE_ID": "",
+        // The public site key of the Turnstile widget enmirumbo-dev (managed,
+        // for the dev and stage hostnames), which dev and stage share. The
+        // deploy refuses a placeholder and a test key.
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAFaqXxFK2fa7EiS4",
       },
+      "secrets": { "required": ["TURNSTILE_SECRET_KEY"] },
     },
     // Production, deployed from a tag vX.Y.Z (deploy-prod.yml).
     "prod": {
@@ -192,7 +212,12 @@
         // Measurement stays off until the launch: the Website ID arrives with
         // the cut-over (ADR 0014).
         "UMAMI_WEBSITE_ID": "",
+        // The public site key of the Turnstile widget enmirumbo (managed, for
+        // the production hostname). The deploy refuses a placeholder and a
+        // test key.
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAFaqP_qD38iv_oZ6",
       },
+      "secrets": { "required": ["TURNSTILE_SECRET_KEY"] },
     },
   },
 }

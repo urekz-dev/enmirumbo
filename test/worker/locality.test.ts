@@ -70,7 +70,8 @@ describe("The locality is a first-class record keyed by the INEGI municipality c
       stateSlug: "hidalgo",
       timeZone: "America/Mexico_City",
       contactWhatsapp: null,
-      dailyRegistrationThreshold: null,
+      // The default of every locality (drizzle/0011_turnstile_switch_registration_alert.sql).
+      dailyRegistrationThreshold: 20,
       active: false,
       // Its municipal seat, INEGI's locality 130690001
       // (drizzle/0009_tizayuca_coordinates.sql).

@@ -11,8 +11,11 @@
 // the search" (no field of its own), "The zone is typed with the locality's
 // zones as suggestions, and a name that is none of them is kept as "Otra"
 // (v2)", "The registration's honeypot and per-IP quota are those of the
-// public forms (v2)" (the trap field) and "The registration page of a
-// locality lives under it, and lands on its thank-you page (v2)". What the
+// public forms (v2)" (the trap field), "The registration page of a
+// locality lives under it, and lands on its thank-you page (v2)", "Turnstile
+// is checked on the server, fails closed and has a switch in the database
+// (v2)" (the widget, with the switch on and off) and "Without JavaScript the
+// registration says so and cannot be sent while Turnstile is on (v2)". What the
 // page decides, with the database, the action and the quota, runs end to end
 // in test/e2e/registration.spec.ts; the submission itself is tested in
 // test/worker/registration.test.ts.
@@ -89,6 +92,8 @@ interface State {
   errors?: RegistrationErrors;
   general?: GeneralError | null;
   locality?: ServedLocality;
+  /** Turnstile, with its site key, while the switch is on; off by default, as E1 built the form. */
+  turnstile?: { siteKey: string | null } | null;
 }
 
 /** The registration page in one of its states. */
@@ -97,10 +102,11 @@ function render({
   errors = {},
   general = null,
   locality = TIZAYUCA,
+  turnstile = null,
 }: State = {}): Promise<string> {
   return container.renderToString(RegistrationPage, {
     partial: false,
-    props: { catalogue: CATALOGUE, action: ACTION, draft, errors, general },
+    props: { catalogue: CATALOGUE, action: ACTION, draft, errors, general, turnstile },
     request: new Request(`https://enmirumbo.urekz.workers.dev${PATH}`),
     locals: { locality } as App.Locals,
   });
@@ -460,6 +466,99 @@ describe("Form states and registration accessibility", () => {
     expect(attribute(tag, "type")).toBe("module");
     expect(attribute(tag, "src")).toMatch(/RegistrationForm\.astro/);
     expect(body.trim()).toBe("");
+  });
+});
+
+describe("Turnstile is checked on the server, fails closed and has a switch in the database (v2)", () => {
+  const SITE_KEY = "1x00000000000000000000AA";
+  const on = { turnstile: { siteKey: SITE_KEY } };
+
+  // Scenario: the kill switch (on)
+  it("with the switch on, the widget goes after the consent and before the button, with the site key and the form's action", async () => {
+    const form = formOf(await render(on));
+    const widget = /<div\b[^>]*data-turnstile-widget[^>]*>/.exec(form)?.[0] ?? "";
+
+    expect(attribute(widget, "data-sitekey")).toBe(SITE_KEY);
+    expect(attribute(widget, "data-action")).toBe("registration");
+    expect(form.indexOf("data-turnstile-widget")).toBeGreaterThan(form.indexOf('name="consent"'));
+    expect(form.indexOf("data-turnstile-widget")).toBeLessThan(form.indexOf("<button"));
+    // The failure message waits hidden for a script that cannot load.
+    const failed = /<p\b[^>]*data-turnstile-failed[^>]*>([\s\S]*?)<\/p>/.exec(form);
+    expect(has(failed?.[0] ?? "", "hidden")).toBe(true);
+    expect(readable(failed?.[1] ?? "")).toBe(
+      "No pudimos comprobar que eres una persona. Vuelve a intentarlo.",
+    );
+    // Turnstile's own script is added by the widget's, never by the page.
+    expect(await render(on)).not.toContain("challenges.cloudflare.com");
+  });
+
+  // Scenario: the kill switch (off)
+  it("with the switch off, no widget, no message about JavaScript and a button ready to send", async () => {
+    const html = await render();
+    const button = controls(formOf(html)).find((tag) => tag.startsWith("<button")) ?? "";
+
+    expect(html).not.toContain("data-turnstile");
+    expect(html).not.toContain("<noscript");
+    expect(has(button, "disabled")).toBe(false);
+  });
+
+  it("a submission Turnstile refused comes back with the literal message above the form and what was written", async () => {
+    const html = await render({ ...on, draft: FULL_DRAFT, general: "turnstile" });
+
+    expect(alerts(html)).toEqual([
+      "No pudimos comprobar que eres una persona. Vuelve a intentarlo.",
+      // The widget's hidden failure message is in the markup too.
+      "No pudimos comprobar que eres una persona. Vuelve a intentarlo.",
+    ]);
+    expect(formOf(html).indexOf("No pudimos comprobar")).toBeLessThan(
+      formOf(html).indexOf('<label for="registration-name"'),
+    );
+    expect(attribute(control(html, "name"), "value")).toBe("Plomería Güicho");
+    expect(formOf(html)).toContain("data-turnstile-widget");
+  });
+
+  it("an environment without a site key it may use says the check could not be done, and the form cannot be sent", async () => {
+    const html = await render({ turnstile: { siteKey: null } });
+    const button = controls(formOf(html)).find((tag) => tag.startsWith("<button")) ?? "";
+
+    expect(html).not.toContain("data-turnstile-widget");
+    expect(alerts(html)).toEqual([
+      "No pudimos comprobar que eres una persona. Vuelve a intentarlo.",
+    ]);
+    expect(has(button, "disabled")).toBe(true);
+  });
+
+  // The content security policy allows no inline script
+  it("the widget's script is a module of the site, never inline, beside the form's", async () => {
+    const scripts = [...(await render(on)).matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)];
+
+    expect(scripts.map(([, tag = ""]) => attribute(tag, "src"))).toEqual([
+      expect.stringMatching(/TurnstileWidget\.astro/),
+      expect.stringMatching(/RegistrationForm\.astro/),
+    ]);
+    for (const [, tag = "", body = ""] of scripts) {
+      expect(attribute(tag, "type")).toBe("module");
+      expect(body.trim()).toBe("");
+    }
+  });
+});
+
+describe("Without JavaScript the registration says so and cannot be sent while Turnstile is on (v2)", () => {
+  // Scenario: no JavaScript
+  it("the message, literally, above the fields in a noscript, and the button disabled until the widget has a token", async () => {
+    const html = await render({ turnstile: { siteKey: "1x00000000000000000000AA" } });
+    const form = formOf(html);
+    const noscript = /<noscript>([\s\S]*?)<\/noscript>/.exec(form);
+    const button = controls(form).find((tag) => tag.startsWith("<button")) ?? "";
+
+    expect(readable(noscript?.[1] ?? "")).toBe(
+      "Para registrar tu negocio, activa JavaScript en tu navegador. Lo usamos para comprobar que eres una persona.",
+    );
+    expect(form.indexOf("<noscript>")).toBeLessThan(form.indexOf('<label for="registration-name"'));
+    expect(has(button, "disabled")).toBe(true);
+    expect(attribute(button, "type")).toBe("submit");
+    // The only submit control: pressing Enter in a field sends nothing either.
+    expect(controls(form).filter((tag) => /type="submit"/.test(tag))).toHaveLength(1);
   });
 });
 

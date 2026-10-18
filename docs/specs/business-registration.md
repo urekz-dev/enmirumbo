@@ -785,7 +785,7 @@ This replaces the zones of the scenario "closed catalogue lists" of "Required an
 
 ### Requirement: The registration and edit forms are protected by quotas, honeypot and Turnstile (v2)
 
-Added in v2 — source: ADR 0012, PRD §3 (Flow A), PRD §7.
+Added in v2 — source: ADR 0012, PRD §3 (Flow A), PRD §7. Amended on 2026-10-18 by EMR-42 and the decision of the product owner of that date: for the registration, Turnstile, its kill switch and the test keys are settled in "Turnstile is checked on the server, fails closed and has a switch in the database (v2)", and the alert of the daily threshold in "The daily registrations alert goes out once per local day (v2)"; the edit form (EMR-43) follows them with its own action.
 
 Both forms MUST be protected without a login and with the following controls, all of which MUST run before any image is opened and MUST save nothing when they block a submission: (1) an invisible honeypot field, trimmed before it is checked, where a whitespace-only value counts as empty; (2) a per-IP quota of 3 submissions per hour for registrations and 3 per hour for edits, each with its own counter, separate from the counters of reports, search and SMS; (3) Cloudflare Turnstile in managed mode, whose token MUST be validated on the server, and a submission without a valid token MUST be rejected. Turnstile MUST be on from day one behind a kill switch that turns it off without a deploy. Local and CI runs MUST work with Turnstile's test keys without network. The registration MUST also alert the admin when the registrations of a day exceed the threshold configured for the locality.
 
@@ -851,7 +851,7 @@ Both forms MUST be protected without a login and with the following controls, al
 
 ### Requirement: The registration and edit forms require JavaScript for the anti-bot check and say so (v2)
 
-Added in v2 — source: PRD §6.1, ADR 0012.
+Added in v2 — source: PRD §6.1, ADR 0012. Amended on 2026-10-18 by EMR-42 and the decision of the product owner of that date: the forms require JavaScript while Turnstile's switch is on, and the registration's message and behaviour are settled in "Without JavaScript the registration says so and cannot be sent while Turnstile is on (v2)"; with the switch off they work without JavaScript.
 
 The registration and edit forms require client JavaScript, because the anti-bot check runs in the browser. This is the single exception to the rule that the site works without JavaScript. When JavaScript is missing, the page MUST say so plainly in Spanish, and the form MUST NOT be submittable. Listings, filters, pagination, search, legal pages and the whole admin panel keep working with server HTML only.
 
@@ -893,15 +893,15 @@ The Worker MUST validate the type and size of the uploaded photo and transform i
 
 ### Requirement: The registration page of a locality lives under it, and lands on its thank-you page (v2)
 
-Added in v2 — source: ADR 0007, ADR 0019, EMR-39; `public-directory`, "The report form posts to its own address, which names the card (v2)", whose pattern every public form follows. It takes the place of the prototype's `/registro` and `/registro/gracias` at the root, and amends "No form data travels to the measurement" on the address of the answer with errors.
+Added in v2 — source: ADR 0007, ADR 0019, EMR-39; `public-directory`, "The report form posts to its own address, which names the card (v2)", whose pattern every public form follows. It takes the place of the prototype's `/registro` and `/registro/gracias` at the root, and amends "No form data travels to the measurement" on the address of the answer with errors. Amended on 2026-10-18 by EMR-42: the answer refused by Turnstile (`403`), and the form needs JavaScript while Turnstile is on.
 
 The registration form of a locality is `/{estado}/{municipio}/registro`, and its thank-you page `/{estado}/{municipio}/registro/gracias`; both segments are reserved (`data-model`, "The slugs of the catalogues do not produce ambiguous URLs at the root of a locality (v2)"). The page MUST be headed with the literal text "Registra tu negocio gratis" as its only `h1`, followed by the literal phrase "Llena este formulario en un par de minutos, sin cuenta ni contraseña. En cuanto lo revisemos, te contactamos por WhatsApp.", and then the form. The form page may be indexed: it declares its own address as canonical, its title is "Registra tu negocio gratis en {municipio}", its description "Registra gratis tu negocio de {municipio} en enmirumbo: un solo formulario, sin cuenta ni contraseña. Lo revisamos y te contactamos por WhatsApp.", both with the municipality read from the locality record, and the sitemap lists it (`base-layout`, "The sitemap lists the pages that exist, from the database (v2)").
 
-The form posts to the address of its own page with the server action of the registration, and the business is created in the locality of that address: no field of the submission chooses or changes the locality. The action reached any other way —posted from another page, or at its own endpoint `/_actions/register`— MUST save nothing and answer 404, and so does the registration page of a municipality that is not an active locality. A received submission —a new card, the resubmission of a rejected card or a submission caught by the trap field, which MUST look the same— MUST be answered with a `303` to the thank-you page, with `Cache-Control: no-store`, so that reloading it never sends the form again; the server builds that address, and no field of the submission can change it. Any other answer renders the form again in the answer to that same submission, with the error next to each field and what the owner had written, read from that submission, with the status of its error (`400` for the fields, a number that already has a card included; `429` over the quota; `500` when it could not be saved), `Cache-Control: no-store` and no `Set-Cookie`. What the owner wrote MUST NOT travel in an address or a cookie, and MUST NOT be kept on the server: the address of that answer is the form's with the name of the action alone (`/registro?_action=register`), which carries no value, and the measurement leaves the query out of the addresses it records (`base-layout`, "The measurement carries no personal data or text typed by people"), so only `/registro` and `/registro/gracias` reach it.
+The form posts to the address of its own page with the server action of the registration, and the business is created in the locality of that address: no field of the submission chooses or changes the locality. The action reached any other way —posted from another page, or at its own endpoint `/_actions/register`— MUST save nothing and answer 404, and so does the registration page of a municipality that is not an active locality. A received submission —a new card, the resubmission of a rejected card or a submission caught by the trap field, which MUST look the same— MUST be answered with a `303` to the thank-you page, with `Cache-Control: no-store`, so that reloading it never sends the form again; the server builds that address, and no field of the submission can change it. Any other answer renders the form again in the answer to that same submission, with the error next to each field and what the owner had written, read from that submission, with the status of its error (`400` for the fields, a number that already has a card included; `403` when Turnstile refused it; `429` over the quota; `500` when it could not be saved), `Cache-Control: no-store` and no `Set-Cookie`. What the owner wrote MUST NOT travel in an address or a cookie, and MUST NOT be kept on the server: the address of that answer is the form's with the name of the action alone (`/registro?_action=register`), which carries no value, and the measurement leaves the query out of the addresses it records (`base-layout`, "The measurement carries no personal data or text typed by people"), so only `/registro` and `/registro/gracias` reach it.
 
 The thank-you page MUST show the literal message of "A successful submission queues the business and shows the thank-you screen" as its only `h1` and a link "Volver al inicio" to the home of the locality, and nothing else. It has no form and no query, reads nothing, declares `noindex, follow` and no canonical, has the static title "Gracias por registrar tu negocio", is left out of the sitemap and is disallowed by `robots.txt` (`base-layout`, "The open `robots.txt` allows the public site and excludes what is not relevant (v2)").
 
-Until the anti-bot check arrives (EMR-42) with "The registration and edit forms require JavaScript for the anti-bot check and say so (v2)", the form is submitted and validated without client JavaScript, as "Registration works without client JavaScript" describes.
+While Turnstile's switch is on, the form needs client JavaScript ("Without JavaScript the registration says so and cannot be sent while Turnstile is on (v2)"); with it off, the form is submitted and validated without client JavaScript, as "Registration works without client JavaScript" describes, and so the scenarios below that send it without JavaScript hold with the switch off.
 
 #### Scenario: the registration of Tizayuca
 
@@ -972,7 +972,7 @@ Added in v2 — source: EMR-39. It settles what "The server validates every fiel
 
 The form MUST leave every check to the server (`novalidate`), so that each error is its literal Spanish message next to its field and never a browser's tooltip, while the required fields keep `required` for screen readers and every field keeps the type and keyboard of its kind. Each free-text field has a limit, the same for the browser (`maxlength`) and the server, counted as `maxlength` counts (a line break counts once): the name 80 characters, the zone 80, "¿Qué ofreces?" 200, the landline 20, the address or references 200, the opening hours 100 and the Facebook link 300; past it the field shows "Deja esto en <límite> caracteres o menos" (for "¿Qué ofreces?", the literal "Deja esto en 200 caracteres o menos"). A WhatsApp of more than 30 characters, or with any character other than digits, spaces, hyphens, dots, brackets and `+` (a letter, "no tengo"), is the WhatsApp error. The Facebook link MUST start with `http://` or `https://`, parse as such and carry no credentials (`https://facebook.com@evil.example` leads elsewhere), and it is saved in its canonical form. The category is sent as its slug and MUST be one of the catalogue. The checkboxes count as checked only with what a browser sends for them (`on`): `consent=false` or `consent=yes` is no consent. The form carries the version of the notice it was rendered with in a hidden field, `noticeVersion`, which only detects a mismatch. Every field is read once, its first value, and a field that is not text is empty.
 
-When the form comes back, the first field with an error, in the order of the screen, MUST take the focus (`autofocus`, which needs no JavaScript), every field with an error MUST be marked invalid and point to its message, and what was written MUST be shown bounded to each field's limit, as text. The page's own client JavaScript is one bundled file of the site, never inline (`deployment`, "Every response carries the security headers and the content security policy (v2)"), and does only the two things "Registration works without client JavaScript" allows: the example of "¿Qué ofreces?", and "Enviando..." on the disabled button. When the form comes back with a category chosen, the server already writes that category's example.
+When the form comes back, the first field with an error, in the order of the screen, MUST take the focus (`autofocus`, which needs no JavaScript), every field with an error MUST be marked invalid and point to its message, and what was written MUST be shown bounded to each field's limit, as text. The page's own client JavaScript is one bundled file of the site, never inline (`deployment`, "Every response carries the security headers and the content security policy (v2)"), and does only the two things "Registration works without client JavaScript" allows: the example of "¿Qué ofreces?", and "Enviando..." on the disabled button; while Turnstile is on, the widget adds a second bundled file of its own ("Turnstile is checked on the server, fails closed and has a switch in the database (v2)"). When the form comes back with a category chosen, the server already writes that category's example.
 
 #### Scenario: a link without its scheme
 
@@ -996,11 +996,11 @@ When the form comes back, the first field with an error, in the order of the scr
 
 ### Requirement: The registration's honeypot and per-IP quota are those of the public forms (v2)
 
-Added in v2 — source: ADR 0012; `deployment`, "Anti-abuse counters live in a Durable Object and never in PostgreSQL (v2)", which also says how the address is read. It settles, for the registration, the honeypot and the quota of "The registration and edit forms are protected by quotas, honeypot and Turnstile (v2)"; Turnstile, its kill switch and the alert of the daily threshold stay there (EMR-42).
+Added in v2 — source: ADR 0012; `deployment`, "Anti-abuse counters live in a Durable Object and never in PostgreSQL (v2)", which also says how the address is read. It settles, for the registration, the honeypot and the quota of "The registration and edit forms are protected by quotas, honeypot and Turnstile (v2)"; Turnstile, its kill switch and the alert of the daily threshold are settled in "Turnstile is checked on the server, fails closed and has a switch in the database (v2)" and "The daily registrations alert goes out once per local day (v2)". Amended on 2026-10-18 by EMR-42: a submission Turnstile refused spends no quota either.
 
 The registration form carries the trap field of the public forms, the same as the report form's: invisible, out of the keyboard's order, hidden from screen readers and away from autofill, and trimmed before it is checked, so that a value of only spaces counts as empty. A submission with it filled MUST be answered as a received registration —the `303` to the thank-you page— without saving anything and without reaching the database.
 
-The per-IP quota of the registrations is its own purpose of the quota counter, `registration`: 3 per address in a window of one hour that starts with its first counted registration, counted apart from the search, the reports, the edits and the SMS. Only a submission that passed the trap field and the validation of every field counts, whether it then creates a card, resubmits a rejected one or meets a number that already has a card; so a typo spends no quota, and finding out which numbers have a card takes one counted submission each. The quota is checked before the number is looked up. Over it, nothing is saved and the form comes back with the literal text "Ya recibimos varios registros desde aquí. Espera un rato y vuelve a intentar." above it, with what the owner had written, status `429` and `Cache-Control: no-store`. A request that carries no address of its visitor —only possible on a developer's machine— is not counted. When the counter cannot answer, the registration goes on as if it were within the quota.
+The per-IP quota of the registrations is its own purpose of the quota counter, `registration`: 3 per address in a window of one hour that starts with its first counted registration, counted apart from the search, the reports, the edits and the SMS. Only a submission that passed the trap field, Turnstile (or came while its switch is off) and the validation of every field counts, whether it then creates a card, resubmits a rejected one or meets a number that already has a card; so a typo or a refused token spends no quota, and finding out which numbers have a card takes one counted submission each. The quota is checked before the number is looked up. Over it, nothing is saved and the form comes back with the literal text "Ya recibimos varios registros desde aquí. Espera un rato y vuelve a intentar." above it, with what the owner had written, status `429` and `Cache-Control: no-store`. A request that carries no address of its visitor —only possible on a developer's machine— is not counted. When the counter cannot answer, the registration goes on as if it were within the quota.
 
 #### Scenario: the fourth registration of the hour
 
@@ -1021,3 +1021,109 @@ The per-IP quota of the registrations is its own purpose of the quota counter, `
 
 - **WHEN** a registration arrives with the trap field filled, or with only spaces in it
 - **THEN** the first lands on the thank-you page and saves nothing; the second is saved normally
+
+### Requirement: Turnstile is checked on the server, fails closed and has a switch in the database (v2)
+
+Added in v2 — source: ADR 0012; decision of the product owner, 2026-10-18 (EMR-42); Cloudflare's Turnstile documentation (client-side rendering, server-side validation, testing), read on 2026-10-18. It settles, for the registration, Turnstile, its kill switch and the test keys of "The registration and edit forms are protected by quotas, honeypot and Turnstile (v2)". The edit form (EMR-43) uses the same widget and the same check, with its own action.
+
+**The widget.** While the switch is on, the registration form MUST carry Cloudflare's Turnstile widget in managed mode, after the consent block and before the submit button, rendered in Spanish at the width of the form, with the site key of the environment and the action `registration`. The page's markup carries no script of Cloudflare: a bundled script of the site loads Turnstile's `api.js` from `https://challenges.cloudflare.com/turnstile/v0/api.js`, exactly as Cloudflare publishes it, and renders the widget there, which puts its token in the field `cf-turnstile-response` of the form. The submit button is disabled until the widget has a token, and again while the token has expired or the widget failed, until it gets a new one; a page restored from the browser's history asks for a new token, since its token was spent. When `api.js` cannot load, or the environment has no site key it may use, the form shows "No pudimos comprobar que eres una persona. Vuelve a intentarlo." and cannot be sent. Each environment names its site key in `TURNSTILE_SITE_KEY` (`deployment`): the widget `enmirumbo` in production, the widget `enmirumbo-dev` in `dev` and `stage`, and Cloudflare's always-pass test site key on the local Worker; the secret key is the Worker secret `TURNSTILE_SECRET_KEY`.
+
+**The check.** The server MUST decide a submission in this order, and each step that refuses it saves nothing and opens no image: the trap field; Turnstile; every field; the per-IP quota; then the photo (EMR-40) and the save. The action reads the switch through `HYPERDRIVE_FRESH`. With it on, the token MUST be validated with Cloudflare's siteverify: one request with the secret key and the token and nothing else —never the visitor's address, which the privacy notice keeps in the quota counter's memory alone—, which MUST answer within 3 seconds, without a retry. The token is valid only when siteverify says so and carries the action of the form. Anything else refuses the submission: no token, an expired, already spent, invented or forged one, a token of another form, an error of Cloudflare, no answer or one after 3 seconds. A refused submission spends no quota, and the form comes back from that same submission, with what the owner had written, the widget again and the literal text "No pudimos comprobar que eres una persona. Vuelve a intentarlo." above it, with status `403`, `Cache-Control: no-store` and no `Set-Cookie`. Turnstile fails closed: when Cloudflare's check is down, the admin turns the switch off. The log says that a registration was refused and why (no token, not valid, not checked), never the token or anything of the submission.
+
+**The switch.** Turnstile has a switch in the database, on by default (`data-model`, "The site's switches live in one row of the database (v2)"), that an admin turns off and on without a deploy: today with one SQL statement (README, Operations), later from the panel (epic F). The page reads it through the cached `HYPERDRIVE`, so it shows or hides the widget within a minute of the change; the action reads it fresh, so turning it off lets submissions through at once, and a submission Turnstile refused always comes back with the widget. With the switch off, the form shows no widget and no message about JavaScript, its button is ready, and submissions are accepted without a token; the trap field and the quota keep working. Turning it off never blocks anyone for more than that minute, in which a page still shows the widget; turning it on refuses at most once, for that minute, a form shown without the widget, which then comes back with it.
+
+**The test keys.** Local and CI runs MUST work with Cloudflare's test keys without network: the local Worker (`ENVIRONMENT` `local`), with no secret key or with a test secret key, answers as siteverify answers those keys, without asking it: the always-pass test secret key, which is also the one used when none is set, accepts the dummy token `XXXX.DUMMY.TOKEN.XXXX` that every test site key produces, and nothing else; the always-fail and already-spent ones accept nothing. Outside the local Worker no dummy token can pass: a test secret key, or none, refuses every token and is logged once as a configuration problem; a real secret key never accepts the dummy token; a test site key renders no widget; and the deploy refuses a site key that is not a real one (`deployment`, "Each environment is built and deployed by its own workflow (v2)"). The end-to-end tests answer every request to Turnstile's origin with a local stand-in of `api.js` that produces the dummy token; a check run by hand loads Cloudflare's real script on the preview.
+
+#### Scenario: a valid token
+
+- **WHEN** an owner sends the form filled in correctly, with the token the widget produced
+- **THEN** the registration is saved, and siteverify was asked once, with the secret key and the token and without the visitor's address
+
+#### Scenario: a refused token
+
+- **WHEN** a submission arrives with no token, or with an expired, already spent or forged one
+- **THEN** nothing is saved, no quota is spent, and the form comes back with status `403`, "No pudimos comprobar que eres una persona. Vuelve a intentarlo." above it, what the owner had written and the widget
+
+#### Scenario: Cloudflare does not answer
+
+- **WHEN** siteverify fails or takes more than 3 seconds
+- **THEN** the submission is refused the same way, and the admin can turn the switch off
+
+#### Scenario: a token of another form
+
+- **WHEN** a submission to the registration carries a valid token whose action is not `registration`
+- **THEN** it is refused
+
+#### Scenario: the switch turned off
+
+- **WHEN** the admin turns the switch off in the database
+- **THEN** a registration without a token is saved at once, the page shows no widget within a minute, and a filled trap field and a fourth registration of the hour from one address are still stopped
+
+#### Scenario: the switch turned on again
+
+- **WHEN** the admin turns the switch on while an owner has the form open without the widget
+- **THEN** their submission is refused once and comes back with the widget, and the next one with its token is saved
+
+#### Scenario: test keys locally and in CI
+
+- **WHEN** the local Worker receives the dummy token, with Cloudflare's always-pass test keys or no secret key
+- **THEN** it accepts it without any request to Cloudflare, and refuses any other token
+
+#### Scenario: a test key in a deployed environment
+
+- **WHEN** a deployed environment has a test secret key, no secret key or a test site key, or a submission brings the dummy token there
+- **THEN** no submission that needs Turnstile passes, the problem is logged once, and the deploy of a test site key stops before changing anything
+
+### Requirement: Without JavaScript the registration says so and cannot be sent while Turnstile is on (v2)
+
+Added in v2 — source: PRD §6.1, ADR 0012; decision of the product owner, 2026-10-18 (EMR-42). It settles "The registration and edit forms require JavaScript for the anti-bot check and say so (v2)" for the registration; the edit form (EMR-43) says it with its own message.
+
+While Turnstile's switch is on, the registration page MUST show, above the fields, only to a browser that does not run JavaScript (a `noscript`), the literal text "Para registrar tu negocio, activa JavaScript en tu navegador. Lo usamos para comprobar que eres una persona.", and the form MUST NOT be submittable: its one submit button is disabled in the page's markup, so neither tapping it nor pressing Enter in a field sends anything, and only the widget's script enables it, once the widget has a token. A submission forged without the form is refused as one without a token. With JavaScript, the text is never shown. With the switch off, the form is sent and validated without JavaScript, as "Registration works without client JavaScript" describes, and the text is not shown. The rest of the site keeps working without JavaScript.
+
+#### Scenario: no JavaScript
+
+- **WHEN** an owner opens the registration page with JavaScript disabled while Turnstile is on
+- **THEN** they read "Para registrar tu negocio, activa JavaScript en tu navegador. Lo usamos para comprobar que eres una persona." above the fields, and neither the button nor Enter sends the form
+
+#### Scenario: with JavaScript
+
+- **WHEN** an owner opens the page with JavaScript enabled
+- **THEN** the text is not shown, and the button is enabled as soon as the widget has its token
+
+#### Scenario: the switch off without JavaScript
+
+- **WHEN** Turnstile's switch is off and an owner sends the form with JavaScript disabled
+- **THEN** the text is not shown and the registration is processed on the server as without Turnstile
+
+### Requirement: The daily registrations alert goes out once per local day (v2)
+
+Added in v2 — source: ADR 0012, ADR 0013; decision of the product owner, 2026-10-18 (EMR-42). It settles the alert of the daily threshold of "The registration and edit forms are protected by quotas, honeypot and Turnstile (v2)" and of "Anti-abuse without a captcha on the public form".
+
+Each locality has a daily registrations threshold, 20 by default (`data-model`, "The locality is a first-class record keyed by the INEGI municipality code (v2)"), which a super admin changes with SQL until the panel does (epic F, README, Operations); none disables the alert. A task of the hourly job (`deployment`, "Scheduled work runs from one hourly Cron Trigger per environment (v2)") counts, for each active locality with a threshold, the registrations of its local day, in its IANA time zone, up to the time the run was scheduled for: the organic businesses whose `registered_at` falls in that day, new cards and resubmitted rejected cards, whose wait restarts; a card the admin creates is not one. When they are more than the threshold, the admin MUST be alerted, once that day: the run that finds it first claims the alert by writing the locality's day in `daily_registration_alerted_on`, in the same statement that finds it, and only a locality whose last alert is of an earlier day can be claimed. So the later runs of the day, a run repeated, two runs at once and the first run after one that did not happen alert at most once, and the next local day counts from zero and may alert again. The alert blocks nobody and changes nothing else.
+
+Until the email to the admin arrives (EMR-55), the alert MUST be one structured line in the Worker log, a warning whose fields are `alert: "daily-registrations"`, the code of the locality, its day, the count and the threshold, and nothing about a business, a person or an address. The email is another channel for the same alert, with the same fields.
+
+#### Scenario: passing the threshold
+
+- **WHEN** a locality with a threshold of 20 receives its 21st registration of its local day
+- **THEN** the next hourly run writes one alert line with its code, the day, 21 and 20, and nobody is blocked
+
+#### Scenario: at the threshold
+
+- **WHEN** a locality has exactly as many registrations in its day as its threshold
+- **THEN** no alert goes out
+
+#### Scenario: once a day
+
+- **WHEN** the runs after the alert find the locality still over its threshold that day, or a run is repeated, or two run at once
+- **THEN** no other alert goes out that day, and the next day alerts again only if it passes the threshold
+
+#### Scenario: the locality's own day
+
+- **WHEN** registrations arrive at 23:30 and at 00:30 in the time zone of the locality
+- **THEN** they count in two different days, whatever the date in UTC
+
+#### Scenario: other localities
+
+- **WHEN** one locality passes its threshold
+- **THEN** only it is alerted; another locality under its own threshold, an inactive one and one without a threshold are not

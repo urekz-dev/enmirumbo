@@ -15,6 +15,9 @@
 #   - MEDIA bound to the public media bucket of the environment, the one of
 #     production for prod and the one dev and stage share for them, and
 #     MEDIA_URL an https origin (ADR 0011);
+#   - TURNSTILE_SITE_KEY a real site key from Cloudflare's dashboard, never a
+#     placeholder or one of Cloudflare's test keys, and TURNSTILE_SECRET_KEY
+#     in secrets.required, so the deploy uploads it (ADR 0012, ADR 0020);
 #   - the _headers file of the static assets gives every one of them the
 #     security headers (a Content-Security-Policy that forbids framing,
 #     plugins and posting to other sites, nosniff, X-Frame-Options: DENY and a
@@ -123,6 +126,18 @@ media_bindings="$(jq -c '[.r2_buckets // [] | .[] | select(.binding == "MEDIA") 
 media_url="$(jq -r '.vars.MEDIA_URL // ""' "${config}")"
 [[ "${media_url}" =~ ^https://[a-z0-9.-]+$ ]] ||
   error "MEDIA_URL is '${media_url}', expected the https origin of the media hostname, without a path or trailing slash"
+
+# Turnstile (ADR 0012): a real site key, `0x` and its characters; a test key
+# (a digit, `x`, zeros and two capital letters) would make every token the
+# dummy one, which no deployed Worker accepts.
+site_key="$(jq -r '.vars.TURNSTILE_SITE_KEY // ""' "${config}")"
+if [[ "${site_key}" =~ ^[0-9]x0+[A-Z]{2}$ ]]; then
+  error "TURNSTILE_SITE_KEY is Cloudflare's test key '${site_key}'; put the site key of this environment's Turnstile widget in env.${env_name}.vars of wrangler.jsonc"
+elif [[ ! "${site_key}" =~ ^0x[0-9A-Za-z_-]{10,}$ ]]; then
+  error "TURNSTILE_SITE_KEY is '${site_key}', not a Turnstile site key; put the site key of this environment's Turnstile widget in env.${env_name}.vars of wrangler.jsonc"
+fi
+jq -e '(.secrets.required // []) | index("TURNSTILE_SECRET_KEY") != null' "${config}" >/dev/null ||
+  error "secrets.required does not name TURNSTILE_SECRET_KEY; declare it in env.${env_name}.secrets of wrangler.jsonc"
 
 # Whether a _headers file has a rule for /* with a header line that matches
 # the extended regular expression $2, which is matched in lowercase.

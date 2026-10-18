@@ -11,7 +11,7 @@
 // simplified notice and "Registrar mi negocio".
 //
 // It posts to the page it is on, with the action `register`, and the server
-// resolves and validates it, so it works without JavaScript. `novalidate`
+// resolves and validates it. `novalidate`
 // leaves every check to the server, so each error is its Spanish message next
 // to its field, never a browser's tooltip; `required` and the input types
 // stay for screen readers and the phone keyboards. When the form comes back,
@@ -23,7 +23,15 @@
 // The zone is a text field with the visible zones of the locality as the
 // browser's own suggestions (`datalist`), by display name.
 //
-// Its only script, bundled as a file of the site (the content security policy
+// While Turnstile is on (docs/specs/business-registration.md, "Without
+// JavaScript the registration says so and cannot be sent while Turnstile is
+// on (v2)"), the widget (TurnstileWidget.astro) goes before the submit
+// button, which starts `disabled` and is enabled once the widget has a
+// token; without JavaScript it stays disabled and a `<noscript>` above the
+// form says why. With Turnstile off, the form is sent and validated without
+// JavaScript.
+//
+// Its own script, bundled as a file of the site (the content security policy
 // allows no inline script), changes the example of "¿Qué ofreces?" with the
 // category and shows "Enviando..." on the disabled button while the form is
 // sent. Without it, the example is the generic one or the chosen category's,
@@ -43,6 +51,7 @@ import {
   GENERAL_ERROR_MESSAGES,
   type GeneralError,
   MAX_LENGTHS,
+  NO_JAVASCRIPT_MESSAGE,
   REGISTRATION_FIELDS as F,
   type RegistrationDraft,
   type RegistrationErrors,
@@ -52,6 +61,7 @@ import { PRIMARY_BUTTON } from "../lib/buttons.ts";
 import ConsentBlock from "./ConsentBlock.astro";
 import FieldError from "./FieldError.astro";
 import HoneypotField from "./HoneypotField.astro";
+import TurnstileWidget from "./TurnstileWidget.astro";
 
 interface Props {
   /** Where it posts: the page's own address with the action (`actions.register`). */
@@ -66,9 +76,11 @@ interface Props {
   errors: RegistrationErrors;
   /** The error above the form, if any. */
   general: GeneralError | null;
+  /** Turnstile, with the environment's site key, while its switch is on; null when it is off. */
+  turnstile: { siteKey: string | null } | null;
 }
 
-const { action, catalogue, municipality, draft, errors, general } = Astro.props;
+const { action, catalogue, municipality, draft, errors, general, turnstile } = Astro.props;
 
 /** The id of the control of each field. */
 const id = (field: string) => `registration-${field}`;
@@ -102,6 +114,14 @@ const chosen = catalogue.categories.find(({ slug }) => slug === draft.category);
 
 <form method="post" action={action} novalidate class="flex flex-col gap-6" data-registration-form>
   <HoneypotField />
+
+  {turnstile && (
+    <noscript>
+      <p class="rounded-lg border border-control px-4 py-3 text-sm font-semibold text-ink">
+        {NO_JAVASCRIPT_MESSAGE}
+      </p>
+    </noscript>
+  )}
 
   {general && (
     <p role="alert" class="text-sm font-semibold text-ink">
@@ -332,9 +352,12 @@ const chosen = catalogue.categories.find(({ slug }) => slug === draft.category);
   />
   <FieldError id={errorId("consent")} message={message("consent")} />
 
+  {turnstile && <TurnstileWidget siteKey={turnstile.siteKey} action="registration" />}
+
   <button
     type="submit"
     class={`${PRIMARY_BUTTON} w-full px-6 py-3 text-base disabled:cursor-not-allowed disabled:opacity-70`}
+    disabled={Boolean(turnstile)}
     data-sending-text={SENDING_TEXT}
   >
     Registrar mi negocio
@@ -342,11 +365,13 @@ const chosen = catalogue.categories.find(({ slug }) => slug === draft.category);
 </form>
 
 <script>
-  // The two things the registration form does with JavaScript, and nothing
-  // else: the example of "¿Qué ofreces?" follows the category, without
-  // touching what was written; and the submit button says "Enviando..." and
-  // stays disabled while the form is sent, so a second tap sends nothing. A
-  // page restored from the browser's history gets its button back.
+  // The two things the registration form does with JavaScript besides
+  // Turnstile (TurnstileWidget.astro), and nothing else: the example of
+  // "¿Qué ofreces?" follows the category, without touching what was written;
+  // and the submit button says "Enviando..." and stays disabled while the
+  // form is sent, so a second tap sends nothing. A page restored from the
+  // browser's history gets its button back (and, with Turnstile, the widget
+  // then holds it until it has a new token).
   for (const form of document.querySelectorAll("form[data-registration-form]")) {
     const category = form.querySelector("select[data-example-source]");
     const offer = form.querySelector("textarea[data-generic-example]");

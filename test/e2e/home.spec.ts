@@ -10,7 +10,9 @@
 // two-localities/localities-list.spec.ts and rendered in
 // test/astro/locality-home.test.ts; the layout rules of every page (390px,
 // metadata, brand) are checked by surfaces.spec.ts.
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
+// The home leads to the registration form, whose Turnstile widget gets the local fake.
+import { expect, test } from "./turnstile.ts";
 
 const HOME = "/hidalgo/tizayuca";
 /** The local SITE_URL of wrangler.jsonc, the base of the canonical URLs, whatever the port. */

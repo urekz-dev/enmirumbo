@@ -11,6 +11,7 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -164,6 +165,14 @@ const MEDIA = {
   prod: { bucket: "enmirumbo-media", url: "https://media-enmirumbo.urekz.com" },
 } as const;
 
+// The site key of each environment's Turnstile widget (ADR 0012): public, and
+// shared by dev and stage.
+const SITE_KEYS = {
+  dev: "0x4AAAAAAFaqXxFK2fa7EiS4",
+  stage: "0x4AAAAAAFaqXxFK2fa7EiS4",
+  prod: "0x4AAAAAAFaqP_qD38iv_oZ6",
+} as const;
+
 // What `CLOUDFLARE_ENV=<env> vp run build` writes to dist/server/wrangler.json,
 // with real-looking Hyperdrive ids.
 function build(environment: Environment, overrides: Record<string, unknown> = {}) {
@@ -184,7 +193,9 @@ function build(environment: Environment, overrides: Record<string, unknown> = {}
       ACCESS_AUD: "a1".repeat(32),
       SITE_URL: `https://${WORKERS[environment]}.urekz.workers.dev`,
       MEDIA_URL: MEDIA[environment].url,
+      TURNSTILE_SITE_KEY: SITE_KEYS[environment],
     },
+    secrets: { required: ["TURNSTILE_SECRET_KEY"] },
     assets: { binding: "ASSETS", directory: "../client" },
     durable_objects: { bindings: [{ name: "QUOTA_COUNTER", class_name: "QuotaCounter" }] },
     exports: { QuotaCounter: { type: "durable-object", storage: "sqlite" } },
@@ -393,6 +404,44 @@ describe("Each environment is built and deployed by its own workflow (v2): the b
     }
   });
 
+  // business-registration, "Turnstile is checked on the server, fails closed
+  // and has a switch in the database (v2)"
+  it.for([
+    [
+      "a test site key",
+      "1x00000000000000000000AA",
+      "is Cloudflare's test key '1x00000000000000000000AA'",
+    ],
+    ["another test site key", "3x00000000000000000000FF", "is Cloudflare's test key"],
+    [
+      "a placeholder",
+      "REPLACE_WITH_SITE_KEY",
+      "is 'REPLACE_WITH_SITE_KEY', not a Turnstile site key",
+    ],
+    ["no site key", "", "is '', not a Turnstile site key"],
+  ] as const)("a build whose Turnstile site key is %s is refused", ([, key, message]) => {
+    const config = build("prod");
+    const result = checkBuild("prod", {
+      ...config,
+      vars: { ...config.vars, TURNSTILE_SITE_KEY: key },
+    });
+    expect(result.status).toBe(1);
+    expect(errors(result)).toEqual([expect.stringContaining(`TURNSTILE_SITE_KEY ${message}`)]);
+    expect(errors(result)[0]).toContain("in env.prod.vars of wrangler.jsonc");
+  });
+
+  it("a build that does not require the Turnstile secret is refused", () => {
+    for (const secrets of [undefined, { required: [] }, { required: ["OTHER_SECRET"] }]) {
+      const result = checkBuild("stage", build("stage", { secrets }));
+      expect(result.status, JSON.stringify(secrets)).toBe(1);
+      expect(errors(result)).toEqual([
+        expect.stringContaining(
+          "secrets.required does not name TURNSTILE_SECRET_KEY; declare it in env.stage.secrets",
+        ),
+      ]);
+    }
+  });
+
   it("an empty ACCESS_AUD is only a warning: the panel stays closed", () => {
     const config = build("prod");
     const result = checkBuild("prod", { ...config, vars: { ...config.vars, ACCESS_AUD: "" } });
@@ -489,6 +538,135 @@ describe("Each environment is built and deployed by its own workflow (v2): the b
     const result = run("check-build.sh", ["dev", join(work, "missing.json")]);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("CLOUDFLARE_ENV=dev vp run build");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deploy-worker.sh
+
+/**
+ * Deploys a build with a fake Wrangler, which records its arguments, the
+ * secrets file it was given (its mode and content, while it exists) and the
+ * secrets left in its environment.
+ */
+function deployWorker(
+  environment: string,
+  config: unknown,
+  env: Record<string, string> = {},
+  args: string[] = [],
+) {
+  mkdirSync(join(work, "server"), { recursive: true });
+  writeFileSync(join(work, "server", "wrangler.json"), JSON.stringify(config));
+  const temp = join(work, "runner-temp");
+  mkdirSync(temp, { recursive: true });
+  const log = join(work, "wrangler.log");
+  const fake = join(work, "fake-wrangler");
+  writeFileSync(
+    fake,
+    [
+      "#!/usr/bin/env bash",
+      "set -euo pipefail",
+      `log=${JSON.stringify(log)}`,
+      'printf "args:%s\\n" "$*" >>"$log"',
+      'printf "env:%s\\n" "${TURNSTILE_SECRET_KEY:-}" >>"$log"',
+      "while [ $# -gt 0 ]; do",
+      '  if [ "$1" = "--secrets-file" ]; then',
+      '    printf "mode:%s\\n" "$(stat -c %a "$2" 2>/dev/null || stat -f %Lp "$2")" >>"$log"',
+      '    printf "file:%s\\n" "$(cat "$2")" >>"$log"',
+      "  fi",
+      "  shift",
+      "done",
+      'exit "${FAKE_WRANGLER_STATUS:-0}"',
+      "",
+    ].join("\n"),
+  );
+  chmodSync(fake, 0o755);
+  const result = run("deploy-worker.sh", [environment, ...args], {
+    BUILD_CONFIG: join(work, "server", "wrangler.json"),
+    WRANGLER: fake,
+    RUNNER_TEMP: temp,
+    ...env,
+  });
+  let lines: string[] = [];
+  try {
+    lines = readFileSync(log, "utf8").split("\n").filter(Boolean);
+  } catch {
+    // Wrangler never ran.
+  }
+  const left = readdirSync(temp);
+  return { ...result, lines, left };
+}
+
+const TURNSTILE_SECRET = "0x4AAAAAAAfictitious-turnstile-secret";
+
+describe("Each environment is built and deployed by its own workflow (v2): the Worker secrets", () => {
+  it.for(["dev", "stage", "prod"] as const)(
+    "%s deploys with its secrets in a file only its owner reads, removed afterwards, and never in the arguments",
+    (environment) => {
+      const result = deployWorker(environment, build(environment), {
+        TURNSTILE_SECRET_KEY: TURNSTILE_SECRET,
+      });
+      expect(result.stderr).toBe("");
+      expect(result.status).toBe(0);
+      const [args = "", env = "", mode = "", file = ""] = result.lines;
+      expect(args).toMatch(/^args:deploy --secrets-file \S+\/runner-temp\/worker-secrets\.\w+$/);
+      expect(args).not.toContain(TURNSTILE_SECRET);
+      // Wrangler reads the secret from the file, not from its environment.
+      expect(env).toBe("env:");
+      expect(mode).toBe("mode:600");
+      expect(JSON.parse(file.replace(/^file:/, ""))).toEqual({
+        TURNSTILE_SECRET_KEY: TURNSTILE_SECRET,
+      });
+      expect(result.left).toEqual([]);
+      expect(result.stdout + result.stderr).not.toContain(TURNSTILE_SECRET);
+    },
+  );
+
+  it("dev passes its own arguments on to Wrangler", () => {
+    const result = deployWorker("dev", build("dev"), { TURNSTILE_SECRET_KEY: TURNSTILE_SECRET }, [
+      "--var",
+      "DEPLOY_BRANCH:EMR-42-turnstile",
+      "--var",
+      "DEPLOY_COMMIT:abc1234",
+    ]);
+    expect(result.status).toBe(0);
+    expect(result.lines[0]).toMatch(
+      /--secrets-file \S+ --var DEPLOY_BRANCH:EMR-42-turnstile --var DEPLOY_COMMIT:abc1234$/,
+    );
+  });
+
+  it("a failed deploy fails the step and still removes the file", () => {
+    const result = deployWorker("stage", build("stage"), {
+      TURNSTILE_SECRET_KEY: TURNSTILE_SECRET,
+      FAKE_WRANGLER_STATUS: "1",
+    });
+    expect(result.status).toBe(1);
+    expect(result.left).toEqual([]);
+  });
+
+  it("a missing or empty secret, or a build of another environment, deploys nothing", () => {
+    for (const env of [{}, { TURNSTILE_SECRET_KEY: "" }]) {
+      const result = deployWorker("prod", build("prod"), env);
+      expect(result.status).toBe(1);
+      expect(result.lines).toEqual([]);
+      expect(errors(result)).toEqual([
+        expect.stringContaining(
+          "missing Worker secret(s) TURNSTILE_SECRET_KEY: add each to the GitHub Environment prod",
+        ),
+      ]);
+    }
+    const other = deployWorker("prod", build("stage"), { TURNSTILE_SECRET_KEY: TURNSTILE_SECRET });
+    expect(other.status).toBe(1);
+    expect(other.lines).toEqual([]);
+    expect(errors(other)).toEqual([
+      expect.stringContaining("the build targets 'stage', not 'prod'"),
+    ]);
+  });
+
+  it("a build without secrets deploys without a secrets file", () => {
+    const result = deployWorker("stage", build("stage", { secrets: undefined }));
+    expect(result.status).toBe(0);
+    expect(result.lines[0]).toBe("args:deploy");
   });
 });
 

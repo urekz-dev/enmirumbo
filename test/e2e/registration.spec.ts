@@ -11,8 +11,14 @@
 // accessibility", "The zone options come from the active locality (v2)",
 // "The zone is typed with the locality's zones as suggestions, and a name
 // that is none of them is kept as "Otra" (v2)", "The registration's honeypot
-// and per-IP quota are those of the public forms (v2)" and "The registration
-// page of a locality lives under it, and lands on its thank-you page (v2)".
+// and per-IP quota are those of the public forms (v2)", "The registration
+// page of a locality lives under it, and lands on its thank-you page (v2)",
+// "The registration and edit forms are protected by quotas, honeypot and
+// Turnstile (v2)", "The registration and edit forms require JavaScript for
+// the anti-bot check and say so (v2)", "Turnstile is checked on the server,
+// fails closed and has a switch in the database (v2)" and "Without
+// JavaScript the registration says so and cannot be sent while Turnstile is
+// on (v2)".
 // The form is rendered state by state in test/astro/registration.test.ts,
 // and the submission is tested with the database in
 // test/worker/registration.test.ts; the layout rules of the registration
@@ -20,17 +26,28 @@
 // surfaces.spec.ts, the entries of the home and of the empty listings by
 // home.spec.ts and listings.spec.ts.
 //
+// Turnstile is on, as in every environment, with the local fake of its
+// script (./turnstile.ts) and the preview's emulated test secret. The flows
+// without JavaScript first built by EMR-39 run with its switch off, which is
+// why this file runs alone (playwright.config.ts, "phone, registration").
+//
 // Every business this file creates in Tizayuca has a number of the
 // 7719994xxx series, and is removed before and after. Miniflare gives every
 // request of this machine a loopback address, which the quota does not
 // count; the test of the quota sends the address Cloudflare would write, one
 // from the IPv6 range reserved for documentation, new on every run.
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import type { APIRequestContext, Page } from "@playwright/test";
 import { and, eq, like } from "drizzle-orm";
 import { newBusinessId } from "../../src/core/business/id.ts";
 import { businesses, categories, zones } from "../../src/core/db/schema/index.ts";
 import { NOTICE_VERSION } from "../../src/core/legal/version.ts";
+import {
+  TURNSTILE_DUMMY_TOKEN,
+  TURNSTILE_RESPONSE_FIELD,
+  TURNSTILE_TEST_SITE_KEYS,
+} from "../../src/core/turnstile/keys.ts";
 import { withDatabase } from "./database.ts";
+import { expect, setTurnstileSwitch, stubTurnstile, test, TURNSTILE_ORIGIN } from "./turnstile.ts";
 
 const TIZAYUCA = "13069";
 const HOME = "/hidalgo/tizayuca";
@@ -160,9 +177,10 @@ function post(request: APIRequestContext, form: Record<string, string>, path = F
   return request.post(`${path}?_action=register`, { form, maxRedirects: 0 });
 }
 
-/** A valid submission, as posted. */
+/** A valid submission, as posted, with the token of the widget. */
 const posted = (whatsapp: string, extra: Record<string, string> = {}) => ({
   website: "",
+  [TURNSTILE_RESPONSE_FIELD]: TURNSTILE_DUMMY_TOKEN,
   name: "Taller Posteado de Mentiras",
   category: "talleres",
   whatsapp,
@@ -184,8 +202,11 @@ async function errorOf(page: Page, key: keyof typeof LABELS): Promise<string> {
 test.beforeAll(removeRegistrations);
 test.afterAll(removeRegistrations);
 
-test.describe("Registering without JavaScript, from the home to the thank-you page", () => {
+test.describe("Registering without JavaScript while Turnstile's switch is off, from the home to the thank-you page", () => {
   test.use({ javaScriptEnabled: false });
+  // The kill switch: with Turnstile off, the form works without JavaScript.
+  test.beforeAll(() => setTurnstileSwitch(false));
+  test.afterAll(() => setTurnstileSwitch(true));
 
   // Scenarios: the owner reaches registration from the home page; empty form
   // on open; empty required fields; announced errors; what was entered is
@@ -503,9 +524,9 @@ test.describe("The registration's honeypot and per-IP quota are those of the pub
     const hex = () => Math.floor(Math.random() * 0x10000).toString(16);
     const address = `2001:db8:${hex()}:${hex()}::39`;
     const context = await browser.newContext({
-      javaScriptEnabled: false,
       extraHTTPHeaders: { "CF-Connecting-IP": address },
     });
+    await stubTurnstile(context);
     const page = await context.newPage();
     for (let n = 1; n <= 3; n++) {
       await page.goto(FORM);
@@ -631,6 +652,185 @@ test.describe("Registering with JavaScript", () => {
       clientWidth: document.documentElement.clientWidth,
     }));
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
-    await expect(page.locator("script")).toHaveCount(1);
+    // The form's script, the widget's, and Turnstile's api.js, which the
+    // widget's adds.
+    const own = page.locator('script:not([src^="https://"])');
+    await expect(own).toHaveCount(2);
+    for (const script of await own.all()) {
+      await expect(script).toHaveAttribute("src", /^\/_astro\/[^/]+\.js$/);
+    }
+    await expect(page.locator(`script[src^="${TURNSTILE_ORIGIN}/"]`)).toHaveCount(1);
+  });
+});
+
+test.describe("Turnstile is checked on the server, fails closed and has a switch in the database (v2)", () => {
+  const FAILED = "No pudimos comprobar que eres una persona. Vuelve a intentarlo.";
+
+  test.describe("with the widget solved when the test says so", () => {
+    test.use({ turnstileSolve: "manual" });
+
+    // Scenarios: a valid Turnstile token; with JavaScript; the owner reaches
+    // registration from the home page
+    test("the widget renders in Spanish with the site key and the form's action, the button waits for its token, and the registration lands on the thank-you page", async ({
+      page,
+    }) => {
+      await page.goto(HOME);
+      await page.getByRole("link", { name: "Registra tu negocio gratis", exact: true }).click();
+      await expect(page).toHaveURL(FORM);
+      // With JavaScript, no message about it.
+      await expect(page.getByText("activa JavaScript")).toBeHidden();
+
+      await fill(page, REQUIRED("7719994050"));
+      await expect(submitButton(page)).toBeDisabled();
+      expect(
+        await page.evaluate(
+          () => (window as never as { __turnstileRenders: unknown[] }).__turnstileRenders,
+        ),
+      ).toEqual([
+        {
+          sitekey: TURNSTILE_TEST_SITE_KEYS.alwaysPasses,
+          action: "registration",
+          language: "es",
+          size: "flexible",
+        },
+      ]);
+      await page.evaluate(() =>
+        (window as never as { __turnstileSolve: () => void }).__turnstileSolve(),
+      );
+      await expect(submitButton(page)).toBeEnabled();
+
+      const [request] = await Promise.all([
+        page.waitForRequest((sent) => sent.method() === "POST"),
+        submitButton(page).click(),
+      ]);
+      expect(new URLSearchParams(request.postData() ?? "").get(TURNSTILE_RESPONSE_FIELD)).toBe(
+        TURNSTILE_DUMMY_TOKEN,
+      );
+      await expect(page).toHaveURL(THANKS);
+      expect(await businessesOf("7719994050")).toHaveLength(1);
+    });
+  });
+
+  // Scenario: a missing or invalid token
+  test("a submission without a valid token comes back with the message and what was written, and a new token sends it", async ({
+    page,
+  }) => {
+    await page.goto(FORM);
+    await fill(page, { ...REQUIRED("7719994051"), name: "Taller Sin Token de Mentiras" });
+    await expect(submitButton(page)).toBeEnabled();
+    // The token is lost on the way, as if the widget had not run.
+    await page.locator(`input[name="${TURNSTILE_RESPONSE_FIELD}"]`).evaluate((input) => {
+      (input as HTMLInputElement).value = "a-forged-token";
+    });
+    const refused = await send(page);
+    expect(refused.status()).toBe(403);
+    expect(refused.headers()["cache-control"]).toBe("no-store");
+    await expect(page.getByRole("alert").first()).toHaveText(new RegExp(FAILED));
+    await expect(field(page, "name")).toHaveValue("Taller Sin Token de Mentiras");
+    expect(await businessesOf("7719994051")).toEqual([]);
+
+    // The form that comes back has the widget again: checking the consent
+    // and sending is enough.
+    await fill(page, { consent: true });
+    await submitButton(page).click();
+    await expect(page).toHaveURL(THANKS);
+    expect(await businessesOf("7719994051")).toHaveLength(1);
+  });
+
+  test("a submission posted without the widget's token is refused and saves nothing", async ({
+    request,
+  }) => {
+    for (const token of [undefined, "", "a-forged-token", "x".repeat(3000)]) {
+      const form = posted("7719994052");
+      if (token === undefined) delete (form as Record<string, string>)[TURNSTILE_RESPONSE_FIELD];
+      else form[TURNSTILE_RESPONSE_FIELD] = token;
+      const response = await post(request, form);
+      expect(response.status(), String(token)).toBe(403);
+      expect(await response.text(), String(token)).toContain(FAILED);
+    }
+    expect(await businessesOf("7719994052")).toEqual([]);
+  });
+
+  // Scenario: the kill switch
+  test("with the switch off the form shows no widget, asks for no JavaScript and is saved without a token; on again, it asks", async ({
+    page,
+    request,
+  }) => {
+    const outside: string[] = [];
+    page.on("request", (sent) => {
+      if (sent.url().startsWith(TURNSTILE_ORIGIN)) outside.push(sent.url());
+    });
+    await setTurnstileSwitch(false);
+    try {
+      await page.goto(FORM);
+      await expect(page.locator("[data-turnstile-widget]")).toHaveCount(0);
+      expect(await page.content()).not.toContain("activa JavaScript");
+      await expect(submitButton(page)).toBeEnabled();
+      expect(outside).toEqual([]);
+
+      const form = posted("7719994053");
+      delete (form as Record<string, string>)[TURNSTILE_RESPONSE_FIELD];
+      expect((await post(request, form)).status()).toBe(303);
+      expect(await businessesOf("7719994053")).toHaveLength(1);
+      // The trap field still works.
+      const trapped = posted("7719994054", { website: "https://spam.example" });
+      delete (trapped as Record<string, string>)[TURNSTILE_RESPONSE_FIELD];
+      expect((await post(request, trapped)).status()).toBe(303);
+      expect(await businessesOf("7719994054")).toEqual([]);
+    } finally {
+      await setTurnstileSwitch(true);
+    }
+    const form = posted("7719994055");
+    delete (form as Record<string, string>)[TURNSTILE_RESPONSE_FIELD];
+    expect((await post(request, form)).status()).toBe(403);
+    await page.goto(FORM);
+    await expect(page.locator("[data-turnstile-widget]")).toHaveCount(1);
+  });
+
+  // Scenario: only the forms that need it
+  test("the report form and the search include no Turnstile", async ({ page }) => {
+    const outside: string[] = [];
+    page.on("request", (sent) => {
+      if (sent.url().startsWith(TURNSTILE_ORIGIN)) outside.push(sent.url());
+    });
+    for (const path of [
+      `${HOME}/negocio/plomeria-los-fontaneros-ficticios-b5q68b2e72/reportar`,
+      `${HOME}/buscar?q=plomero`,
+      HOME,
+    ]) {
+      await page.goto(path);
+      await expect(page.locator("[data-turnstile-widget]"), path).toHaveCount(0);
+      expect(await page.content(), path).not.toContain("activa JavaScript");
+    }
+    expect(outside).toEqual([]);
+  });
+});
+
+test.describe("Without JavaScript the registration says so and cannot be sent while Turnstile is on (v2)", () => {
+  test.use({ javaScriptEnabled: false });
+
+  // Scenario: no JavaScript
+  test("the page says so plainly, the button is disabled, and neither a tap nor Enter sends anything", async ({
+    page,
+  }) => {
+    const posts: string[] = [];
+    page.on("request", (sent) => {
+      if (sent.method() === "POST") posts.push(sent.url());
+    });
+    await page.goto(FORM);
+    await expect(
+      page.getByText(
+        "Para registrar tu negocio, activa JavaScript en tu navegador. Lo usamos para comprobar que eres una persona.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await fill(page, REQUIRED("7719994060"));
+    await expect(submitButton(page)).toBeDisabled();
+    await submitButton(page).click({ force: true });
+    await field(page, "name").press("Enter");
+    await page.waitForTimeout(500);
+    expect(posts).toEqual([]);
+    await expect(page).toHaveURL(FORM);
+    expect(await businessesOf("7719994060")).toEqual([]);
   });
 });

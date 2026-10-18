@@ -5,7 +5,8 @@
 // development database. Both are idempotent, the same as `vp run db:migrate`
 // and `vp run db:seed`, and only a database on this machine is accepted. Like
 // `vp run db:seed`, it writes the seeded photos to the local media bucket,
-// which the preview serves under /_media/ (scripts/seed-media.ts).
+// which the preview serves under /_media/ (scripts/seed-media.ts). It leaves
+// Turnstile's switch on.
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
@@ -25,6 +26,9 @@ export default async function setup(): Promise<void> {
   try {
     const db = drizzle({ client, schema });
     await migrate(db, { migrationsFolder: "./drizzle" });
+    // Turnstile is on, even if an interrupted run left its switch off
+    // (test/e2e/registration.spec.ts turns it off for a while).
+    await db.update(schema.siteSettings).set({ turnstileEnabled: true });
     const report = await seed(db);
     await writeLocalSeedMedia(seedPhotoObjects(report.photos));
   } finally {

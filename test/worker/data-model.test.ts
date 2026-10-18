@@ -529,6 +529,7 @@ describe("The migration tree applies in full and its constraints survive", () =>
       "role_assignments",
       "role_permissions",
       "roles",
+      "site_settings",
       "states",
       "trades",
       "users",

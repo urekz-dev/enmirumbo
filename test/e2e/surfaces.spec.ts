@@ -8,7 +8,8 @@
 // previous brand or attaches the locality to the name". The 390px checks run in
 // the phone project of playwright.config.ts, with the viewport emulated, as the
 // spec asks.
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test, TURNSTILE_ORIGIN } from "./turnstile.ts";
 import { brandFindings } from "../brand-rules.ts";
 import { collapseProblems } from "../responsive-rules.ts";
 
@@ -130,16 +131,23 @@ test("every page is an es-MX document inside the layout, with its base metadata"
     // Schema.org block is data, which no browser runs (public-directory,
     // "Directory in Server Components, mobile-first and usable without
     // JavaScript"). The registration form of a locality is the one page with
-    // a script of the site, one bundled file (business-registration,
-    // "Registration works without client JavaScript": scenario "JS limited
-    // to the example field").
+    // scripts of the site, two bundled files: the form's (business-
+    // registration, "Registration works without client JavaScript": scenario
+    // "JS limited to the example field") and its Turnstile widget's, which
+    // adds Turnstile's api.js ("The registration and edit forms require
+    // JavaScript for the anti-bot check and say so (v2)").
     const own = page.locator('script:not([src^="https://"]):not([type="application/ld+json"])');
     if (/^\/[^/]+\/[^/]+\/registro$/.test(new URL(page.url()).pathname)) {
-      await expect.soft(own, path).toHaveCount(1);
-      await expect.soft(own, path).toHaveAttribute("type", "module");
-      await expect
-        .soft(own, path)
-        .toHaveAttribute("src", /^\/_astro\/RegistrationForm\.[^/]*\.js$/);
+      await expect.soft(own, path).toHaveCount(2);
+      const sources = await own.evaluateAll((scripts) =>
+        scripts.map((script) => `${script.getAttribute("type")} ${script.getAttribute("src")}`),
+      );
+      expect
+        .soft(sources.sort(), path)
+        .toEqual([
+          expect.stringMatching(/^module \/_astro\/RegistrationForm\.[^/]*\.js$/),
+          expect.stringMatching(/^module \/_astro\/TurnstileWidget\.[^/]*\.js$/),
+        ]);
     } else {
       await expect.soft(own, path).toHaveCount(0);
     }
@@ -234,12 +242,17 @@ test("no page names the previous brand, spells the brand otherwise or attaches a
 });
 
 // Palette and typography: the system font stack, so no page downloads a font
-// or asks anything of another origin.
+// or asks anything of another origin, but the registration form, which asks
+// Turnstile for its script (here, the local fake of ./turnstile.ts).
 test("every page uses the system font and requests nothing outside the site", async ({ page }) => {
   const outside: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1") outside.push(request.url());
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return;
+    const from = new URL(page.url()).pathname;
+    const turnstile = url.href.startsWith(`${TURNSTILE_ORIGIN}/turnstile/v0/api.js?`);
+    if (turnstile && /^\/[^/]+\/[^/]+\/registro$/.test(from)) return;
+    outside.push(`${from} ${request.url()}`);
   });
   for (const path of pages) {
     await page.goto(path);

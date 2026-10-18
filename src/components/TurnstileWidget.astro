@@ -1,0 +1,112 @@
+---
+// The Turnstile widget of a form that needs it (ADR 0012; docs/specs/
+// business-registration.md, "Turnstile is checked on the server, fails closed
+// and has a switch in the database (v2)" and "Without JavaScript the
+// registration says so and cannot be sent while Turnstile is on (v2)"):
+// the registration now, the edit form (EMR-43) the same way, each with its
+// own action. The page renders it only while the switch is on.
+//
+// It goes inside the form, before its submit button, which the form renders
+// `disabled`: without JavaScript the form cannot be sent, and the form says
+// why with its own message in a `<noscript>`. Its script, bundled as a file
+// of the site (the content security policy allows no inline script), loads
+// Cloudflare's api.js from challenges.cloudflare.com, the one other origin
+// the policy allows for scripts and frames, and renders the widget there in
+// managed mode, in Spanish. Turnstile puts its token in the hidden field
+// `cf-turnstile-response` of the form; the submit button is enabled while
+// there is a token, and disabled again when it expires or the widget fails,
+// until the widget gets a new one. A page restored from the browser's
+// history asks for a new token, since the old one was spent. When api.js
+// cannot load, or the environment has no site key, the form says that the
+// check could not be done, and stays unsendable.
+import { TURNSTILE_FAILED_MESSAGE, type TurnstileAction } from "../core/turnstile/keys.ts";
+
+interface Props {
+  /** The environment's site key (turnstileSiteKey), or null when it has none. */
+  siteKey: string | null;
+  /** The form's action, which its token carries back to the server. */
+  action: TurnstileAction;
+}
+
+const { siteKey, action } = Astro.props;
+const failed = "text-sm font-semibold text-ink";
+---
+
+{siteKey === null ? (
+  <p role="alert" class={failed}>
+    <span aria-hidden="true">⚠ </span>
+    {TURNSTILE_FAILED_MESSAGE}
+  </p>
+) : (
+  <div class="flex flex-col gap-2">
+    <div class="min-h-[65px]" data-turnstile-widget data-sitekey={siteKey} data-action={action} />
+    <p role="alert" class={failed} hidden data-turnstile-failed>
+      <span aria-hidden="true">⚠ </span>
+      {TURNSTILE_FAILED_MESSAGE}
+    </p>
+  </div>
+)}
+
+<script>
+  // Explicit rendering: this file defines the function api.js calls when it
+  // has loaded (`onload`), then adds api.js, so the function always exists
+  // first. The URL is Cloudflare's, exactly as published; it is never
+  // proxied or cached by the site.
+  const ONLOAD = "enmirumboTurnstileReady";
+  const API = `https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=${ONLOAD}`;
+
+  interface Turnstile {
+    render(container: HTMLElement, options: Record<string, unknown>): string | null | undefined;
+    reset(widget?: string): void;
+  }
+  const page = window as Window & { turnstile?: Turnstile; [ONLOAD]?: () => void };
+
+  const containers = [...document.querySelectorAll<HTMLElement>("[data-turnstile-widget]")];
+
+  /** Holds or releases the submit buttons of the form of `container`. */
+  function hold(container: HTMLElement, held: boolean): void {
+    const form = container.closest("form");
+    for (const button of form?.querySelectorAll<HTMLButtonElement>('button[type="submit"]') ?? []) {
+      button.disabled = held;
+    }
+  }
+
+  function showFailure(container: HTMLElement): void {
+    hold(container, true);
+    container.parentElement?.querySelector("[data-turnstile-failed]")?.removeAttribute("hidden");
+  }
+
+  if (containers.length > 0) {
+    page[ONLOAD] = () => {
+      const turnstile = page.turnstile;
+      if (!turnstile) return;
+      for (const container of containers) {
+        const widget = turnstile.render(container, {
+          sitekey: container.dataset["sitekey"],
+          action: container.dataset["action"],
+          language: "es",
+          size: "flexible",
+          callback: () => hold(container, false),
+          "expired-callback": () => hold(container, true),
+          "timeout-callback": () => hold(container, true),
+          "error-callback": () => hold(container, true),
+        });
+        window.addEventListener("pageshow", (event) => {
+          if (!event.persisted || widget === null || widget === undefined) return;
+          // After every other listener of this event, the form's own among
+          // them, which gives the button back: the token on the page was
+          // spent, so the button waits for a new one.
+          setTimeout(() => {
+            hold(container, true);
+            turnstile.reset(widget);
+          }, 0);
+        });
+      }
+    };
+    const script = document.createElement("script");
+    script.src = API;
+    script.async = true;
+    script.addEventListener("error", () => containers.forEach(showFailure));
+    document.head.appendChild(script);
+  }
+</script>
