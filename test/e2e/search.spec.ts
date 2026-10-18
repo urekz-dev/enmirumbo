@@ -304,7 +304,7 @@ test.describe("The results page is not indexable", () => {
 });
 
 test.describe("The search endpoint has a per-IP quota (v2)", () => {
-  // Scenarios: within the quota; over the quota
+  // Scenarios: within the quota; over the quota; the 101st search
   test("past its quota an address sees the message and no results; another address searches", async ({
     request,
     browser,

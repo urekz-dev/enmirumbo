@@ -521,15 +521,16 @@ The hourly job MUST send, at 8:00 local time of each locality, an email through 
 
 ### Requirement: Anti-abuse counters live in a Durable Object and never in PostgreSQL (v2)
 
-Added in v2 — source: ADR 0012, PRD §7. Amended on 2026-10-15 by EMR-36, which brings the first quota (the search): how the counters keep the privacy notice true, how the address is read and what happens when the counter fails. Until then it said only "with a secret per environment" about the key.
+Added in v2 — source: ADR 0012, PRD §7. Amended on 2026-10-15 by EMR-36, which brings the first quota (the search): how the counters keep the privacy notice true, how the address is read and what happens when the counter fails. Until then it said only "with a secret per environment" about the key. Amended on 2026-10-15 by EMR-71 (ADR 0012, amended): one object for every purpose instead of one per purpose, and the rules that bound its cost.
 
-The per-IP quotas of registration, edits, reports, search and SMS MUST be kept in a Durable Object keyed by an HMAC of the IP and the purpose, with a secret per environment. The IP MUST be used only in memory and for less than one hour. Each counter MUST be deleted when its window ends. No IP, and no value derived from it, MUST be written to PostgreSQL.
+The per-IP quotas of registration, edits, reports, search and SMS MUST be kept in one Durable Object keyed by an HMAC of the IP and the purpose, with a secret per environment. The IP MUST be used only in memory and for less than one hour. Each counter MUST be deleted when its window ends. No IP, and no value derived from it, MUST be written to PostgreSQL.
 
 The privacy notice says the IP is turned into a code with a secret key and that "ese código vive solo en su memoria y por menos de una hora" (`legal-pages`, "The privacy notice states how the IP address is used (v2)"), so the counters MUST live in the memory of the Durable Object and never in its storage, the database or a log:
 
-- **One object per purpose.** The binding `QUOTA_COUNTER` reaches the class `QuotaCounter`, declared with SQLite storage in `exports` (every new Durable Object must be), at the top level and in each environment of `wrangler.jsonc`. Each purpose is its own object, so each counts apart, with its own limit and window, at most an hour. A purpose arrives with the surface it protects.
-- **The key.** The secret is an HMAC-SHA-256 key that each object generates in its memory when it starts, cannot export and never writes anywhere: a different secret per environment, and per instance, that no person handles and no deploy needs. The code of an address is the HMAC of the purpose and the address, so neither can be read back from it, and the counters are keyed by it.
-- **The window.** A window is fixed: it starts with the first request of an address and ends after the quota's window. A timer deletes each counter when its window ends; while a counter is pending, the timer also keeps the object in memory. A restart of the object (a deploy, a failure, an eviction once it holds no counter) makes a new key and forgets every counter: a quota can only forget, never block more. Past 100,000 counters, the oldest is forgotten to make room, so a flood of addresses cannot exhaust its memory.
+- **One object for every purpose.** The binding `QUOTA_COUNTER` reaches the class `QuotaCounter`, declared with SQLite storage in `exports` (every new Durable Object must be), at the top level and in each environment of `wrangler.jsonc`. Every purpose reaches the same instance, whose name is a constant (`QUOTA_COUNTER_NAME`): never an object per visitor, address, user or purpose. The purpose is part of the code of each counter, so each purpose counts apart, with its own limit and window, at most an hour. The purposes are a fixed list, each named as a literal by the page or the action that takes it, never built from a request. A purpose arrives with the surface it protects.
+- **The key.** The secret is an HMAC-SHA-256 key that the object generates in its memory when it starts, cannot export and never writes anywhere: a different secret per environment, and per instance, that no person handles and no deploy needs. The code of an address is the HMAC of the purpose and the address, so neither can be read back from it, and the counters are keyed by it.
+- **The window.** A window is fixed: it starts with the first request of an address and ends after the quota's window. A timer deletes each counter when its window ends; while a counter is pending, the timer also keeps the object in memory. A restart of the object (a deploy, a failure, an eviction once it holds no counter) makes a new key and forgets every counter: a quota can only forget, never block more. Past 100,000 counters, of every purpose together, the oldest is forgotten to make room, so a flood of addresses cannot exhaust its memory.
+- **A bounded cost.** A Durable Object is billed for the time it stays in memory unable to hibernate, and a pending timer keeps it from hibernating, so the object MUST keep to these rules, and an automatic check MUST read the code and the configuration for each of them: it never uses its storage (`ctx.storage`) and sets no alarm (`setAlarm`, an `alarm()` handler); it has one timer, which exists only while it holds at least one counter, is set at most 10 minutes ahead (`MAX_TIMER_MS`, under the 15 minutes for which a pending timer keeps a Durable Object from being evicted), and is never set again once no counter remains, until a request brings a new one; and `preview_urls` is `false` at the top level and in every environment of `wrangler.jsonc`, written in each. With one object, the most it can be in memory is all the time: about 11,000 GB-s a day, under the 13,000 GB-s a day of Workers Free, and about 332,000 GB-s in a month of 30 days, inside the 400,000 GB-s a month that Workers Paid includes (ADR 0012, amended on 2026-10-15).
 - **The address.** It is the one Cloudflare writes in `CF-Connecting-IP`, which a visitor cannot set. An IPv6 address counts by its /64, which a home or a phone receives whole. A request without an address, and one from a loopback address (only possible on the developer's machine, where Miniflare gives one to every request), is not counted.
 - **Failure.** When the object cannot answer, the request goes on as if within its quota, and the log says the counter did not answer, without the address.
 
@@ -550,8 +551,33 @@ The privacy notice says the IP is turned into a code with a secret key and that 
 
 #### Scenario: nothing in the storage of the Durable Object
 
-- **WHEN** the storage of the object of a purpose is read after it has counted requests
-- **THEN** it holds nothing: the counters and the key are only in its memory
+- **WHEN** the storage of the object is read after it has counted requests of the search and the reports
+- **THEN** it holds nothing and no alarm is set: the counters and the key are only in its memory
+
+#### Scenario: one object for every purpose
+
+- **WHEN** requests of every purpose arrive from several addresses
+- **THEN** each reaches the one object named `QUOTA_COUNTER_NAME`, which keeps a counter apart for each purpose and address
+
+#### Scenario: a purpose outside the list
+
+- **WHEN** the object is asked to count a purpose that is not in the list
+- **THEN** it refuses, and keeps no counter and no timer for it
+
+#### Scenario: a timer never set far ahead
+
+- **WHEN** the object counts a report, whose window ends an hour later
+- **THEN** its timer is set at most 10 minutes ahead, and set again when it fires while a counter remains
+
+#### Scenario: no timer without a counter
+
+- **WHEN** the last counter of the object is deleted, or a timer fires with no counter left
+- **THEN** the object holds no timer and sets none until a request brings a new counter
+
+#### Scenario: the rules are checked
+
+- **WHEN** a change reaches the quota counter by a name other than `QUOTA_COUNTER_NAME`, takes a purpose that is not a literal of the list, uses the storage of the object, sets an alarm or an interval, sets a timer outside its one schedule, or leaves `preview_urls` other than `false` anywhere in `wrangler.jsonc`
+- **THEN** an automatic check fails, naming the file and the line, or the environment, where it found it
 
 #### Scenario: a restart
 

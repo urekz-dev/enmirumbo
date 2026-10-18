@@ -73,8 +73,8 @@ export const OPERATIONAL_PENDING_ITEMS: readonly OperationalPendingItem[] = [
     commitment:
       'The notice says the IP address is used for less than an hour, only in memory, as a code made with a secret key, and never written to the database ("ese código vive solo en su memoria y por menos de una hora").',
     today:
-      "The search quota (EMR-36) turns the IP address into an HMAC with a key the Durable Object generates in its memory, keeps the counter in that memory only, never in its storage, the database or a log, and deletes it when its window of 10 minutes ends. The quotas of the forms and the reports arrive in the same Durable Object (ADR 0012) and must keep their counters the same way, in windows of an hour at most, for the sentence to stay true. A counter in memory is lost when the object restarts, so a quota can only count less than it should. The wording waits for the legal review.",
-    tickets: "EMR-58 (H1, legal review of the wording), then EMR-42 (E4) and EMR-37",
+      "The quotas of the search (EMR-36, 10 minutes) and of the reports (EMR-37, an hour) turn the IP address into an HMAC with a key the single quota Durable Object generates in its memory, keep the counter in that memory only, never in its storage, the database or a log, and delete it when its window ends (ADR 0012, EMR-71). The quotas of the forms arrive in the same object and must keep their counters the same way, in windows of an hour at most, for the sentence to stay true. A counter in memory is lost when the object restarts, so a quota can only count less than it should. The wording waits for the legal review.",
+    tickets: "EMR-58 (H1, legal review of the wording), then EMR-42 (E4)",
   },
   {
     commitment:
