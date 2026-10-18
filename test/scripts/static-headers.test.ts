@@ -51,7 +51,7 @@ const headers = () => readFileSync(join(build, "client/_headers"), "utf8");
 function deployed(environment: string, extra: Record<string, string> = {}) {
   return {
     ENVIRONMENT: environment,
-    PHOTOS_URL: "https://fotos.enmirumbo.com",
+    MEDIA_URL: "https://media-enmirumbo.urekz.com",
     UMAMI_WEBSITE_ID: "",
     ...extra,
   };
@@ -87,7 +87,7 @@ describe("Deployed environments stay out of search engines until the cut-over (v
 
   // Scenario: local
   it("a local build adds no noindex: the static pages stay indexable", async () => {
-    writeConfig({ vars: { ENVIRONMENT: "local", PHOTOS_URL: "", UMAMI_WEBSITE_ID: "" } });
+    writeConfig({ vars: { ENVIRONMENT: "local", MEDIA_URL: "", UMAMI_WEBSITE_ID: "" } });
     writeFileSync(join(build, "client/_headers"), ADAPTER_RULES);
 
     const vars = await builtVars(server);

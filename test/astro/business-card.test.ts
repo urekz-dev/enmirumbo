@@ -24,6 +24,7 @@ import ContactButtons from "../../src/components/ContactButtons.astro";
 import JsonLd from "../../src/components/JsonLd.astro";
 import ListingCard from "../../src/components/ListingCard.astro";
 import { collapseProblems } from "../responsive-rules.ts";
+import { env as workerEnv } from "./cloudflare-workers.ts";
 
 const TIZAYUCA: ServedLocality = {
   code: "13069",
@@ -71,6 +72,7 @@ function complete(overrides: Partial<PublishedCard> = {}): PublishedCard {
       { name: "Plomería", slug: "plomeria" },
       { name: "Fonda / comida corrida", slug: "fonda-comida-corrida" },
     ],
+    photoKey: null,
     ...overrides,
   };
 }
@@ -517,15 +519,6 @@ describe("The listing card brings the essentials and WhatsApp without extra taps
     expect(placeholder(await renderListing({ categorySlug: "categoria-nueva" }))).toBe("✨");
   });
 
-  // "The photo of an unpublished business is referenced on no public
-  // surface (v2)": until the photo storage, no key is ever rendered
-  it("never renders the stored photo reference", async () => {
-    const html = await renderListing({ photoKey: "clave-de-foto-de-prueba" });
-
-    expect(html).not.toContain("clave-de-foto-de-prueba");
-    expect(html).not.toMatch(/<img\b/);
-  });
-
   // Scenarios: the card neither stretches nor squeezes; the layout does not
   // jump
   it("the photo slot is a fixed square, the tag measures its text, and nothing blocks the collapse", async () => {
@@ -543,6 +536,144 @@ describe("The listing card brings the essentials and WhatsApp without extra taps
     expect(anchor(await renderListing({}, OTHER), "Estética Tijeras de Mentira").href).toBe(
       "/estado-de-prueba-92/pueblo-uno/negocio/estetica-tijeras-de-mentira-uw3ffjy6fw",
     );
+  });
+});
+
+const PHOTO_KEY = "yya626vdevvbuxa5avc2n8e6";
+const MEDIA = "https://media-enmirumbo.urekz.com";
+
+/** The `<img>` tags of the HTML, as attribute maps. */
+function images(html: string): Record<string, string>[] {
+  return [...html.matchAll(/<img\b([^>]*)>/g)].map(([, attributes = ""]) =>
+    Object.fromEntries(
+      [...attributes.matchAll(/([\w-]+)="([^"]*)"/g)].map(([, name = "", value = ""]) => [
+        name,
+        value.replaceAll("&amp;", "&"),
+      ]),
+    ),
+  );
+}
+
+/** Renders with the vars of an environment, then gives the stand-in its local vars back. */
+async function asEnvironment<T>(vars: Partial<Env>, render: () => Promise<T>): Promise<T> {
+  const before = { ...workerEnv };
+  Object.assign(workerEnv, vars);
+  try {
+    return await render();
+  } finally {
+    for (const key of Object.keys(workerEnv)) delete (workerEnv as Record<string, unknown>)[key];
+    Object.assign(workerEnv, before);
+  }
+}
+
+const PRODUCTION: Partial<Env> = { ENVIRONMENT: "prod", MEDIA_URL: MEDIA } as Partial<Env>;
+
+describe("The listing card and the card show the photo the server generated", () => {
+  // public-directory, "The listing card brings the essentials", scenarios:
+  // card content; the photo is announced with the business name
+  it("a listing card with a photo shows its card variant, sized and named, from the media hostname", async () => {
+    const html = await asEnvironment(PRODUCTION, () => renderListing({ photoKey: PHOTO_KEY }));
+
+    expect(images(html)).toEqual([
+      {
+        src: `${MEDIA}/photos/${PHOTO_KEY}/card.webp`,
+        width: "400",
+        height: "400",
+        alt: "Foto de Estética Tijeras de Mentira",
+        loading: "lazy",
+        decoding: "async",
+        class: "h-full w-full bg-surface object-cover",
+      },
+    ]);
+    expect(html).not.toContain("photo-placeholder");
+    // "Photo weight does not break the 4G budget": never the card's variant.
+    expect(html).not.toContain("full.webp");
+  });
+
+  // "Photo weight does not break the 4G budget", scenario: the listing does
+  // not download what is not seen
+  it("only the first row loads its photo at once", async () => {
+    const first = await asEnvironment(PRODUCTION, () =>
+      container.renderToString(ListingCard, {
+        props: {
+          business: {
+            id: "uw3ffjy6fw",
+            name: "Estética Tijeras de Mentira",
+            categorySlug: "belleza",
+            zoneName: null,
+            zoneSlug: null,
+            homeDelivery: false,
+            whatsapp: "7719990107",
+            photoKey: PHOTO_KEY,
+          },
+          locality: TIZAYUCA,
+          analytics: null,
+          firstRow: true,
+        },
+      }),
+    );
+    expect(images(first)[0]?.["loading"]).toBe("eager");
+  });
+
+  // Scenario: the layout does not jump
+  it("with a photo, the slot is the same fixed square as without one", async () => {
+    const slot = (html: string) => /<div class="([^"]*aspect-square[^"]*)"/.exec(html)?.[1];
+    const withPhoto = await asEnvironment(PRODUCTION, () => renderListing({ photoKey: PHOTO_KEY }));
+
+    expect(slot(withPhoto)).toBe(slot(await renderListing()));
+  });
+
+  // "Only the photo generated by the server is rendered", scenarios: external
+  // reference stored by hand; `data:` or `javascript:` in the reference;
+  // attempt to escape the storage
+  it.for([
+    "https://evil.example/pixel.png",
+    "data:image/svg+xml,<svg onload=alert(1)>",
+    "javascript:alert(1)",
+    `../${PHOTO_KEY}`,
+    "/etc/passwd",
+    "clave-de-foto-de-prueba",
+  ])("a stored %j shows the placeholder and appears nowhere", async (stored) => {
+    const listing = await asEnvironment(PRODUCTION, () => renderListing({ photoKey: stored }));
+    const card = await asEnvironment(PRODUCTION, () => renderCard(complete({ photoKey: stored })));
+
+    for (const html of [listing, card]) {
+      expect(html).not.toMatch(/<img\b/);
+      expect(html).not.toContain(stored.replaceAll("<", "&lt;"));
+      expect(html).not.toContain("evil.example");
+    }
+    expect(listing).toContain("photo-placeholder");
+  });
+
+  // "The card shows the business photo when it has one", scenario: card with
+  // a photo
+  it("the card shows its full variant above the name, larger than the listing card's", async () => {
+    const html = await asEnvironment(PRODUCTION, () =>
+      renderCard(complete({ photoKey: PHOTO_KEY })),
+    );
+
+    expect(images(html)).toEqual([
+      {
+        src: `${MEDIA}/photos/${PHOTO_KEY}/full.webp`,
+        width: "1200",
+        height: "900",
+        alt: "Foto de Plomería Los Fontaneros Ficticios",
+        decoding: "async",
+        class: "aspect-4/3 w-full rounded-xl bg-surface object-cover",
+      },
+    ]);
+    expect(html.indexOf("<img")).toBeLessThan(html.indexOf("<h1"));
+    // Nothing else changes: the same text as without a photo.
+    expect(visibleText(html)).toBe(visibleText(await renderCard(complete())));
+  });
+
+  // Local development: the local Worker serves the local bucket (src/lib/media.ts).
+  it("locally, the photo comes from the local Worker's /_media/", async () => {
+    const html = await asEnvironment({ ENVIRONMENT: "local", MEDIA_URL: "" } as Partial<Env>, () =>
+      renderListing({ photoKey: PHOTO_KEY }),
+    );
+
+    expect(images(html)[0]?.["src"]).toBe(`/_media/photos/${PHOTO_KEY}/card.webp`);
   });
 });
 

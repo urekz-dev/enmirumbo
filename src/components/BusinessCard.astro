@@ -15,14 +15,19 @@
 // wraps (`break-words`), so a very long word cannot scroll a 390px phone
 // sideways.
 //
-// The photo arrives with the photo storage (ADR 0011, epic D); until then a
-// card has none, and a card without a photo shows no gap, frame or text
-// about one ("The card shows the business photo when it has one").
+// The photo ("The card shows the business photo when it has one") is its
+// 1200×900 `full` variant, larger than the listing card's, from the address
+// src/lib/media.ts builds from the stored key, announced as "Foto de
+// <nombre>"; its box keeps the photo's proportion before it loads, so nothing
+// moves. A card without a photo, or whose stored value is not a key the
+// server generated, shows no gap, frame or text about one.
 // No client JavaScript.
+import { env } from "cloudflare:workers";
 import type { PublishedCard } from "../core/business/card.ts";
 import { callLink } from "../core/business/contact.ts";
 import type { ServedLocality } from "../core/locality/served.ts";
 import type { Analytics } from "../lib/analytics.ts";
+import { businessPhoto } from "../lib/media.ts";
 import CardSecondaryLinks from "./CardSecondaryLinks.astro";
 import CardTrades from "./CardTrades.astro";
 import ContactButtons from "./ContactButtons.astro";
@@ -39,9 +44,20 @@ const { card, locality, analytics } = Astro.props;
 // Registered, but not a number one can dial: shown as written, with no
 // "Llamar" (no hostile dialing code reaches a tel: link).
 const undialableLandline = card.landline !== null && callLink(card.landline) === null;
+const photo = businessPhoto(env, card.photoKey, "full");
 ---
 
 <article class="flex flex-col gap-6 py-4">
+  {photo && (
+    <img
+      src={photo.src}
+      width={photo.width}
+      height={photo.height}
+      alt={`Foto de ${card.name}`}
+      decoding="async"
+      class="aspect-4/3 w-full rounded-xl bg-surface object-cover"
+    />
+  )}
   <div class="flex flex-col gap-2">
     <h1 class="text-2xl font-bold tracking-tight break-words sm:text-3xl">{card.name}</h1>
     <div class="flex flex-wrap items-center gap-2">

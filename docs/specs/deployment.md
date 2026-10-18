@@ -411,6 +411,8 @@ The project MUST have a single document, `docs/despliegue.md`, that is enough to
 
 ### Requirement: Business photos live in R2, with one bucket and one hostname per environment (v2)
 
+Superseded in v2 by Public media live in R2, in one bucket for production and one for dev and stage (v2) — source: decision of the product owner, 2026-10-18; ADR 0011 (amended on 2026-10-18).
+
 Added in v2 — source: ADR 0011, PRD §6.8.
 
 Photos MUST be stored in a Cloudflare R2 bucket and served from a dedicated hostname, with one bucket and one hostname per environment: `fotos.enmirumbo.com`, `fotos-stage.enmirumbo.com` and `fotos-dev.enmirumbo.com`. Each environment names its hostname, as an https origin, in its variable `PHOTOS_URL`, the only other origin the content security policy lets images come from; locally it is empty. Serving a photo MUST NOT invoke the Worker. The bucket MUST NOT be shared between environments, and the hostname MUST NOT list the bucket.
@@ -591,14 +593,14 @@ The privacy notice says the IP is turned into a code with a secret key and that 
 
 ### Requirement: Three deployed environments, each with its own Worker, bindings and variables (v2)
 
-Added in v2 — source: ADR 0008, ADR 0005, ADR 0010. Amended on 2026-10-15 by EMR-36: the binding of the quota counter and its `exports` entry.
+Added in v2 — source: ADR 0008, ADR 0005, ADR 0010. Amended on 2026-10-15 by EMR-36: the binding of the quota counter and its `exports` entry. Amended on 2026-10-18 by EMR-35 and the decision of the product owner of that date: the `MEDIA` binding of the public media bucket, and `MEDIA_URL`, which replaces `PHOTOS_URL` and which `dev` and `stage` share.
 
-The Worker configuration (`wrangler.jsonc`) MUST declare the deployed environments `dev`, `stage` and `prod` inside `env`, and each MUST declare for itself, without relying on the top level: its Worker name (`dev-enmirumbo`, `stage-enmirumbo` and `enmirumbo`), the `workers.dev` URL on, Version and Preview URLs off (`preview_urls: false`, so no URL can bypass Access), its `HYPERDRIVE` (cached) and `HYPERDRIVE_FRESH` (caching disabled) bindings with ids of its own, the `QUOTA_COUNTER` binding of the quotas and the `exports` entry of its class `QuotaCounter` ("Anti-abuse counters live in a Durable Object and never in PostgreSQL (v2)"), and the variables `ENVIRONMENT` (its own identifier), `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `SITE_URL` (its `workers.dev` URL, `https://<worker>.urekz.workers.dev`, the base of every absolute URL), `PHOTOS_URL` (its photo hostname, "Business photos live in R2, with one bucket and one hostname per environment (v2)") and `UMAMI_WEBSITE_ID` (empty but in production, `base-layout`, "Cookieless measurement is loaded only in production and only when configured (v2)"). The Cron Trigger follows "Scheduled work runs from one hourly Cron Trigger per environment (v2)"; `dev` MUST declare an empty list, so a deploy also removes a trigger left on its Worker. No route or Custom Domain is declared until the DNS move. The top level is the local Worker (`enmirumbo-local`, `ENVIRONMENT` `local`) with the `workers.dev` URL and Version URLs off, so a deploy without an environment by mistake publishes nothing reachable. While the Access application does not exist, `ACCESS_AUD` is empty and the panel stays closed.
+The Worker configuration (`wrangler.jsonc`) MUST declare the deployed environments `dev`, `stage` and `prod` inside `env`, and each MUST declare for itself, without relying on the top level: its Worker name (`dev-enmirumbo`, `stage-enmirumbo` and `enmirumbo`), the `workers.dev` URL on, Version and Preview URLs off (`preview_urls: false`, so no URL can bypass Access), its `HYPERDRIVE` (cached) and `HYPERDRIVE_FRESH` (caching disabled) bindings with ids of its own, the `QUOTA_COUNTER` binding of the quotas and the `exports` entry of its class `QuotaCounter` ("Anti-abuse counters live in a Durable Object and never in PostgreSQL (v2)"), the `MEDIA` binding of its public media bucket ("Public media live in R2, in one bucket for production and one for dev and stage (v2)"), and the variables `ENVIRONMENT` (its own identifier), `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `SITE_URL` (its `workers.dev` URL, `https://<worker>.urekz.workers.dev`, the base of every absolute URL), `MEDIA_URL` (its media hostname, the same for `dev` and `stage`) and `UMAMI_WEBSITE_ID` (empty but in production, `base-layout`, "Cookieless measurement is loaded only in production and only when configured (v2)"). The Cron Trigger follows "Scheduled work runs from one hourly Cron Trigger per environment (v2)"; `dev` MUST declare an empty list, so a deploy also removes a trigger left on its Worker. No route or Custom Domain is declared until the DNS move. The top level is the local Worker (`enmirumbo-local`, `ENVIRONMENT` `local`) with the `workers.dev` URL and Version URLs off, so a deploy without an environment by mistake publishes nothing reachable. While the Access application does not exist, `ACCESS_AUD` is empty and the panel stays closed.
 
 #### Scenario: per environment
 
 - **WHEN** the configuration of `dev`, `stage` and `prod` is read as Wrangler resolves it
-- **THEN** each has its Worker name, `workers_dev` on, `preview_urls` off, both Hyperdrive bindings with two ids that no other environment uses, the `QUOTA_COUNTER` binding with `QuotaCounter` declared in its own `exports`, and the six variables with its own `ENVIRONMENT`, `SITE_URL` and `PHOTOS_URL`
+- **THEN** each has its Worker name, `workers_dev` on, `preview_urls` off, both Hyperdrive bindings with two ids that no other environment uses, the `QUOTA_COUNTER` binding with `QuotaCounter` declared in its own `exports`, the `MEDIA` binding of its media bucket, and the six variables with its own `ENVIRONMENT` and `SITE_URL`, and the `MEDIA_URL` of its media hostname
 
 #### Scenario: nothing inherited
 
@@ -612,15 +614,17 @@ The Worker configuration (`wrangler.jsonc`) MUST declare the deployed environmen
 
 ### Requirement: Each environment is built and deployed by its own workflow (v2)
 
-Added in v2 — source: ADR 0008, ADR 0005, ADR 0016. Amended on 2026-10-15 by EMR-36: the check of the quota counter.
+Added in v2 — source: ADR 0008, ADR 0005, ADR 0016. Amended on 2026-10-15 by EMR-36: the check of the quota counter. Amended on 2026-10-18 by EMR-35: the check of the media bucket and `MEDIA_URL`, and the upload of the seed's photos on `dev` and `stage`.
 
-Every deploy MUST build for its target with `CLOUDFLARE_ENV=<env>` and deploy, with the project's Wrangler, the configuration that build generated; a build is never promoted between environments and the top-level Worker is never deployed. Before it changes anything —a database or Cloudflare— the workflow MUST check the ref and the generated configuration, and stop, naming every problem, when the ref is not one the environment accepts, the build targets another environment, its Worker name, variables, `workers.dev`, Version URLs or triggers are not the ones of that environment, a Hyperdrive binding is missing, shares its id with the other, or still has a placeholder id, `QUOTA_COUNTER` is not bound to `QuotaCounter` or `exports` does not declare it as a Durable Object with SQLite storage, or the `_headers` file of its static assets does not give every one of them `X-Robots-Tag: noindex` (`base-layout`, "Deployed environments stay out of search engines until the cut-over (v2)") and the security headers ("Every response carries the security headers and the content security policy (v2)"). An empty `ACCESS_AUD` is only a warning.
+Every deploy MUST build for its target with `CLOUDFLARE_ENV=<env>` and deploy, with the project's Wrangler, the configuration that build generated; a build is never promoted between environments and the top-level Worker is never deployed. Before it changes anything —a database or Cloudflare— the workflow MUST check the ref and the generated configuration, and stop, naming every problem, when the ref is not one the environment accepts, the build targets another environment, its Worker name, variables, `workers.dev`, Version URLs or triggers are not the ones of that environment, a Hyperdrive binding is missing, shares its id with the other, or still has a placeholder id, `QUOTA_COUNTER` is not bound to `QuotaCounter` or `exports` does not declare it as a Durable Object with SQLite storage, `MEDIA` is not bound to the media bucket of that environment (`enmirumbo-media` for `prod`, `enmirumbo-media-dev` for `dev` and `stage`) or `MEDIA_URL` is not an https origin, or the `_headers` file of its static assets does not give every one of them `X-Robots-Tag: noindex` (`base-layout`, "Deployed environments stay out of search engines until the cut-over (v2)") and the security headers ("Every response carries the security headers and the content security policy (v2)"). An empty `ACCESS_AUD` is only a warning.
 
 The build prerenders the legal pages in a local workerd with the bindings of its environment. The Hyperdrive bindings of a deployed environment have no local connection string, so the build gives them an address where nothing answers: no prerendered page reads the database ("The production build does not need the database"), and one that tried would fail the build. The deployed Worker never sees that address.
 
-- `dev` (`deploy-dev.yml`): run by hand from any branch, never from a tag. It resets the Neon branch named `dev` to its parent `stage` and waits until Neon finishes, applies the branch's migrations, runs the fictitious seed, deploys, and writes the branch and the commit to the run summary and to the page footer. The reset MUST touch only the branch named `dev`, and MUST refuse, without writing, unless there is exactly one branch named `dev` and one named `stage`, `dev` is not the default branch, its parent is `stage` and it has no children.
-- `stage` (`deploy-stage.yml`): on every push to `main`, or by hand on `main`. It applies the migrations, runs the fictitious seed and deploys.
+- `dev` (`deploy-dev.yml`): run by hand from any branch, never from a tag. It resets the Neon branch named `dev` to its parent `stage` and waits until Neon finishes, applies the branch's migrations, runs the fictitious seed, uploads the seed's photos, deploys, and writes the branch and the commit to the run summary and to the page footer. The reset MUST touch only the branch named `dev`, and MUST refuse, without writing, unless there is exactly one branch named `dev` and one named `stage`, `dev` is not the default branch, its parent is `stage` and it has no children.
+- `stage` (`deploy-stage.yml`): on every push to `main`, or by hand on `main`. It applies the migrations, runs the fictitious seed, uploads the seed's photos and deploys.
 - `prod` (`deploy-prod.yml`): on a tag `vX.Y.Z` (three numbers without leading zeros and nothing after them), or by hand on such a tag. It applies the migrations without seeding, deploys, and then creates the GitHub Release of the tag with generated notes; only that job may write to the repository.
+
+On `dev` and `stage` the seed draws its photos into a directory (`data-model`, "The demo seed draws its photos and writes them where its environment serves media (v2)"), and a step of its own uploads them to `enmirumbo-media-dev` through R2's S3 API with an R2 token that can read and write that bucket only. That step gets the token and no database secret; the seed's step gets the database and no token. The upload refuses production, a build of another environment and a build without its `MEDIA` binding, puts each object with its media type, its caching and its Content-MD5, and fails unless R2 then holds each object's size.
 
 After each deploy a smoke test MUST request the site URL and fail unless the home answers 200, following its redirects only over https, with `X-Robots-Tag: noindex` and the security headers on the page the redirects end at, `/aviso-de-privacidad`, a prerendered page that Cloudflare serves without the Worker, answers 200 with `X-Robots-Tag: noindex` and the security headers, and `/robots.txt` closes the site, retrying for about a minute while the new version spreads. The home redirects while one locality is active (`public-directory`, "While there is one active locality, the root redirects to it (v2)"), as on `dev` and `stage` once the fictitious seed turns Tizayuca on. Two deploys of the same environment never run at the same time, and a running deploy is never cancelled.
 
@@ -653,6 +657,16 @@ After each deploy a smoke test MUST request the site URL and fail unless the hom
 
 - **WHEN** after a deploy the home, following its redirects over https, does not answer 200, the page it ends at does not carry `X-Robots-Tag: noindex` or a security header, `/aviso-de-privacidad` does not answer 200 with `X-Robots-Tag: noindex` and the security headers, or `/robots.txt` does not close the site
 - **THEN** the workflow fails
+
+#### Scenario: a build without its media bucket
+
+- **WHEN** the configuration a build generated lacks the `MEDIA` binding, binds another environment's bucket (such as `dev` bound to `enmirumbo-media`), or has a `MEDIA_URL` that is not an https origin
+- **THEN** the workflow stops before the migrations and the deploy, naming the binding or the variable and the environment
+
+#### Scenario: the seed's photos
+
+- **WHEN** the dev or stage workflow seeds
+- **THEN** the seed's photos reach `enmirumbo-media-dev` with their media type and caching, the R2 token appears in no command line or log, and a failed upload fails the run before the deploy
 
 #### Scenario: a build without the quota counter
 
@@ -812,11 +826,11 @@ The system MUST use PostgreSQL 18 in development, in testing, in continuous inte
 
 ### Requirement: Every response carries the security headers and the content security policy (v2)
 
-Added in v2 — source: ADR 0011, ADR 0012, ADR 0014, PRD §8.
+Added in v2 — source: ADR 0011, ADR 0012, ADR 0014, PRD §8. Amended on 2026-10-18 by the decision of the product owner of that date: `img-src` takes `MEDIA_URL`, which replaces `PHOTOS_URL`.
 
 Every response of the site, in every environment —pages, redirects, errors, `/robots.txt`, `/sitemap.xml`, `/health` and the static assets that Cloudflare serves without the Worker— MUST carry:
 
-- `Content-Security-Policy`, with exactly these directives: `default-src 'self'`; `script-src 'self' https://challenges.cloudflare.com`, plus `https://cloud.umami.is` where the measurement is on (production with a Website ID, `base-layout`, "Cookieless measurement is loaded only in production and only when configured (v2)"); `style-src 'self'`; `img-src 'self'`, plus the environment's `PHOTOS_URL` when it is an https origin; `connect-src 'self'`, plus `https://gateway.umami.is` and `https://cloud.umami.is`, Umami Cloud's collectors, where the measurement is on; `frame-src https://challenges.cloudflare.com`; `frame-ancestors 'none'`; `object-src 'none'`; `base-uri 'none'`; and `form-action 'self'`. No inline script or style is allowed, so no page may carry one: every stylesheet and script of the build is a file.
+- `Content-Security-Policy`, with exactly these directives: `default-src 'self'`; `script-src 'self' https://challenges.cloudflare.com`, plus `https://cloud.umami.is` where the measurement is on (production with a Website ID, `base-layout`, "Cookieless measurement is loaded only in production and only when configured (v2)"); `style-src 'self'`; `img-src 'self'`, plus the environment's `MEDIA_URL` when it is an https origin; `connect-src 'self'`, plus `https://gateway.umami.is` and `https://cloud.umami.is`, Umami Cloud's collectors, where the measurement is on; `frame-src https://challenges.cloudflare.com`; `frame-ancestors 'none'`; `object-src 'none'`; `base-uri 'none'`; and `form-action 'self'`. No inline script or style is allowed, so no page may carry one: every stylesheet and script of the build is a file.
 - `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin`, which never sends a path to another site.
 
 The admin panel —every response at `/admin` and below, and the admin actions— gets `Referrer-Policy: strict-origin`, the policy its pages declare (`base-layout`, "The measurement carries no personal data or text typed by people"), and its `form-action` also allows the Access team domain (`https://<team>.cloudflareaccess.com`), where Access sends a panel submission whose session has expired. A response that already declares one of these headers keeps its own value. No response announces the framework (`X-Powered-By`, a `generator` meta tag). The Worker adds the headers to its responses; the build writes the same headers, computed from the vars of the environment it targets, in the `_headers` file of the static assets, in every environment. The dev server leaves out only the content security policy, because Vite's development pages need inline styles and scripts; the preview and every build send it. The README holds the policy and the command that reads it from the deployed site.
@@ -855,3 +869,33 @@ The admin panel —every response at `/admin` and below, and the admin actions�
 
 - **WHEN** the README is followed after a deploy
 - **THEN** it gives the command that reads the headers of the deployed site and what they must say
+
+### Requirement: Public media live in R2, in one bucket for production and one for dev and stage (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18; ADR 0011 (amended on 2026-10-18), PRD §6.8.
+
+Business photos MUST be stored in a public media bucket of Cloudflare R2: a bucket that holds only public content people or the admin upload, organized by prefix, with the photos under `photos/` (`public-directory`, "The photo of an unpublished business is referenced on no public surface (v2)"; `data-model`, "A photo key is 24 characters of the identifier alphabet, and names two objects under `photos/` (v2)"). Nothing private MUST go in it: the backups keep their own bucket ("Production is backed up every night to a private bucket (v2)"). There MUST be two media buckets: `enmirumbo-media` for production alone, and `enmirumbo-media-dev`, shared by `dev` and `stage`, so that nothing deployed from a branch can reach production's media, and the cards `dev` copies from `stage` point at photos that exist. The Worker binds its environment's bucket as `MEDIA`.
+
+Each bucket MUST be served from its media hostname, a custom domain of the bucket, named as an https origin in the variable `MEDIA_URL` of the environments that use it: `https://media-enmirumbo.urekz.com` for `prod` and `https://media-dev-enmirumbo.urekz.com` for `dev` and `stage`, temporary hostnames under `urekz.com` until `enmirumbo.com` is on Cloudflare (later `media.enmirumbo.com` and `media-dev.enmirumbo.com`); moving them MUST be a change of configuration and never of code. `MEDIA_URL` is the only other origin the content security policy lets images come from. Serving a photo MUST NOT invoke the Worker: Cloudflare serves it from the bucket and its cache, following the `Cache-Control: public, max-age=31536000, immutable` every object carries. The media hostname MUST NOT list the bucket, and the bucket's `r2.dev` URL MUST stay off.
+
+Locally `MEDIA_URL` is empty and the bucket is Miniflare's: the local Worker MUST serve it on its own origin under `/_media/<object key>`, with each object's media type and caching, so the dev server, the preview and the end-to-end tests show the photos; it MUST answer 404 to an object that does not exist and to any prefix, and the route MUST answer only with `ENVIRONMENT` `local` and on a loopback host, so it does not exist in a deployed Worker. A deployed environment without an https `MEDIA_URL` shows no photo and logs it once.
+
+#### Scenario: per environment
+
+- **WHEN** the configuration of `dev`, `stage` and production is read
+- **THEN** production binds `enmirumbo-media` and names `https://media-enmirumbo.urekz.com`, and `dev` and `stage` both bind `enmirumbo-media-dev` and name `https://media-dev-enmirumbo.urekz.com`
+
+#### Scenario: serving
+
+- **WHEN** a photo of a published card is requested on its media hostname
+- **THEN** it is served by the CDN from the bucket, with its media type and a year of caching, with no Worker invocation
+
+#### Scenario: locally
+
+- **WHEN** the dev server or the preview runs with the seeded photos in the local bucket
+- **THEN** the cards show them from `/_media/photos/…` of the same origin, and `/_media/` and `/_media/photos/` answer 404
+
+#### Scenario: the local route in a deployed Worker
+
+- **WHEN** a deployed environment, or a request to a host that is not a loopback one, asks for `/_media/…`
+- **THEN** the Worker does not serve the bucket

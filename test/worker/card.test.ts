@@ -88,6 +88,7 @@ describe("Business card at its own URL with the registered information and the v
         { name: `Giro de prueba ${STATE} dos`, slug: `giro-prueba-${STATE}-dos` },
         { name: `Giro de prueba ${STATE} tres`, slug: `giro-prueba-${STATE}-tres` },
       ],
+      photoKey: null,
     });
   });
 
@@ -227,12 +228,12 @@ describe("An edit awaiting review does not show through on any public surface", 
 
 describe("The zone is published, never the exact address nor the card's internal data", () => {
   // Scenario: no internal data in the response
-  it("the card brings nothing internal: no status, origin, dates, consent, link, pin or photo", async () => {
+  it("the card brings nothing internal: no status, origin, dates, consent, link or pin", async () => {
     const id = await publish({
       origin: "seeded",
       latitude: 19.84,
       longitude: -98.98,
-      photoKey: `prueba-${STATE}-foto`,
+      photoKey: `prueba${STATE}foto`,
       managementTokenHash: "a".repeat(64),
       managementTokenCreatedAt: new Date(),
     });
@@ -253,9 +254,16 @@ describe("The zone is published, never the exact address nor the card's internal
         "openingHours",
         "pageUrl",
         "trades",
+        // A published card's photo key, which only src/lib/media.ts turns into
+        // an address ("The photo of an unpublished business is referenced on
+        // no public surface (v2)").
+        "photoKey",
       ].toSorted(),
     );
-    expect(JSON.stringify(card)).not.toMatch(/seeded|19\.84|foto|aaaa|published|2026-/);
+    expect(card?.photoKey).toBe(`prueba${STATE}foto`);
+    expect(JSON.stringify({ ...card, photoKey: null })).not.toMatch(
+      /seeded|19\.84|aaaa|published|2026-/,
+    );
   });
 });
 

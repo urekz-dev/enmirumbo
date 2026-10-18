@@ -1,21 +1,20 @@
 // Scenarios of docs/specs/deployment.md, requirements "Three deployed
-// environments, each with its own Worker, bindings and variables (v2)" and
-// "Scheduled work runs from one hourly Cron Trigger per environment (v2)"
-// (scenario "one trigger"). Reads wrangler.jsonc the way Wrangler resolves it
+// environments, each with its own Worker, bindings and variables (v2)",
+// "Public media live in R2, in one bucket for production and one for dev and
+// stage (v2)" and "Scheduled work runs from one hourly Cron Trigger per
+// environment (v2)" (scenario "one trigger"). Reads wrangler.jsonc the way Wrangler resolves it
 // for each environment, so a binding or variable that an environment only
 // inherits, or forgets, fails here instead of in a deploy.
 import { experimental_readRawConfig, unstable_readConfig } from "wrangler";
 import { describe, expect, it } from "vite-plus/test";
 
+const DEV_MEDIA = { bucket: "enmirumbo-media-dev", url: "https://media-dev-enmirumbo.urekz.com" };
+const PROD_MEDIA = { bucket: "enmirumbo-media", url: "https://media-enmirumbo.urekz.com" };
+
 const ENVIRONMENTS = [
-  { env: "dev", name: "dev-enmirumbo", crons: [], photos: "https://fotos-dev.enmirumbo.com" },
-  {
-    env: "stage",
-    name: "stage-enmirumbo",
-    crons: ["0 * * * *"],
-    photos: "https://fotos-stage.enmirumbo.com",
-  },
-  { env: "prod", name: "enmirumbo", crons: ["0 * * * *"], photos: "https://fotos.enmirumbo.com" },
+  { env: "dev", name: "dev-enmirumbo", crons: [], media: DEV_MEDIA },
+  { env: "stage", name: "stage-enmirumbo", crons: ["0 * * * *"], media: DEV_MEDIA },
+  { env: "prod", name: "enmirumbo", crons: ["0 * * * *"], media: PROD_MEDIA },
 ] as const;
 
 const VARIABLES = [
@@ -23,7 +22,7 @@ const VARIABLES = [
   "ACCESS_TEAM_DOMAIN",
   "ACCESS_AUD",
   "SITE_URL",
-  "PHOTOS_URL",
+  "MEDIA_URL",
   "UMAMI_WEBSITE_ID",
 ];
 const HYPERDRIVE_BINDINGS = ["HYPERDRIVE", "HYPERDRIVE_FRESH"];
@@ -42,6 +41,7 @@ interface ResolvedConfig {
   durable_objects: { bindings: { name: string; class_name: string; script_name?: string }[] };
   exports?: Record<string, unknown>;
   migrations: unknown[];
+  r2_buckets: { binding: string; bucket_name?: string }[];
 }
 
 function read(env?: string): ResolvedConfig {
@@ -74,12 +74,17 @@ describe("Three deployed environments, each with its own Worker, bindings and va
     },
   );
 
-  // deployment, "Business photos live in R2, with one bucket and one hostname
-  // per environment (v2)": the hostname the content security policy allows.
   it.for(ENVIRONMENTS)(
-    "per environment: $env serves its photos from $photos",
-    ({ env, photos }) => {
-      expect(read(env).vars["PHOTOS_URL"]).toBe(photos);
+    "per environment: $env binds its public media bucket and names its media hostname",
+    ({ env, media }) => {
+      const config = read(env);
+      expect(config.r2_buckets).toEqual([{ binding: "MEDIA", bucket_name: media.bucket }]);
+      expect(config.vars["MEDIA_URL"]).toBe(media.url);
+      // Wrangler would let an environment inherit the binding; each declares it.
+      const raw = experimental_readRawConfig({ config: "wrangler.jsonc" }).rawConfig as {
+        env: Record<string, Record<string, unknown>>;
+      };
+      expect(raw.env[env]).toHaveProperty("r2_buckets");
     },
   );
 
@@ -152,6 +157,9 @@ describe("Three deployed environments, each with its own Worker, bindings and va
       );
       expect(config.durable_objects.bindings).toEqual(top.durable_objects.bindings);
       expect(config.exports).toEqual(top.exports);
+      expect(config.r2_buckets.map((r2) => r2.binding)).toEqual(
+        top.r2_buckets.map((r2) => r2.binding),
+      );
       expect(config.vars["ENVIRONMENT"]).not.toBe("local");
     }
   });
@@ -163,6 +171,29 @@ describe("Three deployed environments, each with its own Worker, bindings and va
     expect(config.workers_dev).toBe(false);
     expect(config.preview_urls).toBe(false);
     expect(config.triggers.crons ?? []).toEqual([]);
+  });
+});
+
+describe("Public media live in R2, in one bucket for production and one for dev and stage (v2)", () => {
+  // Scenario: per environment
+  it("production has a bucket and a hostname of its own; dev and stage share theirs", () => {
+    const [dev, stage, prod] = ["dev", "stage", "prod"].map((env) => read(env));
+    expect(stage?.r2_buckets).toEqual(dev?.r2_buckets);
+    expect(stage?.vars["MEDIA_URL"]).toBe(dev?.vars["MEDIA_URL"]);
+    expect(prod?.r2_buckets[0]?.bucket_name).not.toBe(dev?.r2_buckets[0]?.bucket_name);
+    expect(prod?.vars["MEDIA_URL"]).not.toBe(dev?.vars["MEDIA_URL"]);
+  });
+
+  it("the local Worker binds a bucket of its own, and has no media hostname", () => {
+    const config = read();
+    expect(config.r2_buckets).toEqual([{ binding: "MEDIA", bucket_name: "enmirumbo-media-local" }]);
+    expect(config.vars["MEDIA_URL"]).toBe("");
+  });
+
+  // The naming rule of AGENTS.md: one level below the zone, so Universal SSL
+  // covers it.
+  it.for(ENVIRONMENTS)("the media hostname of $env is one level below urekz.com", ({ media }) => {
+    expect(new URL(media.url).hostname).toMatch(/^[a-z0-9-]+\.urekz\.com$/);
   });
 });
 

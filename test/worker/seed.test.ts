@@ -1,10 +1,12 @@
 // Scenarios of docs/specs/data-model.md about the fictitious seed
-// (src/core/db/seed). Each test seeds inside a transaction that is rolled
+// (src/core/db/seed), its photos included, which are written here to the
+// local media bucket of the tests. Each test seeds inside a transaction that is rolled
 // back, so the shared test database keeps Tizayuca as the migrations leave it
 // (locality.test.ts checks it) while the other files run. The runner's
 // refusals are in test/scripts/db-seed.test.ts.
+import { env } from "cloudflare:workers";
 import { count, eq, inArray, lt, TransactionRollbackError } from "drizzle-orm";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { BUSINESS_ID_PATTERN } from "../../src/core/business/id.ts";
 import {
   businesses,
@@ -25,10 +27,24 @@ import {
   seedSummary,
 } from "../../src/core/db/seed/index.ts";
 import { NOTICE_VERSION } from "../../src/core/legal/version.ts";
+import { seedPhotoObjects, writeSeedPhotos } from "../../src/core/db/seed/photos.ts";
+import {
+  isPhotoKey,
+  PHOTO_CACHE_CONTROL,
+  PHOTO_CONTENT_TYPE,
+  PHOTO_VARIANTS,
+  photoObjectKey,
+  photoObjectKeys,
+} from "../../src/core/photos/photo.ts";
 import { normalizeText, searchTerms } from "../../src/core/search/normalize.ts";
 import { db, FIRST_FIXTURE_CODE } from "./fixtures.ts";
 
 const NOW = new Date("2026-10-14T18:00:00.000Z");
+
+/** The fake businesses with a photo, as the seed reports them. */
+const SEEDED_PHOTOS = FAKE_BUSINESSES.flatMap(({ name, photoKey }, shade) =>
+  photoKey === undefined ? [] : [{ name, photoKey, shade }],
+);
 
 /** Runs `run` in a transaction that is always rolled back, and returns its result. */
 async function rolledBack<T>(run: (tx: SeedDb) => Promise<T>): Promise<T> {
@@ -128,6 +144,7 @@ describe("Seed of fictitious businesses for development (v2)", () => {
       inserted: FAKE_BUSINESSES.length,
       alreadyThere: 0,
       activated: true,
+      photos: SEEDED_PHOTOS,
     });
     expect(rows).toHaveLength(FAKE_BUSINESSES.length);
 
@@ -198,6 +215,8 @@ describe("Seed of fictitious businesses for development (v2)", () => {
       inserted: 0,
       alreadyThere: FAKE_BUSINESSES.length,
       activated: false,
+      // The rows still name their photos, so the caller writes them again.
+      photos: SEEDED_PHOTOS,
     });
     expect(after).toEqual(before);
     const links = after.flatMap(({ id, trades }) => trades.map(({ slug }) => `${id} ${slug}`));
@@ -223,7 +242,8 @@ describe("Seed of fictitious businesses for development (v2)", () => {
       expect(name).toMatch(/Fictici|Inventad|Mentira|Imaginari|Fantasma/);
     }
     for (const { id } of rows) expect(id).toMatch(new RegExp(BUSINESS_ID_PATTERN));
-    expect(rows.map(({ photoKey }) => photoKey)).toEqual(rows.map(() => null));
+    // A photo key, when there is one, is one the server would generate.
+    for (const { photoKey } of rows) if (photoKey !== null) expect(isPhotoKey(photoKey)).toBe(true);
   });
 
   it("a business that is already there", async () => {
@@ -250,6 +270,7 @@ describe("Seed of fictitious businesses for development (v2)", () => {
     });
     expect(report.inserted).toBe(FAKE_BUSINESSES.length - 1);
     expect(report.alreadyThere).toBe(1);
+    expect(report.photos).toEqual(SEEDED_PHOTOS);
     expect(row).toMatchObject({ name: own.name, zoneOther: own.zoneOther, status: "in_review" });
     expect(links[0]?.n).toBe(0);
   });
@@ -260,6 +281,7 @@ describe("Seed of fictitious businesses for development (v2)", () => {
       inserted: 12,
       alreadyThere: 0,
       activated: true,
+      photos: [],
     });
     expect(lines.join("\n")).toContain("FAKE DATA");
     expect(lines.join("\n")).toContain("771999xxxx");
@@ -267,7 +289,13 @@ describe("Seed of fictitious businesses for development (v2)", () => {
       `Pueblo Uno activated with the fictitious contact WhatsApp ${SEED_CONTACT_WHATSAPP}`,
     );
     expect(
-      seedSummary({ locality: "Pueblo Uno", inserted: 0, alreadyThere: 12, activated: false }),
+      seedSummary({
+        locality: "Pueblo Uno",
+        inserted: 0,
+        alreadyThere: 12,
+        activated: false,
+        photos: [],
+      }),
     ).toContain("db:seed: Pueblo Uno keeps its contact WhatsApp and its active flag.");
   });
 
@@ -362,5 +390,116 @@ describe("The fictitious numbers of the seeds follow the 771999xxxx convention (
     expect(new Set(FAKE_BUSINESSES.map(({ whatsapp }) => whatsapp)).size).toBe(
       FAKE_BUSINESSES.length,
     );
+  });
+});
+
+/** The width and height a lossless WebP file declares, or null when it is not one. */
+function webpSize(bytes: Uint8Array): { width: number; height: number } | null {
+  const text = (from: number, to: number) => String.fromCharCode(...bytes.subarray(from, to));
+  if (text(0, 4) !== "RIFF" || text(8, 12) !== "WEBP" || text(12, 16) !== "VP8L") return null;
+  if (bytes[20] !== 0x2f) return null;
+  const bits =
+    (bytes[21] ?? 0) |
+    ((bytes[22] ?? 0) << 8) |
+    ((bytes[23] ?? 0) << 16) |
+    ((bytes[24] ?? 0) << 24);
+  return { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 };
+}
+
+/** The keys under photos/ of the media bucket. */
+async function storedPhotoKeys(): Promise<string[]> {
+  const listed = await env.MEDIA.list({ prefix: "photos/" });
+  return listed.objects.map(({ key }) => key).toSorted();
+}
+
+describe("The demo seed leaves cards with a photo to see the directory as the resident will see it", () => {
+  afterEach(async () => {
+    const keys = await storedPhotoKeys();
+    if (keys.length > 0) await env.MEDIA.delete(keys);
+  });
+
+  // Scenario: seeding with photos
+  it("at least one published card has its photo and its files, and at least one has none", async () => {
+    const { report, rows } = await rolledBack(async (tx) => ({
+      report: await seed(tx, NOW),
+      rows: await seeded(tx),
+    }));
+    const live = published(rows);
+    const withPhoto = live.filter(({ photoKey }) => photoKey !== null);
+    expect(withPhoto.length).toBeGreaterThanOrEqual(1);
+    expect(live.some(({ photoKey }) => photoKey === null)).toBe(true);
+    expect(report.photos.map(({ photoKey }) => photoKey).toSorted()).toEqual(
+      rows.flatMap(({ photoKey }) => (photoKey === null ? [] : [photoKey])).toSorted(),
+    );
+
+    const objects = seedPhotoObjects(report.photos);
+    await writeSeedPhotos(env.MEDIA, objects);
+
+    expect(await storedPhotoKeys()).toEqual(
+      withPhoto.flatMap(({ photoKey }) => photoObjectKeys(photoKey!)).toSorted(),
+    );
+    for (const { photoKey } of withPhoto) {
+      for (const variant of ["card", "full"] as const) {
+        const object = await env.MEDIA.get(photoObjectKey(photoKey!, variant));
+        const bytes = new Uint8Array(await object!.arrayBuffer());
+        const { width, height, maxBytes } = PHOTO_VARIANTS[variant];
+        expect(webpSize(bytes), variant).toEqual({ width, height });
+        // "Photo weight does not break the 4G budget"
+        expect(bytes.length).toBeLessThanOrEqual(maxBytes);
+        expect(object?.httpMetadata).toEqual({
+          contentType: PHOTO_CONTENT_TYPE,
+          cacheControl: PHOTO_CACHE_CONTROL,
+        });
+      }
+    }
+  });
+
+  // Scenario: idempotent demo seed with photos
+  it("run twice, it leaves one photo per seeded card and nothing loose", async () => {
+    const { first, second } = await rolledBack(async (tx) => ({
+      first: await seed(tx, NOW),
+      second: await seed(tx, new Date(NOW.getTime() + 86_400_000)),
+    }));
+    await writeSeedPhotos(env.MEDIA, seedPhotoObjects(first.photos));
+    const before = await Promise.all(
+      (await storedPhotoKeys()).map(async (key) => [key, (await env.MEDIA.head(key))?.etag]),
+    );
+
+    await writeSeedPhotos(env.MEDIA, seedPhotoObjects(second.photos));
+
+    const after = await Promise.all(
+      (await storedPhotoKeys()).map(async (key) => [key, (await env.MEDIA.head(key))?.etag]),
+    );
+    // The same keys, with the same bytes: the images are drawn the same way.
+    expect(after).toEqual(before);
+    expect(after).toHaveLength(2 * first.photos.length);
+  });
+
+  it("a business that took the WhatsApp of a fake one with a photo gets no seeded photo", async () => {
+    const fake = FAKE_BUSINESSES.find(({ photoKey }) => photoKey !== undefined)!;
+    const report = await rolledBack(async (tx) => {
+      const [category] = await tx.select({ id: categories.id }).from(categories).limit(1);
+      await tx.insert(businesses).values({
+        id: "zzzzzzzzzy",
+        localityCode: SEED_LOCALITY_CODE,
+        categoryId: category!.id,
+        name: "Registro de prueba hecho a mano",
+        whatsapp: fake.whatsapp,
+        zoneOther: "Una colonia de prueba",
+        consentedToNoticeAt: NOW,
+        consentedToNoticeVersion: SEED_NOTICE_VERSION,
+      });
+      return seed(tx, NOW);
+    });
+    expect(report.photos.map(({ photoKey }) => photoKey)).not.toContain(fake.photoKey);
+    expect(report.photos).toHaveLength(SEEDED_PHOTOS.length - 1);
+  });
+
+  it("the images are drawn, not files: the same name and size give the same bytes", () => {
+    const [photo] = SEEDED_PHOTOS;
+    const once = seedPhotoObjects([photo!]);
+    const twice = seedPhotoObjects([photo!]);
+    expect(twice).toEqual(once);
+    expect(once.map(({ key }) => key)).toEqual(photoObjectKeys(photo!.photoKey));
   });
 });

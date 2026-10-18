@@ -1101,11 +1101,11 @@ The project MUST be able to bring up the database from scratch by applying the m
 
 ### Requirement: Seed of fictitious businesses for development (v2)
 
-Added in v2 — source: ADR 0006, ADR 0008, decision of 2026-10-14.
+Added in v2 — source: ADR 0006, ADR 0008, decision of 2026-10-14. Amended on 2026-10-18 by EMR-35: the photos of "The demo seed leaves cards with a photo to see the directory as the resident will see it" arrive, as "The demo seed draws its photos and writes them where its environment serves media (v2)" describes.
 
 `vp run db:seed` MUST fill the database with fake businesses, to see the directory working in development and in the deployed environments `dev` and `stage`; it never runs in `prod` (see "The commands that write in bulk read the environment from `ENVIRONMENT` (v2)" in `deployment`). It seeds nothing else: the reference data comes with the migrations ("Reproducible migrations that carry the reference data (v2)"), which create no business. The seed fills one locality, Tizayuca. It MUST be idempotent, because it runs on every deploy: it inserts only the fake businesses that are missing, recognized by their fixed identifier or by their WhatsApp in the locality, and it never changes a row that is already there.
 
-The set MUST cover what the directory needs to test: published businesses in several categories (including "Clubes y escuelas deportivas") and several zones, some with home delivery and some without, some with all the optional fields and some with only the required ones, one published with zone "Otra" not normalized, one in `in_review` and one `rejected`. It MUST also cover what the search needs while the admin panel does not exist: published businesses with trades assigned, among them one with a trade that the search cannot reach through the name or the "¿Qué ofreces?" of the business, and at least one published business whose keywords carry accents. Each business follows the v2 model: its locality, its consent record ("The consent record stores which notice version it was given against"), the timestamps of its status, and an identifier of the alphabet of "The card is identified by a short random id (v2)". The database derives their normalized search columns, as on any other write. The photos of "The demo seed leaves cards with a photo to see the directory as the resident will see it" arrive with the photo storage.
+The set MUST cover what the directory needs to test: published businesses in several categories (including "Clubes y escuelas deportivas") and several zones, some with home delivery and some without, some with all the optional fields and some with only the required ones, one published with zone "Otra" not normalized, one in `in_review` and one `rejected`. It MUST also cover what the search needs while the admin panel does not exist: published businesses with trades assigned, among them one with a trade that the search cannot reach through the name or the "¿Qué ofreces?" of the business, and at least one published business whose keywords carry accents. Each business follows the v2 model: its locality, its consent record ("The consent record stores which notice version it was given against"), the timestamps of its status, and an identifier of the alphabet of "The card is identified by a short random id (v2)". The database derives their normalized search columns, as on any other write. Some published fake businesses have a photo and the rest none, as "The demo seed draws its photos and writes them where its environment serves media (v2)" describes.
 
 The data MUST be made up and recognizable as such: names that say they are made up, WhatsApp numbers and landlines of the `771999xxxx` series, references that point to no real place, and no data of a real business or person (public repository and LFPDPPP). The command MUST warn in its output that what it seeded is fake data.
 
@@ -1155,3 +1155,47 @@ A locality is served only with its contact WhatsApp. So that the seeded director
 
 - **WHEN** the seed runs while Tizayuca has a contact WhatsApp, active or not
 - **THEN** the number and the active flag stay as they were
+
+### Requirement: A photo key is 24 characters of the identifier alphabet, and names two objects under `photos/` (v2)
+
+Added in v2 — source: ADR 0011 (amended on 2026-10-18), EMR-35.
+
+In "The `Business` model covers the registration fields", the internal photo reference (`photoKey`) that the server generates MUST be 24 characters of the alphabet of "The card is identified by a short random id (v2)" (lowercase letters and digits without the ones people confuse), drawn at random: about 119 bits, so nobody can guess one, and never the length of a business identifier. It names the two objects of the photo in the public media bucket (`deployment`, "Public media live in R2, in one bucket for production and one for dev and stage (v2)"): `photos/<photoKey>/card.webp` and `photos/<photoKey>/full.webp`. Whoever writes a photo writes both; whoever deletes it deletes both. The pages MUST treat any stored value without that exact shape as no photo (`public-directory`, "Only the photo generated by the server is rendered").
+
+#### Scenario: a generated key
+
+- **WHEN** the server generates a photo key
+- **THEN** it has 24 characters of the identifier alphabet, and its photo is `photos/<key>/card.webp` and `photos/<key>/full.webp`
+
+#### Scenario: a value of another shape
+
+- **WHEN** a business stores as its photo a URL, a path, a business identifier or any string that is not 24 characters of that alphabet
+- **THEN** no page builds an address from it
+
+### Requirement: The demo seed draws its photos and writes them where its environment serves media (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18; ADR 0011 (amended on 2026-10-18), EMR-35.
+
+In "The demo seed leaves cards with a photo to see the directory as the resident will see it", some published fake businesses MUST have a photo and the rest none; in Tizayuca's "Salud" listing the newest and the oldest card have one and the one between has none, so it shows a photo, the placeholder and a lazily loaded photo. Each fake business with a photo has a fixed photo key, like its fixed identifier. The seed MUST draw its images when it runs, with no native dependency and no image file in the repository: for each, a coloured rectangle with the made-up name of the business and "FOTO DE MENTIRA" in a band, as lossless WebP at the two sizes of "A photo key is 24 characters of the identifier alphabet, and names two objects under `photos/` (v2)", with their media type and caching. It writes the photos of the fake businesses whose row carries their key, inserted now or on an earlier run; a business someone else registered with a fake one's WhatsApp names no seeded photo, and none is written for it. Since the seed never changes a row that is already there, a fake business seeded before it had a photo keeps none.
+
+Locally, and in the end-to-end tests, the seed MUST write them to the local media bucket the local Worker serves. With `ENVIRONMENT` `dev` or `stage` it MUST write them, with a manifest, to the directory `SEED_MEDIA_DIR`, and refuse to run without it; the deploy uploads that directory to `enmirumbo-media-dev` in a step of its own (`deployment`, "Each environment is built and deployed by its own workflow (v2)"). It never writes in production. The keys are fixed and the drawing is the same every time, so running the seed again overwrites the same objects with the same bytes and leaves none behind.
+
+#### Scenario: seeding with photos
+
+- **WHEN** the seed runs on a migrated database and its photos are written
+- **THEN** at least one published fake business has a photo key whose two objects are in the bucket, as WebP of their sizes within the weight of the 4G budget, and at least one published has none
+
+#### Scenario: twice
+
+- **WHEN** the seed runs twice and writes its photos both times
+- **THEN** the bucket holds the same objects, with the same bytes, and two per fake business with a photo
+
+#### Scenario: on a deploy
+
+- **WHEN** the seed runs with `ENVIRONMENT=stage` and no `SEED_MEDIA_DIR`
+- **THEN** it writes nothing and says which variable it needs
+
+#### Scenario: a fake business someone else took
+
+- **WHEN** a business of Tizayuca already holds the WhatsApp of a fake business with a photo
+- **THEN** the seed writes no photo for that fake business

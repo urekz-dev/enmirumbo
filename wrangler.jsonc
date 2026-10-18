@@ -52,6 +52,13 @@
   "exports": {
     "QuotaCounter": { "type": "durable-object", "storage": "sqlite" },
   },
+  // The public media (ADR 0011): an R2 bucket of content people or the admin
+  // upload, by prefix (business photos under photos/), which Cloudflare serves
+  // from the media hostname (MEDIA_URL) without the Worker. Production has its
+  // own; dev and stage share one. Locally the bucket is Miniflare's, in
+  // .wrangler/state, and the local Worker serves it under /_media/
+  // (src/lib/photos.ts).
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "enmirumbo-media-local" }],
   "vars": {
     // local, dev, stage or prod. Only "local" lets /admin open with the fixed
     // identity admin@enmirumbo.test, and only on a loopback host (ADR 0010).
@@ -64,10 +71,11 @@
     // The public URL of the site, without a trailing slash: the base of every
     // absolute URL (canonicals, sitemap, share previews).
     "SITE_URL": "http://localhost:4321",
-    // The https origin the business photos are served from (ADR 0011), the
-    // only other origin the content security policy lets images come from.
-    // Empty locally: no photo hostname.
-    "PHOTOS_URL": "",
+    // The https origin of the media hostname (ADR 0011), where the business
+    // photos are served from: the only other origin the content security
+    // policy lets images come from. Empty locally: no media hostname; the
+    // local Worker serves the local bucket on its own origin instead.
+    "MEDIA_URL": "",
     // The Website ID of the site at Umami Cloud (ADR 0014). Only prod ever
     // loads the measurement, and only with a Website ID; empty everywhere
     // until the launch, so nothing is measured and no request leaves the site.
@@ -95,6 +103,8 @@
       "exports": {
         "QuotaCounter": { "type": "durable-object", "storage": "sqlite" },
       },
+      // The public media: the bucket and hostname it shares with stage, whose database dev copies.
+      "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "enmirumbo-media-dev" }],
       "vars": {
         "ENVIRONMENT": "dev",
         "ACCESS_TEAM_DOMAIN": "urekz.cloudflareaccess.com",
@@ -102,8 +112,9 @@
         // the three environments (ADR 0010).
         "ACCESS_AUD": "a98a5e8ae63966e34ec201af51ec9b15ba202afaee4768ddb940bcb016ad2338",
         "SITE_URL": "https://dev-enmirumbo.urekz.workers.dev",
-        // The photo hostname of dev (ADR 0011).
-        "PHOTOS_URL": "https://fotos-dev.enmirumbo.com",
+        // The media hostname (ADR 0011), under urekz.com until enmirumbo.com
+        // moves to Cloudflare.
+        "MEDIA_URL": "https://media-dev-enmirumbo.urekz.com",
         // Never measured (ADR 0014): only prod loads Umami.
         "UMAMI_WEBSITE_ID": "",
         // The branch and commit deployed, shown in the page footer of dev only.
@@ -131,6 +142,8 @@
       "exports": {
         "QuotaCounter": { "type": "durable-object", "storage": "sqlite" },
       },
+      // The public media: the bucket and hostname it shares with dev.
+      "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "enmirumbo-media-dev" }],
       "vars": {
         "ENVIRONMENT": "stage",
         "ACCESS_TEAM_DOMAIN": "urekz.cloudflareaccess.com",
@@ -138,8 +151,9 @@
         // the three environments (ADR 0010).
         "ACCESS_AUD": "a98a5e8ae63966e34ec201af51ec9b15ba202afaee4768ddb940bcb016ad2338",
         "SITE_URL": "https://stage-enmirumbo.urekz.workers.dev",
-        // The photo hostname of stage (ADR 0011).
-        "PHOTOS_URL": "https://fotos-stage.enmirumbo.com",
+        // The media hostname (ADR 0011), under urekz.com until enmirumbo.com
+        // moves to Cloudflare.
+        "MEDIA_URL": "https://media-dev-enmirumbo.urekz.com",
         // Never measured (ADR 0014): only prod loads Umami.
         "UMAMI_WEBSITE_ID": "",
       },
@@ -163,6 +177,8 @@
       "exports": {
         "QuotaCounter": { "type": "durable-object", "storage": "sqlite" },
       },
+      // The public media: its own bucket and hostname, which no other environment reaches.
+      "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "enmirumbo-media" }],
       "vars": {
         "ENVIRONMENT": "prod",
         "ACCESS_TEAM_DOMAIN": "urekz.cloudflareaccess.com",
@@ -170,8 +186,9 @@
         // the three environments (ADR 0010).
         "ACCESS_AUD": "a98a5e8ae63966e34ec201af51ec9b15ba202afaee4768ddb940bcb016ad2338",
         "SITE_URL": "https://enmirumbo.urekz.workers.dev",
-        // The photo hostname of prod (ADR 0011).
-        "PHOTOS_URL": "https://fotos.enmirumbo.com",
+        // The media hostname (ADR 0011), under urekz.com until enmirumbo.com
+        // moves to Cloudflare.
+        "MEDIA_URL": "https://media-enmirumbo.urekz.com",
         // Measurement stays off until the launch: the Website ID arrives with
         // the cut-over (ADR 0014).
         "UMAMI_WEBSITE_ID": "",

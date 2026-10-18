@@ -13,3 +13,17 @@ condition = "AND"
 regexTarget = "line"
 regexes = ['''ACCESS_AUD''']
 paths = ['''^wrangler\.jsonc$''', '''^worker-configuration\.d\.ts$''']
+
+# A photo key (src/core/photos/photo.ts) is a random name for the objects of a
+# public photo, not a secret. The fictitious seed and the tests write fixed
+# ones: 24 characters of the business id alphabet, assigned to a photo key.
+[[rules.allowlists]]
+description = "Fictitious photo keys of the seed and the tests"
+condition = "AND"
+regexTarget = "line"
+regexes = ['''(?i)(photoKey|PHOTO_KEY|\bKEY)\s*[:=]\s*"[2-9a-hjkmnp-z]{24}"''']
+paths = [
+  '''^src/core/db/seed/businesses\.ts$''',
+  '''^test/astro/business-card\.test\.ts$''',
+  '''^test/worker/photos\.test\.ts$''',
+]

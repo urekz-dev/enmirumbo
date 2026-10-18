@@ -59,9 +59,14 @@ const analyticsTag = state.kind === "no-results" ? ANALYTICS_TAGS.searchNoResult
     {state.kind === "results" && (
       <>
         <ul class="flex flex-col gap-4">
-          {state.businesses.map((business) => (
+          {state.businesses.map((business, index) => (
             <li>
-              <ListingCard business={business} locality={locality} analytics={analytics} />
+              <ListingCard
+                business={business}
+                locality={locality}
+                analytics={analytics}
+                firstRow={index === 0}
+              />
             </li>
           ))}
         </ul>

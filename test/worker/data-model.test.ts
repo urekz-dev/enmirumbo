@@ -110,7 +110,7 @@ describe("The `Business` model covers the registration fields", () => {
   });
 
   it.for([
-    "https://fotos.enmirumbo.com/a.webp",
+    "https://media-enmirumbo.urekz.com/photos/a.webp",
     "data:image/png;base64,AAAA",
     "/tmp/foto",
     "a.webp",

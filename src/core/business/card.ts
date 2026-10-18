@@ -8,7 +8,10 @@
 // the same null, so the page answers the same 404 for all of them. The card
 // is read from `businesses` alone, never from `pending_edits`, so a proposed
 // change cannot show through. Nothing internal is selected: no status,
-// origin, dates, consent record, management link, pin or photo key.
+// origin, dates, consent record, management link or pin. The photo key is
+// read only here, for a published card, and only src/lib/media.ts turns it
+// into an address ("The photo of an unpublished business is referenced on no
+// public surface (v2)").
 //
 // Binding: the card page and the sitemap run this on HYPERDRIVE, the cached
 // binding of public reads, so a change can take up to a minute to show
@@ -45,6 +48,8 @@ export interface PublishedCard {
   pageUrl: string | null;
   /** The trades the admin assigned, in catalogue order. */
   trades: CardTrade[];
+  /** The stored photo reference, uninterpreted; null without a photo. */
+  photoKey: string | null;
 }
 
 /** A text the business left blank is a field it did not register. */
@@ -86,6 +91,7 @@ export async function publishedCard(
       openingHours: businesses.openingHours,
       pageUrl: businesses.facebookUrl,
       trades: cardTrades,
+      photoKey: businesses.photoKey,
     })
     .from(businesses)
     .innerJoin(categories, eq(categories.id, businesses.categoryId))
@@ -112,6 +118,7 @@ export async function publishedCard(
     openingHours: registered(row.openingHours),
     pageUrl: registered(row.pageUrl),
     trades: row.trades,
+    photoKey: row.photoKey,
   };
 }
 

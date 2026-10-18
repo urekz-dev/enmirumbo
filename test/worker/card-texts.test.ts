@@ -75,6 +75,7 @@ function card(overrides: Partial<PublishedCard> = {}): PublishedCard {
       { name: "Plomería", slug: "plomeria" },
       { name: "Cerrajería", slug: "cerrajeria" },
     ],
+    photoKey: null,
     ...overrides,
   };
 }
@@ -385,9 +386,17 @@ describe("Each published card emits Schema.org LocalBusiness", () => {
     expect(data.address.addressRegion).toBe("Estado de prueba 92");
   });
 
-  // Scenario: the block's image is always built by the site (no photo yet)
-  it("no image until the site builds one from a photo key", () => {
-    expect(localBusinessData(card(), TIZAYUCA, URL)).not.toHaveProperty("image");
+  // Scenario: the block's image is always built by the site. The address
+  // comes from src/lib/media.ts, which builds it only from a photo key the
+  // server generated (test/worker/photos.test.ts); the block never reads the
+  // stored value.
+  it("the image is the address the site built, and there is none without one", () => {
+    const photo = "https://media-enmirumbo.urekz.com/photos/yya626vdevvbuxa5avc2n8e6/full.webp";
+    expect(localBusinessData(card(), TIZAYUCA, URL, photo).image).toEqual([photo]);
+    expect(localBusinessData(card(), TIZAYUCA, URL, null)).not.toHaveProperty("image");
+    expect(
+      localBusinessData(card({ photoKey: "https://evil.example/pixel.png" }), TIZAYUCA, URL),
+    ).not.toHaveProperty("image");
   });
 
   // Scenario: name with markup inside

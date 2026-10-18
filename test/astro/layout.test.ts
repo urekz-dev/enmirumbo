@@ -471,6 +471,33 @@ describe("Every page declares its title, description, canonical and share previe
     }
   });
 
+  // public-directory, "The card looks good when shared over WhatsApp or
+  // Facebook", scenario: card with a photo
+  it("a card with a photo shares its photo instead of its locality's image", async () => {
+    const photo = "https://media-enmirumbo.urekz.com/photos/yya626vdevvbuxa5avc2n8e6/full.webp";
+    const html = await container.renderToString(BaseLayout, {
+      partial: false,
+      props: {
+        canonicalPath: "/hidalgo/tizayuca/negocio/farmacia-la-pastilla-de-mentiras-rq7ka9z3yd",
+        image: {
+          src: photo,
+          width: 1200,
+          height: 900,
+          type: "image/webp",
+          alt: "Foto de Farmacia La Pastilla de Mentiras",
+        },
+      },
+      slots: { default: "<h1>Farmacia La Pastilla de Mentiras</h1>" },
+      locals: localsWith(TIZAYUCA),
+    });
+
+    expect(meta(html, "property", "og:image")).toBe(photo);
+    expect(meta(html, "property", "og:image:type")).toBe("image/webp");
+    expect(meta(html, "property", "og:image:width")).toBe("1200");
+    expect(meta(html, "property", "og:image:height")).toBe("900");
+    expect(meta(html, "property", "og:image:alt")).toBe("Foto de Farmacia La Pastilla de Mentiras");
+  });
+
   // Scenario: a page without a locality (base-layout, "Pages outside a
   // locality name no locality (v2)")
   it("a page outside a locality names none in its metadata", async () => {
