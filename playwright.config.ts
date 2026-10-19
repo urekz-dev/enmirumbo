@@ -51,6 +51,7 @@ export default defineConfig({
         "admin-zones.spec.ts",
         "admin-resolutions.spec.ts",
         "admin-removals.spec.ts",
+        "admin-users.spec.ts",
         "turnstile-real.spec.ts",
       ],
     },
@@ -140,18 +141,26 @@ export default defineConfig({
       testMatch: "admin-removals.spec.ts",
       dependencies: ["phone, admin resolutions"],
     },
+    // User/role management temporarily narrows the local identity's roles.
+    {
+      name: "phone, admin users",
+      use: PHONE,
+      testMatch: "admin-users.spec.ts",
+      dependencies: ["phone, admin removals"],
+    },
     // The same site with a second, fictitious active locality
     // (test/e2e/two-localities/): the list of localities at the root, the
     // locality cookie and the link to change municipality, and the crawls
     // again, now through the list. It runs after "phone", "phone, many cards",
     // "phone, search pages", "phone, registration", "phone, edit", "phone,
     // admin", "phone, admin zones", "phone, admin resolutions" and "phone,
-    // admin removals", whose tests expect Tizayuca alone, and its teardown
+    // admin removals" and "phone, admin users", whose tests expect Tizayuca
+    // alone, and its teardown
     // removes the second locality.
     {
       name: "second locality",
       testMatch: "two-localities/second-locality.setup.ts",
-      dependencies: ["phone, admin removals"],
+      dependencies: ["phone, admin users"],
       teardown: "no second locality",
     },
     {

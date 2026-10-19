@@ -1,0 +1,52 @@
+---
+import type { PanelUser } from "../../core/access/manage.ts";
+import { userPath } from "../../core/access/paths.ts";
+import type { ManagementFailure } from "../../lib/panel-management.ts";
+import ManagementField from "./ManagementField.astro";
+interface Props {
+  users: readonly PanelUser[];
+  action: string;
+  failure: ManagementFailure;
+  values: { email: string; name: string };
+}
+const { users, action, failure, values } = Astro.props;
+---
+
+<section class="flex flex-col gap-6">
+  <h1 class="text-2xl font-bold">Usuarios del panel</h1>
+  {failure.message && <p role="alert">{failure.message}</p>}
+  <section class="flex flex-col gap-4 rounded-xl border border-line p-4">
+    <h2 class="text-xl font-bold">Agregar un usuario</h2>
+    <p>
+      Además agrega su correo a la política de Access para que pueda entrar. Después de crearlo,
+      asígnale un rol.
+    </p>
+    <form method="post" action={action} novalidate class="flex flex-col gap-4">
+      <ManagementField
+        name="email"
+        label="Correo"
+        type="email"
+        value={values.email}
+        error={failure.errors.email}
+      />
+      <ManagementField name="name" label="Nombre" value={values.name} error={failure.errors.name} />
+      <button class="min-h-11 w-fit rounded-lg bg-action px-4 py-2 font-semibold text-ink">
+        Agregar usuario
+      </button>
+    </form>
+  </section>
+  <ul class="flex flex-col gap-3" data-testid="panel-users">
+    {users.map((user) => (
+      <li class="flex flex-col gap-2 rounded-xl border border-line p-4">
+        <a
+          href={userPath(user.id)}
+          class="block min-h-11 py-2 break-words font-semibold text-action-strong underline underline-offset-4"
+        >
+          {user.name}
+        </a>
+        <p class="break-words">{user.email}</p>
+        <p>{user.active ? "Activo" : "Inactivo"}</p>
+      </li>
+    ))}
+  </ul>
+</section>

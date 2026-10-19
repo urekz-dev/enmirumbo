@@ -510,7 +510,9 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public, drizzle GRANT SELECT ON SEQUENCES TO 
 
 ### Panel users and roles
 
-Cloudflare Access lets in the emails on its policy; what each person may do comes from the database ([ADR 0021](docs/adr/0021-panel-users-roles-and-permissions.md)): `users`, `roles` with their `permissions`, and `role_assignments`, global or per locality. The migrations create the permission catalogue and the roles `super_admin` and `locality_admin`. Super admins manage users, roles and assignments from the panel. To add or remove a person, change both the Access policy and their user.
+Cloudflare Access lets in the emails on its policy; what each person may do comes from the database ([ADR 0021](docs/adr/0021-panel-users-roles-and-permissions.md)): `users`, `roles` with their `permissions`, and `role_assignments`, global or per locality. The migrations create the permission catalogue and the roles `super_admin` and `locality_admin`. The panel manages users at `/admin/usuarios` (global `users.manage`) and role bundles at `/admin/roles` (global `roles.manage`), through `src/core/access/manage.ts`. Create the user, assign a global role or a locality role in a specific municipality, and separately add their email to the Cloudflare Access policy. Deactivation takes away access and keeps assignments for reactivation; remove the email from Access too when a person leaves. The panel refuses to deactivate the last active super admin or remove their `super_admin` assignment, including competing requests. A system role cannot be edited; a role in use cannot change scope. These operations write no card audit entries.
+
+`/admin` shows the review queue to users who may review any section of it; another active user with an assignment gets a home linking only to the sections they may open. An unknown or inactive user, or one without roles, still gets 403. Navigation omits sections that have no implemented screen yet.
 
 The first super admin of each environment is created by hand in the Neon SQL Editor, on that environment's branch:
 

@@ -1,0 +1,26 @@
+---
+import { queuePath } from "../../core/review/paths.ts";
+import type { PanelLink } from "../../core/access/home.ts";
+interface Props {
+  links: readonly PanelLink[];
+}
+---
+
+<nav aria-label="Secciones del panel" class="flex flex-wrap gap-x-5 gap-y-2">
+  <a
+    href={queuePath()}
+    class="inline-flex min-h-11 items-center px-2 font-semibold text-action-strong underline underline-offset-4"
+  >
+    Inicio del panel
+  </a>
+  {Astro.props.links
+    .filter((link) => link.href !== queuePath())
+    .map((link) => (
+      <a
+        href={link.href}
+        class="inline-flex min-h-11 items-center px-2 font-semibold text-action-strong underline underline-offset-4"
+      >
+        {link.text}
+      </a>
+    ))}
+</nav>

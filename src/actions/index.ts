@@ -6,6 +6,22 @@
 // `requireAdmin` (src/lib/access/require-admin.ts).
 import { ActionError, defineAction } from "astro:actions";
 import { env, waitUntil } from "cloudflare:workers";
+import {
+  assignRole,
+  createPanelUser,
+  removeRoleAssignment,
+  saveRole,
+  setUserActive,
+} from "../core/access/manage.ts";
+import { managementId } from "../core/access/paths.ts";
+import { formText } from "../core/forms/text.ts";
+import {
+  managedRole,
+  managedUser,
+  managementData,
+  managementRoute,
+  roleInput,
+} from "../lib/panel-management.ts";
 import { can } from "../core/access/queries.ts";
 import { type Db, withDb } from "../core/db/client.ts";
 import { submitEdit } from "../core/edit/submit.ts";
@@ -157,6 +173,100 @@ export const server = {
   // src/core/review/edit-decision.ts, the zones with withZonesOf). Reads and
   // writes go through HYPERDRIVE_FRESH.
   admin: {
+    createUser: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        managementRoute(context, "/admin/usuarios");
+        return managementData(
+          await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, (db) =>
+            createPanelUser(db, admin.email, {
+              email: formText(form, "email"),
+              name: formText(form, "name"),
+            }),
+          ),
+        );
+      },
+    }),
+    deactivateUser: defineAction({
+      accept: "form",
+      handler: async (_form, context) => {
+        const admin = await requireAdmin(context);
+        const id = managedUser(context);
+        return managementData(
+          await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, (db) =>
+            setUserActive(db, admin.email, id, false),
+          ),
+        );
+      },
+    }),
+    reactivateUser: defineAction({
+      accept: "form",
+      handler: async (_form, context) => {
+        const admin = await requireAdmin(context);
+        const id = managedUser(context);
+        return managementData(
+          await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, (db) =>
+            setUserActive(db, admin.email, id, true),
+          ),
+        );
+      },
+    }),
+    assignRole: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        const id = managedUser(context);
+        const role = managementId(formText(form, "role"));
+        // Even malformed forms recheck the global permission before validation.
+        return managementData(
+          await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+            if (!(await can(db, admin.email, "users.manage", null))) return { kind: "forbidden" };
+            if (role === null) return { kind: "invalid", errors: { role: "Elige un rol." } };
+            return assignRole(db, admin.email, id, role, formText(form, "locality") || null);
+          }),
+        );
+      },
+    }),
+    removeRole: defineAction({
+      accept: "form",
+      handler: async (_form, context) => {
+        const admin = await requireAdmin(context);
+        const id = managedUser(context, true);
+        const assignment = managementId(context.params.assignment);
+        if (assignment === null) throw new ActionError({ code: "NOT_FOUND" });
+        return managementData(
+          await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, (db) =>
+            removeRoleAssignment(db, admin.email, id, assignment),
+          ),
+        );
+      },
+    }),
+    createRole: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        managementRoute(context, "/admin/roles");
+        return managementData(
+          await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, (db) =>
+            saveRole(db, admin.email, null, roleInput(form)),
+          ),
+        );
+      },
+    }),
+    updateRole: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        const id = managedRole(context);
+        return managementData(
+          await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, (db) =>
+            saveRole(db, admin.email, id, roleInput(form)),
+          ),
+        );
+      },
+    }),
+
     // Approving a registration from its detail, /admin/registros/<id>
     // (docs/specs/admin-review.md, the approval requirements): trades, the
     // zone of an "Otra", the origin, the publication and the management link,

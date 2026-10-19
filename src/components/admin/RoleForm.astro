@@ -1,0 +1,101 @@
+---
+import { PERMISSIONS } from "../../core/access/permissions.ts";
+import type { RoleInput } from "../../core/access/manage.ts";
+import type { ManagementFailure } from "../../lib/panel-management.ts";
+import ManagementField from "./ManagementField.astro";
+interface Props {
+  action: string;
+  values: RoleInput;
+  failure: ManagementFailure;
+  system?: boolean;
+  editing?: boolean;
+}
+const { action, values, failure, system = false, editing = false } = Astro.props;
+const fieldClass = "min-h-11 w-full min-w-0 rounded-lg border border-line bg-background px-3 py-2";
+---
+
+{system ? (
+  <section class="flex flex-col gap-3">
+    <p>
+      El rol Super admin es del sistema y no se puede cambiar. Tiene todos los permisos, incluidos
+      los que se agreguen después.
+    </p>
+    <ul class="flex flex-col gap-2">
+      {Object.values(PERMISSIONS).map((description) => (
+        <li>{description}</li>
+      ))}
+    </ul>
+  </section>
+) : (
+  <form
+    method="post"
+    action={action}
+    novalidate
+    class="flex flex-col gap-4 rounded-xl border border-line p-4"
+  >
+    {failure.message && <p role="alert">{failure.message}</p>}
+    <ManagementField
+      name="name"
+      label="Nombre del rol"
+      value={values.name}
+      error={failure.errors.name}
+    />
+    <ManagementField
+      name="description"
+      label="Descripción"
+      value={values.description}
+      error={failure.errors.description}
+    />
+    <label for="scope" class="font-semibold">
+      Alcance
+    </label>
+    <select
+      id="scope"
+      name="scope"
+      class={fieldClass}
+      aria-invalid={failure.errors.scope ? "true" : undefined}
+      aria-describedby="scope-help scope-error"
+    >
+      <option value="">Elige el alcance</option>
+      <option value="global" selected={values.scope === "global"}>
+        Global: todos los municipios
+      </option>
+      <option value="locality" selected={values.scope === "locality"}>
+        Por municipio
+      </option>
+    </select>
+    <p id="scope-help" class="text-sm text-ink-muted">
+      Un rol ya asignado no puede cambiar de alcance. Usuarios, roles y configuración de ciudades
+      necesitan un rol global.
+    </p>
+    <p id="scope-error" role={failure.errors.scope ? "alert" : undefined}>
+      {failure.errors.scope}
+    </p>
+    <fieldset
+      class="flex min-w-0 flex-col gap-2"
+      aria-describedby={failure.errors.permissions ? "permissions-error" : undefined}
+    >
+      <legend class="mb-2 font-semibold">Permisos</legend>
+      {Object.entries(PERMISSIONS).map(([key, description]) => (
+        <label class="flex min-h-11 items-center gap-3">
+          <input
+            type="checkbox"
+            name="permissions"
+            value={key}
+            checked={values.permissions.includes(key)}
+            class="min-h-11 w-6 shrink-0 accent-action"
+          />
+          <span>{description}</span>
+        </label>
+      ))}
+      {failure.errors.permissions && (
+        <p id="permissions-error" role="alert">
+          {failure.errors.permissions}
+        </p>
+      )}
+    </fieldset>
+    <button class="min-h-11 w-fit rounded-lg bg-action px-4 py-2 font-semibold text-ink">
+      {editing ? "Guardar rol" : "Crear rol"}
+    </button>
+  </form>
+)}

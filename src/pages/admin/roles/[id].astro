@@ -1,0 +1,73 @@
+---
+import { actions } from "astro:actions";
+import { env, waitUntil } from "cloudflare:workers";
+import { can } from "../../../core/access/queries.ts";
+import { panelHome } from "../../../core/access/home.ts";
+import { panelRole, rolePermissionKeys } from "../../../core/access/manage.ts";
+import { managementId, rolePath } from "../../../core/access/paths.ts";
+import { withDb } from "../../../core/db/client.ts";
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import PanelNavigation from "../../../components/admin/PanelNavigation.astro";
+import RoleForm from "../../../components/admin/RoleForm.astro";
+import { forbiddenResponse } from "../../../lib/access/admin-gate.ts";
+import { notFound, seeOther } from "../../../lib/locality.ts";
+import {
+  managementFailure,
+  managementForm,
+  managementStatus,
+  roleInput,
+  roleFormValues,
+} from "../../../lib/panel-management.ts";
+const admin = Astro.locals.admin;
+if (!admin) return forbiddenResponse();
+if (!["GET", "HEAD", "POST"].includes(Astro.request.method))
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD, POST" } });
+const result = Astro.getActionResult(actions.admin.updateRole);
+if (result?.error?.code === "FORBIDDEN") return forbiddenResponse();
+if (result?.error?.code === "NOT_FOUND") return notFound();
+const id = managementId(Astro.params.id);
+if (result?.data?.kind === "done" && id !== null) return seeOther(`${rolePath(id)}?listo=1`);
+const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  if (!(await can(db, admin.email, "roles.manage", null))) return { kind: "forbidden" as const };
+  const role = id === null ? null : await panelRole(db, id);
+  if (!role) return null;
+  return {
+    kind: "found" as const,
+    role,
+    permissions: await rolePermissionKeys(db, role),
+    home: await panelHome(db, admin.email),
+  };
+});
+if (view?.kind === "forbidden") return forbiddenResponse();
+if (!view) return notFound();
+
+Astro.response.status = managementStatus(result);
+const input = result
+  ? roleInput(await managementForm(Astro.request))
+  : {
+      name: view.role.name,
+      description: view.role.description ?? "",
+      scope: view.role.scope,
+      permissions: view.permissions,
+    };
+---
+
+<BaseLayout title="Rol del panel">
+  <div class="flex flex-col gap-6">
+    <PanelNavigation links={view.home?.links ?? []} />
+    <h1 class="text-2xl font-bold break-words">{view.role.name}</h1>
+    {Astro.url.searchParams.get("listo") === "1" && (
+      <p role="status">Listo. Se guardó el cambio.</p>
+    )}
+    {view.role.system && managementFailure(result).message && (
+      <p role="alert">{managementFailure(result).message}</p>
+    )}
+    <RoleForm
+      action={actions.admin.updateRole.queryString}
+      values={roleFormValues(input)}
+      failure={managementFailure(result)}
+      system={view.role.system}
+      editing
+    />
+  </div>
+</BaseLayout>
