@@ -33,6 +33,14 @@
 // outage; a file it cannot read) the photo is "failed". The log says only the
 // kind of the failure (an Images error code, an error's name or a fixed
 // reason), never anything about the file or who sent it.
+//
+// Deleting a photo goes through deletePhoto or removePhoto alone, whoever
+// deletes it: both objects, and then both of its addresses from the cache of
+// the media hostname (./cache.ts), since a deleted photo must stop being
+// served. The bucket they take carries that cache (MediaBucket), so no
+// deletion can leave it out; the Worker builds it with mediaBucket
+// (src/lib/media-bucket.ts).
+import type { CachePurge, PhotoCache } from "./cache.ts";
 import { MAX_PHOTO_BYTES, MAX_PHOTO_PIXELS, type PhotoFormat } from "./limits.ts";
 import {
   newPhotoKey,
@@ -154,10 +162,19 @@ export class PhotoSlots {
 /** The slots of this Worker instance. */
 const OPENING_SLOTS = new PhotoSlots();
 
-/** What the photo needs: the Images binding and the public media bucket (env.IMAGES, env.MEDIA). */
+/**
+ * The public media bucket (env.MEDIA) with the cache of the media hostname
+ * that serves it: what storing and deleting a photo need of it.
+ */
+export interface MediaBucket extends Pick<R2Bucket, "put" | "delete"> {
+  /** Purges the cached copies of a photo once its objects are deleted. */
+  readonly cache: PhotoCache;
+}
+
+/** What the photo needs: the Images binding and the public media bucket (env.IMAGES, mediaBucket). */
 export interface PhotoServices {
   images: Pick<ImagesBinding, "info" | "input">;
-  bucket: Pick<R2Bucket, "put" | "delete">;
+  bucket: MediaBucket;
   /** The slots of step 4: this Worker instance's, unless a test gives its own. */
   slots?: PhotoSlots;
 }
@@ -274,21 +291,15 @@ export async function storePhoto(
     }
   } catch (error) {
     console.error(`photos: a photo could not be stored (${photoFailure(error)})`);
-    await deletePhoto(services.bucket, key);
+    // A photo that was never stored whole was never served, so no cache holds it.
+    await deleteObjects(services.bucket, key);
     return { kind: "rejected", error: "failed" };
   }
   return { kind: "stored", key };
 }
 
-/**
- * Deletes both objects of a photo; an object that is not there is no
- * failure. Whether it could: a failure is logged by its kind, and what it
- * leaves behind is an object no card names, which the orphan sweep removes.
- */
-export async function deletePhoto(
-  bucket: Pick<R2Bucket, "delete">,
-  photoKey: string,
-): Promise<boolean> {
+/** Deletes both objects of a photo; an object that is not there is no failure. Whether it could. */
+async function deleteObjects(bucket: Pick<R2Bucket, "delete">, photoKey: string): Promise<boolean> {
   try {
     await bucket.delete(photoObjectKeys(photoKey));
     return true;
@@ -296,4 +307,30 @@ export async function deletePhoto(
     console.error(`photos: a photo could not be deleted (${photoFailure(error)})`);
     return false;
   }
+}
+
+/** What deleting a photo did. */
+export type PhotoRemoval =
+  /** The bucket could not be reached: both objects may still be there, and nothing was purged. */
+  | { kind: "kept" }
+  /** Both objects are gone, and `cache` says what became of their cached copies. */
+  | { kind: "removed"; cache: CachePurge };
+
+/**
+ * Deletes both objects of a photo, then purges both of its addresses from the
+ * cache of the media hostname (./cache.ts). An object that is not there is no
+ * failure. A failure is logged by its kind: objects the bucket kept are left
+ * to the orphan sweep, and a purge that failed waits for the hourly retry.
+ */
+export async function removePhoto(bucket: MediaBucket, photoKey: string): Promise<PhotoRemoval> {
+  if (!(await deleteObjects(bucket, photoKey))) return { kind: "kept" };
+  return { kind: "removed", cache: await bucket.cache.purge(photoKey) };
+}
+
+/**
+ * Deletes a photo as removePhoto does, and says whether its objects are gone:
+ * for whatever stops naming a photo and only logs what it could not do.
+ */
+export async function deletePhoto(bucket: MediaBucket, photoKey: string): Promise<boolean> {
+  return (await removePhoto(bucket, photoKey)).kind === "removed";
 }

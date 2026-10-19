@@ -21,6 +21,10 @@ for (const binding of ["HYPERDRIVE", "HYPERDRIVE_FRESH"]) {
 // local fake of Turnstile's script (test/e2e/turnstile.ts). Wrangler reads it
 // from the environment when there is no .dev.vars.
 process.env["TURNSTILE_SECRET_KEY"] ??= TURNSTILE_TEST_SECRET_KEYS.alwaysPasses;
+// The secrets of the purge of the media hostname's cache are empty: the local
+// Worker has no such cache and purges nothing (src/lib/media-bucket.ts).
+process.env["MEDIA_ZONE_ID"] ??= "";
+process.env["MEDIA_CACHE_PURGE_TOKEN"] ??= "";
 
 const PHONE = { ...devices["Pixel 7"], viewport: { width: 390, height: 844 } };
 
@@ -46,6 +50,7 @@ export default defineConfig({
         "admin.spec.ts",
         "admin-zones.spec.ts",
         "admin-resolutions.spec.ts",
+        "admin-removals.spec.ts",
         "turnstile-real.spec.ts",
       ],
     },
@@ -115,25 +120,38 @@ export default defineConfig({
     // (test/e2e/admin-resolutions.spec.ts): it adds fictitious published cards
     // to Tizayuca, with reports, pending edits and photos, and applies and
     // discards those edits, which the queue, the sitemap and the crawls would
-    // see, so it runs alone, after "phone, admin zones" and before the second
-    // locality.
+    // see, so it runs alone, after "phone, admin zones" and before "phone,
+    // admin removals".
     {
       name: "phone, admin resolutions",
       use: PHONE,
       testMatch: "admin-resolutions.spec.ts",
       dependencies: ["phone, admin zones"],
     },
+    // Unpublishing, a new link and the permanent deletion
+    // (test/e2e/admin-removals.spec.ts): it adds fictitious cards to
+    // Tizayuca, published and with photos, unpublishes, relinks and deletes
+    // them, and narrows the roles of the local identity for a while, which
+    // the other files of the panel do too, so it runs alone, after "phone,
+    // admin resolutions" and before the second locality.
+    {
+      name: "phone, admin removals",
+      use: PHONE,
+      testMatch: "admin-removals.spec.ts",
+      dependencies: ["phone, admin resolutions"],
+    },
     // The same site with a second, fictitious active locality
     // (test/e2e/two-localities/): the list of localities at the root, the
     // locality cookie and the link to change municipality, and the crawls
     // again, now through the list. It runs after "phone", "phone, many cards",
     // "phone, search pages", "phone, registration", "phone, edit", "phone,
-    // admin", "phone, admin zones" and "phone, admin resolutions", whose tests
-    // expect Tizayuca alone, and its teardown removes the second locality.
+    // admin", "phone, admin zones", "phone, admin resolutions" and "phone,
+    // admin removals", whose tests expect Tizayuca alone, and its teardown
+    // removes the second locality.
     {
       name: "second locality",
       testMatch: "two-localities/second-locality.setup.ts",
-      dependencies: ["phone, admin resolutions"],
+      dependencies: ["phone, admin removals"],
       teardown: "no second locality",
     },
     {

@@ -1,0 +1,40 @@
+---
+// "Generar un enlace nuevo" on the detail of a published card
+// (docs/specs/admin-review.md, "The admin can generate a new link, and the
+// previous one stops working"): a form of one button, posted to the detail's
+// own address with the action `admin.newLink`, which says first that the
+// link the owner has stops working. It carries the version of the card's
+// link it was shown with (the moment that link was generated, never the link
+// or its fingerprint), so sending it again after the link was replaced
+// issues no other one (src/core/review/new-link.ts). No client JavaScript.
+import { LINK_VERSION_FIELD } from "../../core/review/new-link.ts";
+import {
+  REGENERATE_BUTTON,
+  REGENERATE_HEADING,
+  REGENERATE_WARNING,
+} from "../../core/review/texts.ts";
+import { SECONDARY_BUTTON } from "../../lib/buttons.ts";
+
+interface Props {
+  /** The address the form posts to: the detail with the action `admin.newLink`. */
+  action: string;
+  /** The version of the card's link (linkVersion): empty for a card without one. */
+  version: string;
+}
+
+const { action, version } = Astro.props;
+---
+
+<form
+  method="post"
+  action={action}
+  class="flex flex-col gap-3 rounded-xl border border-line p-4"
+  data-testid="new-link-form"
+>
+  <h2 class="font-semibold text-ink">{REGENERATE_HEADING}</h2>
+  <p class="text-sm text-ink-muted">{REGENERATE_WARNING}</p>
+  <input type="hidden" name={LINK_VERSION_FIELD} value={version} />
+  <button type="submit" class={`${SECONDARY_BUTTON} w-full px-4 text-base`}>
+    {REGENERATE_BUTTON}
+  </button>
+</form>

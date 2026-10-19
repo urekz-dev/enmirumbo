@@ -37,7 +37,7 @@ const VARIABLES = [
   "UMAMI_WEBSITE_ID",
   "TURNSTILE_SITE_KEY",
 ];
-const SECRETS = ["TURNSTILE_SECRET_KEY"];
+const SECRETS = ["TURNSTILE_SECRET_KEY", "MEDIA_ZONE_ID", "MEDIA_CACHE_PURGE_TOKEN"];
 const HYPERDRIVE_BINDINGS = ["HYPERDRIVE", "HYPERDRIVE_FRESH"];
 
 // The fields these tests read. Wrangler's own Config type comes from a package
@@ -228,7 +228,7 @@ describe("Turnstile is checked on the server, fails closed and has a switch in t
   });
 
   it.for([{ env: undefined }, ...ENVIRONMENTS])(
-    "the secret is required by name in $env, never given a value in the configuration",
+    "the secrets are required by name in $env, never given a value in the configuration",
     ({ env }) => {
       const config = read(env);
       expect(config.secrets?.required).toEqual(SECRETS);

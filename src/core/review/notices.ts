@@ -4,9 +4,12 @@
 // it with its date and offers to notify by WhatsApp", "Applying the pending
 // edit updates the published card and only that", "Discarding the pending
 // edit requires a reason, does not touch the card and offers to notify by
-// WhatsApp" and "No panel message is presented with the previous brand"): each opens the conversation with
-// the business, the message already written; the admin sends it, and the
-// system never sends anything by itself (PRD §6.6). The messages are the
+// WhatsApp", "On unpublishing, an offer is made to notify the business by
+// WhatsApp", "The admin can generate a new link, and the previous one stops
+// working" and "No panel message is presented with the previous brand"):
+// each opens the conversation with the business, the message already
+// written; the admin sends it, and the system never sends anything by itself
+// (PRD §6.6). The messages are the
 // specification's literals. They reach someone the verification message
 // already introduced the directory to, so they say plain "enmirumbo", never
 // followed by the locality's name. Pure.
@@ -25,9 +28,9 @@ export function panelWhatsappLink(whatsapp: string, message: string): string | n
 
 /**
  * The notice of a publication: the card's public link and its management
- * link, both absolute, with the instruction of PRD §6.4. The only message of
- * the panel that carries a management link, on the only screen that shows
- * one.
+ * link, both absolute, with the instruction of PRD §6.4. With newLinkMessage,
+ * the only messages of the panel that carry a management link, each on the
+ * only screen that shows one.
  */
 export function publishedMessage(businessName: string, cardUrl: string, editUrl: string): string {
   return (
@@ -58,5 +61,25 @@ export function discardedMessage(businessName: string, reason: string): string {
     `Hola, revisamos los cambios que mandaste para «${businessName}» en enmirumbo y por ahora ` +
     `no los pudimos aplicar: ${reason}. Tu ficha sigue publicada como estaba y puedes ` +
     "mandarlos otra vez con tu mismo enlace."
+  );
+}
+
+/** The notice of an unpublishing, with the reason the admin wrote, whole. */
+export function unpublishedMessage(businessName: string, reason: string): string {
+  return (
+    `Hola, te escribo de enmirumbo. Bajamos del directorio la ficha de «${businessName}»: ` +
+    `${reason}. Si quieres que la volvamos a publicar o tienes alguna duda, contéstame por aquí.`
+  );
+}
+
+/**
+ * The notice of a new management link, absolute: the other message of the
+ * panel that carries one, on the other screen that shows one.
+ */
+export function newLinkMessage(businessName: string, editUrl: string): string {
+  return (
+    `Hola, te mandamos un enlace nuevo para editar tu ficha de «${businessName}» en enmirumbo: ` +
+    `${editUrl}. El anterior ya no sirve. Guarda este mensaje (puedes destacarlo con la estrella), ` +
+    "con ese enlace actualizas tus datos cuando quieras."
   );
 }

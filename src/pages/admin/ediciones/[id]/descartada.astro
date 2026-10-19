@@ -8,11 +8,12 @@
 // answers with a 303, so reloading it never discards again. "Cambios
 // descartados." and "Avisarle por WhatsApp" with the reason stored, never one
 // an address carries. It exists only for an edit that was discarded with a
-// reason and that the user may resolve: any other goes back to the detail of
-// the edit, which answers for itself (a 404 for an edit the user may not
-// see), with nothing of the card in this answer. It reads through
-// HYPERDRIVE_FRESH, behind the panel's Access check, headers and layout
-// rules, and answers any method but GET or HEAD with a 405.
+// reason, whose card is still published (the notice says so), and that the
+// user may resolve: any other goes back to the detail of the edit, which
+// answers for itself (a 404 for an edit the user may not see), with nothing
+// of the card in this answer. It reads through HYPERDRIVE_FRESH, behind the
+// panel's Access check, headers and layout rules, and answers any method but
+// GET or HEAD with a 405.
 import { env, waitUntil } from "cloudflare:workers";
 import DiscardedConfirmation from "../../../../components/admin/DiscardedConfirmation.astro";
 import { withDb } from "../../../../core/db/client.ts";

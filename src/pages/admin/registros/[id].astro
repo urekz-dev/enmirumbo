@@ -11,28 +11,35 @@
 // approving, an offer is made to notify the business by WhatsApp with its
 // card link and its management link", "Rejecting requires a reason, stores it
 // with its date and offers to notify by WhatsApp", "A transition is only
-// applied to a registration that is still in review" and "Marking a report
-// as attended, only once"). The actions of F3 add their forms after these.
+// applied to a registration that is still in review", "Unpublish a published
+// card, with a mandatory reason and conditioned on the status", "The admin
+// can generate a new link, and the previous one stops working" and
+// "Permanent deletion is confirmed in two steps, by typing a word" and
+// "Marking a report as attended, only once").
 //
 // Behind the same Access check, headers and layout rules as the rest of the
 // panel (see src/pages/admin/index.astro). The forms of a card in review
-// post here with the actions `admin.approve` and `admin.reject`
+// post here with the actions `admin.approve` and `admin.reject`, and those
+// of a published card with `admin.unpublish` and `admin.newLink`
 // (src/actions/index.ts), which Astro runs before this page
 // (src/lib/review.ts), and so does "Marcar como atendido" of each pending
 // report, with `admin.attendReport` (src/lib/report-review.ts). Then:
 //
-// 1. An approval answers here, in this one answer to its POST, with its
-//    confirmation: the notice that carries the management link. It is never
-//    redirected to an address of its own, which would put the token in the
-//    address and the history; every answer under /admin is `no-store`, and
-//    sending the form again finds the card resolved, with no new link.
-// 2. A rejection answers a 303 to its confirmation, which reads the stored
-//    reason, so a reload never sends it again.
-// 3. A card already resolved shows "Este registro ya lo habías resuelto." A
-//    card that does not exist, or that the user may not see, is the site's
-//    404; one the user sees but may not decide on, the panel's 403. A
-//    marking of a report that does not exist or is of another card is the
-//    same 404; one whose card's reports the user may not attend, the 403.
+// 1. An approval and a new link answer here, in this one answer to their
+//    POST, with their confirmation: the notice that carries the management
+//    link. Neither is ever redirected to an address of its own, which would
+//    put the token in the address and the history; every answer under
+//    /admin is `no-store`, and sending the form again finds the card
+//    resolved, or its link already replaced, with no new link.
+// 2. A rejection and an unpublishing answer a 303 to their confirmation,
+//    which reads the stored reason, so a reload never sends them again.
+// 3. A card already resolved shows "Este registro ya lo habías resuelto.";
+//    one no longer published, "Esta ficha ya no estaba publicada."; a link
+//    already replaced, "Este enlace ya lo habías cambiado. …". A card that
+//    does not exist, or that the user may not see, is the site's 404; one the
+//    user sees but may not act on, the panel's 403. A marking of a report
+//    that does not exist or is of another card is the same 404; one whose
+//    card's reports the user may not attend, the 403.
 // 4. A marking answers here with the detail, as a GET renders it, and its
 //    notice: "Reporte atendido.", or "Este reporte ya lo habías atendido."
 //    (409) for a report attended before, which is what sending it again by
@@ -41,40 +48,60 @@
 //    card anywhere gets the 403 before the card is read; a card that does
 //    not exist, or of a locality where the user holds no permission that
 //    opens a card's detail, answers the same 404; its unattended reports
-//    only for who attends reports in its locality; and the approval and
-//    rejection forms only for a card in review and a user with
-//    `businesses.review` in its locality, again with what the admin sent and
-//    its errors after a failed decision; each unattended report has its
-//    "Marcar como atendido". Any other POST is a 405.
+//    only for who attends reports in its locality; then the actions its
+//    status and the user's permissions in its locality allow, each again
+//    with what the admin sent and its errors after a failed attempt: the
+//    approval and rejection forms for a card in review and
+//    `businesses.review`, the unpublishing form for a published card and
+//    `businesses.unpublish`, "Generar un enlace nuevo" for a published card
+//    and `links.manage`, and "Borrar definitivamente", a link to the
+//    confirmation of the deletion, for any card and `businesses.delete`; and
+//    each unattended report has its "Marcar como atendido". Any other POST
+//    is a 405.
 import { actions } from "astro:actions";
 import { env, waitUntil } from "cloudflare:workers";
 import ApprovalConfirmation from "../../../components/admin/ApprovalConfirmation.astro";
 import ApproveForm from "../../../components/admin/ApproveForm.astro";
 import DecisionScreen from "../../../components/admin/DecisionScreen.astro";
+import DeleteControl from "../../../components/admin/DeleteControl.astro";
+import NewLinkConfirmation from "../../../components/admin/NewLinkConfirmation.astro";
+import NewLinkForm from "../../../components/admin/NewLinkForm.astro";
 import RegistrationDetail from "../../../components/admin/RegistrationDetail.astro";
 import RejectForm from "../../../components/admin/RejectForm.astro";
+import UnpublishForm from "../../../components/admin/UnpublishForm.astro";
 import { permissionsOf } from "../../../core/access/queries.ts";
 import { withDb } from "../../../core/db/client.ts";
 import { formText } from "../../../core/forms/text.ts";
 import { approvalForm, readApproval } from "../../../core/review/approval.ts";
 import { panelLocalities, zoneNamesByLocality, zoneText } from "../../../core/review/localities.ts";
-import { queuePath, rejectedPath } from "../../../core/review/paths.ts";
+import { linkVersion } from "../../../core/review/new-link.ts";
+import {
+  deletionPath,
+  queuePath,
+  rejectedPath,
+  unpublishedPath,
+} from "../../../core/review/paths.ts";
 import { pendingReports, registrationDetail } from "../../../core/review/registration.ts";
 import { REJECTION_FIELD } from "../../../core/review/rejection.ts";
 import { opensCard, panelScope, queueLocalities } from "../../../core/review/scope.ts";
 import {
   ALREADY_RESOLVED,
   APPROVED,
+  LINK_ALREADY_REPLACED,
+  NOT_PUBLISHED,
+  REGENERATE_NO_SITE_URL,
+  REGENERATED,
   REGISTRATION_TITLE,
   REPORT_ALREADY_ATTENDED,
   REPORT_ATTENDED,
   SAVE_FAILED,
 } from "../../../core/review/texts.ts";
+import { UNPUBLISH_FIELD } from "../../../core/review/unpublish.ts";
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { forbiddenResponse } from "../../../lib/access/admin-gate.ts";
 import { notFound, seeOther } from "../../../lib/locality.ts";
 import { attendFailure } from "../../../lib/report-review.ts";
-import { decisionFailure } from "../../../lib/review.ts";
+import { decisionFailure, type DetailForm } from "../../../lib/review.ts";
 
 const admin = Astro.locals.admin;
 // Second line of defense: never render the panel without an identity.
@@ -83,20 +110,30 @@ if (admin === undefined) return forbiddenResponse();
 const id = Astro.params.id ?? "";
 const approval = Astro.getActionResult(actions.admin.approve);
 const rejection = Astro.getActionResult(actions.admin.reject);
+const unpublishing = Astro.getActionResult(actions.admin.unpublish);
+const newLink = Astro.getActionResult(actions.admin.newLink);
 const attend = Astro.getActionResult(actions.admin.attendReport);
 if (rejection !== undefined && !rejection.error) return seeOther(rejectedPath(id));
-if (approval === undefined && rejection === undefined && attend === undefined) {
+if (unpublishing !== undefined && !unpublishing.error) return seeOther(unpublishedPath(id));
+
+const sent: DetailForm | null =
+  approval !== undefined
+    ? "approval"
+    : rejection !== undefined
+      ? "rejection"
+      : unpublishing !== undefined
+        ? "unpublish"
+        : newLink !== undefined
+          ? "new-link"
+          : null;
+if (sent === null && attend === undefined) {
   if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
     return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
   }
 }
 
-const sent = approval !== undefined ? "approval" : rejection !== undefined ? "rejection" : null;
-const failure = approval?.error
-  ? decisionFailure(approval.error, "approval")
-  : rejection?.error
-    ? decisionFailure(rejection.error, "rejection")
-    : null;
+const error = approval?.error ?? rejection?.error ?? unpublishing?.error ?? newLink?.error;
+const failure = error && sent !== null ? decisionFailure(error, sent) : null;
 if (failure?.kind === "not-found") return notFound();
 if (failure?.kind === "forbidden") return forbiddenResponse();
 
@@ -113,24 +150,35 @@ const reportNotice =
         ? REPORT_ALREADY_ATTENDED
         : SAVE_FAILED;
 
-// Only a user who may decide on a card in review reaches a decision's
+// Only a user who may decide on a card in review reaches an approval's
 // answer, and that permission always opens the queue.
 const notice = approval !== undefined && !approval.error ? approval.data : null;
-const resolved = failure?.kind === "resolved";
+const linkNotice = newLink !== undefined && !newLink.error ? newLink.data : null;
+/** A conflict answers a screen of its own, which says what happened. */
+const conflict =
+  failure?.kind === "resolved"
+    ? ALREADY_RESOLVED
+    : failure?.kind === "not-published"
+      ? NOT_PUBLISHED
+      : failure?.kind === "replaced"
+        ? LINK_ALREADY_REPLACED
+        : null;
 
 /** What the admin sent with the decision that failed: shown again as it was. */
 const keepsDraft =
   failure?.kind === "approval" ||
   failure?.kind === "rejection" ||
+  failure?.kind === "unpublish" ||
   (failure?.kind === "server" && failure.keepsDraft);
 const submission = keepsDraft ? await Astro.request.formData().catch(() => null) : null;
 
 const now = new Date();
 const result =
-  notice !== null || resolved
+  notice !== null
     ? null
     : await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
         const scope = await panelScope(db, admin.email);
+        if (linkNotice !== null || conflict !== null) return { scope, card: null };
         if (scope.cards.length === 0) return "forbidden" as const;
         const detail = await registrationDetail(db, id);
         if (detail === null) return "not-found" as const;
@@ -141,38 +189,56 @@ const result =
         const names = locality
           ? (await zoneNamesByLocality(db, [locality])).get(locality.code)
           : undefined;
+        const published = detail.status === "published";
         const decides = detail.status === "in_review" && granted.has("businesses.review");
         const form = decides ? await approvalForm(db, detail) : null;
-        return { scope, detail, reports, zone: zoneText(detail, names), form };
+        return {
+          scope,
+          card: {
+            detail,
+            reports,
+            zone: zoneText(detail, names),
+            form,
+            unpublishes: published && granted.has("businesses.unpublish"),
+            links: published && granted.has("links.manage"),
+            deletes: granted.has("businesses.delete"),
+          },
+        };
       });
 if (result === "forbidden") return forbiddenResponse();
 if (result === "not-found") return notFound();
 
+const queueHref = result === null || queueLocalities(result.scope).length > 0 ? queuePath() : null;
+const card = result?.card ?? null;
 const approvalDraft =
-  result?.form && sent === "approval" && submission !== null
+  card?.form && sent === "approval" && submission !== null
     ? readApproval(submission)
-    : result?.form?.draft;
-const reason =
-  sent === "rejection" && submission !== null ? formText(submission, REJECTION_FIELD) : "";
+    : card?.form?.draft;
+const reason = (field: string, form: DetailForm) =>
+  sent === form && submission !== null ? formText(submission, field) : "";
 ---
 
 {notice !== null ? (
   <BaseLayout title={APPROVED}>
     <ApprovalConfirmation notice={notice} queueHref={queuePath()} />
   </BaseLayout>
-) : resolved || result === null ? (
-  <BaseLayout title={ALREADY_RESOLVED}>
-    <DecisionScreen heading={ALREADY_RESOLVED} queueHref={queuePath()} />
+) : linkNotice !== null ? (
+  <BaseLayout title={REGENERATED}>
+    <NewLinkConfirmation notice={linkNotice} queueHref={queueHref} />
+  </BaseLayout>
+) : conflict !== null || card === null ? (
+  <BaseLayout title={conflict ?? ALREADY_RESOLVED}>
+    <DecisionScreen heading={conflict ?? ALREADY_RESOLVED} queueHref={queueHref} />
   </BaseLayout>
 ) : (
   <BaseLayout title={REGISTRATION_TITLE}>
     <RegistrationDetail
-      detail={result.detail}
-      zone={result.zone}
-      reports={result.reports}
+      detail={card.detail}
+      zone={card.zone}
+      reports={card.reports}
       now={now}
-      queueHref={queueLocalities(result.scope).length > 0 ? queuePath() : null}
-      attendAction={result.reports !== null ? actions.admin.attendReport.queryString : null}
+      queueHref={queueHref}
+      attendAction={card.reports !== null ? actions.admin.attendReport.queryString : null}
       reportNotice={reportNotice}
       reportAlert={attendFail?.kind === "server"}
     >
@@ -182,23 +248,43 @@ const reason =
           {SAVE_FAILED}
         </p>
       )}
-      {result.form && approvalDraft && (
+      {failure?.kind === "no-site-url" && (
+        <p role="alert" class="font-semibold text-ink">
+          <span aria-hidden="true">⚠ </span>
+          {REGENERATE_NO_SITE_URL}
+        </p>
+      )}
+      {card.form && approvalDraft && (
         <ApproveForm
           action={actions.admin.approve.queryString}
-          catalogue={result.form.catalogue}
+          catalogue={card.form.catalogue}
           draft={approvalDraft}
           errors={failure?.kind === "approval" ? failure.errors : {}}
-          needsZone={result.detail.zoneSlug === null}
-          zoneOther={result.detail.zoneOther}
+          needsZone={card.detail.zoneSlug === null}
+          zoneOther={card.detail.zoneOther}
         />
       )}
-      {result.form && (
+      {card.form && (
         <RejectForm
           action={actions.admin.reject.queryString}
-          reason={reason}
+          reason={reason(REJECTION_FIELD, "rejection")}
           error={failure?.kind === "rejection" ? failure.error : null}
         />
       )}
+      {card.unpublishes && (
+        <UnpublishForm
+          action={actions.admin.unpublish.queryString}
+          reason={reason(UNPUBLISH_FIELD, "unpublish")}
+          error={failure?.kind === "unpublish" ? failure.error : null}
+        />
+      )}
+      {card.links && (
+        <NewLinkForm
+          action={actions.admin.newLink.queryString}
+          version={linkVersion(card.detail.managementLinkCreatedAt)}
+        />
+      )}
+      {card.deletes && <DeleteControl href={deletionPath(card.detail.id)} />}
     </RegistrationDetail>
   </BaseLayout>
 )}

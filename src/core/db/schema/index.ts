@@ -6,3 +6,4 @@ export * from "./business.ts";
 export * from "./audit-log.ts";
 export * from "./access.ts";
 export * from "./settings.ts";
+export * from "./media.ts";

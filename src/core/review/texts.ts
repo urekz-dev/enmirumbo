@@ -284,6 +284,13 @@ export const WHATSAPP_TAKEN_ON_APPLY =
  */
 export const EDIT_CARD_UNPUBLISHED =
   "No se aplicó nada: esta ficha ya no está publicada. Los cambios siguen esperando; vuelve a publicarla y aplícalos.";
+/**
+ * A discard of the changes of a card that stopped being published: refused,
+ * because the notice says the card is still published (the panel's copy,
+ * decision of 2026-10-18, EMR-48).
+ */
+export const DISCARD_CARD_UNPUBLISHED =
+  "No se descartó nada: esta ficha ya no está publicada. Los cambios siguen esperando; resuélvelos cuando la vuelvas a publicar.";
 
 // Discarding a pending edit ("Discarding the pending edit requires a reason,
 // does not touch the card and offers to notify by WhatsApp").
@@ -295,3 +302,81 @@ export const EDIT_DISCARDED = "Cambios descartados.";
 
 /** A decision that could not be saved: nothing was decided (the panel's copy). */
 export const SAVE_FAILED = "No se pudo guardar. Vuelve a intentarlo.";
+
+// Unpublishing ("Unpublish a published card, with a mandatory reason and
+// conditioned on the status", "On unpublishing, an offer is made to notify
+// the business by WhatsApp").
+export const UNPUBLISH_HEADING = "Despublicar";
+export const UNPUBLISH_QUESTION = "¿Por qué la despublicas?";
+/** Next to the label: an internal note must not reach a third party by accident. */
+export const UNPUBLISH_REASON_HINT = "Este motivo se le enviará al negocio por WhatsApp.";
+export const UNPUBLISH_BUTTON = "Despublicar";
+export const UNPUBLISH_REASON_REQUIRED = "Escribe por qué la despublicas";
+export const UNPUBLISHED = "Ya la despublicaste.";
+export const NOT_PUBLISHED = "Esta ficha ya no estaba publicada.";
+
+// A new management link ("The admin can generate a new link, and the
+// previous one stops working").
+export const REGENERATE_HEADING = "Enlace de gestión";
+/** Above the button: tapping it makes the link the owner has stop working (the panel's copy). */
+export const REGENERATE_WARNING =
+  "El enlace que tiene ahora el negocio deja de servir en cuanto generes otro.";
+export const REGENERATE_BUTTON = "Generar un enlace nuevo";
+export const REGENERATED = "Listo, el enlace anterior ya no sirve.";
+export const SEND_LINK_BUTTON = "Mandarle el enlace por WhatsApp";
+/**
+ * The form of a link that was already replaced: sent again (a reload, a tab
+ * left open), it issues no other link, so the one just shown stays valid
+ * (the panel's copy).
+ */
+export const LINK_ALREADY_REPLACED =
+  "Este enlace ya lo habías cambiado. El último que generaste es el que sirve.";
+/**
+ * The site has no public origin to build the link with (a deployed
+ * environment without SITE_URL): no link is generated, so the one the owner
+ * has keeps working (the panel's copy).
+ */
+export const REGENERATE_NO_SITE_URL =
+  "No se pudo generar el enlace porque falta configurar la dirección pública del sitio. El anterior sigue sirviendo.";
+
+// Permanent deletion ("Permanent deletion is confirmed in two steps, by
+// typing a word", "Permanent deletion takes everything and leaves no trace of
+// personal data"; deployment, "Permanent deletion refuses to claim it deleted
+// what it did not delete").
+export const DELETE_CONTROL = "Borrar definitivamente";
+/** Marks the control as the irreversible action, as text and not only by its border. */
+export const IRREVERSIBLE_TAG = "Acción irreversible";
+export const DELETE_HEADING = "¿Seguro que quieres borrar esta ficha?";
+export const ARCO_REMINDER =
+  "Antes de borrar: confirma por WhatsApp, desde el número con el que se registró, que quien lo pide es el dueño del negocio. Tienes 20 días hábiles para contestarle.";
+/** The word that confirms a deletion, whatever its case and the spaces around it. */
+export const DELETE_WORD = "BORRAR";
+export const DELETE_WORD_LABEL = `Escribe ${DELETE_WORD} para confirmar`;
+export const DELETE_CONFIRM_BUTTON = "Sí, borrar para siempre";
+export const DELETE_CANCEL = "Mejor no, regresar";
+export const DELETE_WORD_MISMATCH = `Para borrar, escribe ${DELETE_WORD} en el campo.`;
+export const DELETED = "Ya se borró para siempre.";
+export const ALREADY_GONE = "Esta ficha ya no existe.";
+export const DELETE_STORAGE_UNREACHABLE =
+  "La ficha no se borró: no pude alcanzar el almacén de fotos. Revisa la configuración y vuelve a intentar.";
+/**
+ * The card's rows could not be deleted after its photos were: nothing of the
+ * card is gone but its photos (the panel's copy, decision of 2026-10-18).
+ */
+export const DELETE_FAILED = "La ficha no se borró: no se pudo guardar. Vuelve a intentarlo.";
+/** After DELETE_FAILED, when the card had a photo, which is already gone. */
+export const DELETE_FAILED_PHOTO_GONE = "Su foto sí se borró.";
+/**
+ * The card is deleted, but the cache of the media hostname could not drop its
+ * photo yet: the hourly job tries again (decision of the product owner,
+ * 2026-10-18). It replaces DELETED, which would claim more than happened.
+ */
+export const DELETED_PHOTO_CACHED =
+  "Borramos la ficha, pero su foto puede seguir viéndose un rato.";
+export const DELETED_PHOTO_CACHED_DETAIL =
+  "Quien ya tenía el enlace de la foto todavía puede abrirla. La volvemos a quitar cada hora hasta lograrlo.";
+
+/** The warning of the deletion, with the business's name. */
+export function deleteWarningText(businessName: string): string {
+  return `Esto borra para siempre el registro de «${businessName}», sus giros y sus reportes. No hay papelera y no se puede deshacer.`;
+}

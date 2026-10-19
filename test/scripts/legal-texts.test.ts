@@ -343,6 +343,9 @@ describe("The list of operational pending items reflects v2 (v2)", () => {
     );
     // Access and rectification stay until the panel edits a card and sends a copy.
     expect(all).toMatch(/editing any card and sending a copy of its data/);
+    // Cancellation and opposition are served from the panel since F3 (EMR-48).
+    expect(all).toMatch(/cancellation and opposition are served from it/);
+    expect(all).not.toMatch(/unpublishing and deleting arrive/);
     // The IP quotas stay until the legal review approves the wording.
     expect(all).toMatch(/IP address/);
     expect(OPERATIONAL_PENDING_ITEMS.map(({ tickets }) => tickets).join(" ")).toContain("EMR-58");

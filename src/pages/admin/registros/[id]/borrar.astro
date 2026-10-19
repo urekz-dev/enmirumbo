@@ -1,0 +1,107 @@
+---
+// The confirmation of a permanent deletion, at /admin/registros/<id>/borrar
+// (docs/specs/admin-review.md, "Permanent deletion is confirmed in two steps,
+// by typing a word", "Permanent deletion takes everything and leaves no trace
+// of personal data" and "Unpublishing, a new link and the permanent deletion
+// are forms of the detail, and their actions check everything again (v2)";
+// docs/specs/deployment.md, "Permanent deletion refuses to claim it deleted
+// what it did not delete").
+//
+// A GET is the first step and deletes nothing: the heading, the warning with
+// the business's name, the reminder of the ARCO procedure, the word to type,
+// "Sí, borrar para siempre" and "Mejor no, regresar". Its form posts here
+// with the action `admin.deleteCard` (src/actions/index.ts), which Astro
+// runs before this page (src/lib/review.ts). Then:
+//
+// 1. A deletion answers a 303 to /admin/borrado, an address that names
+//    nothing of the card, so neither the screen, nor its address, nor the
+//    history carry what was deleted; it says whether the photo may still be
+//    cached a while.
+// 2. A word that is not BORRAR renders this screen again, with its error.
+// 3. A card that no longer exists, or that the user may not see, says "Esta
+//    ficha ya no existe." (404), without a server error; one the user sees
+//    but may not delete is the panel's 403.
+// 4. When the photos could not be deleted, or the rows, the answer says the
+//    card was not deleted and why, with nothing of the card: not its name,
+//    its number or its identifier.
+//
+// A GET for a card that does not exist, or that the user may not see, is the
+// site's 404, and one the user may not delete the panel's 403, both before
+// anything of the card is shown. It reads through HYPERDRIVE_FRESH, behind
+// the panel's Access check, headers and layout rules; any other POST is a
+// 405.
+import { actions } from "astro:actions";
+import { env, waitUntil } from "cloudflare:workers";
+import DecisionScreen from "../../../../components/admin/DecisionScreen.astro";
+import DeleteConfirmation from "../../../../components/admin/DeleteConfirmation.astro";
+import { withDb } from "../../../../core/db/client.ts";
+import { deletionScreen } from "../../../../core/review/deletion.ts";
+import { deletedPath, queuePath, registrationPath } from "../../../../core/review/paths.ts";
+import { panelScope, queueLocalities } from "../../../../core/review/scope.ts";
+import {
+  ALREADY_GONE,
+  DELETE_FAILED,
+  DELETE_FAILED_PHOTO_GONE,
+  DELETE_HEADING,
+  DELETE_STORAGE_UNREACHABLE,
+} from "../../../../core/review/texts.ts";
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../../../lib/access/admin-gate.ts";
+import { notFound, seeOther } from "../../../../lib/locality.ts";
+import { deletionFailure } from "../../../../lib/review.ts";
+
+const admin = Astro.locals.admin;
+// Second line of defense: never render the panel without an identity.
+if (admin === undefined) return forbiddenResponse();
+
+const businessId = Astro.params.id ?? "";
+const deletion = Astro.getActionResult(actions.admin.deleteCard);
+if (deletion !== undefined && !deletion.error) {
+  return seeOther(deletedPath(deletion.data.photoCached));
+}
+if (deletion === undefined && Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+}
+const failure = deletion?.error ? deletionFailure(deletion.error) : null;
+if (failure?.kind === "forbidden") return forbiddenResponse();
+
+/** What the answer says when the card was not deleted, with nothing of the card. */
+const outcome: { heading: string; detail: string | null } | null =
+  failure?.kind === "gone"
+    ? { heading: ALREADY_GONE, detail: null }
+    : failure?.kind === "storage"
+      ? { heading: DELETE_STORAGE_UNREACHABLE, detail: null }
+      : failure?.kind === "failed"
+        ? { heading: DELETE_FAILED, detail: failure.photoRemoved ? DELETE_FAILED_PHOTO_GONE : null }
+        : null;
+
+const found = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  const opensQueue = queueLocalities(await panelScope(db, admin.email)).length > 0;
+  if (outcome !== null) return { opensQueue, screen: null };
+  return {
+    opensQueue,
+    screen: await deletionScreen(db, { email: admin.email, businessId }),
+  };
+});
+if (found.screen?.kind === "not-found") return notFound();
+if (found.screen?.kind === "forbidden") return forbiddenResponse();
+const queueHref = found.opensQueue ? queuePath() : null;
+const { heading, detail } = outcome ?? { heading: DELETE_HEADING, detail: null };
+---
+
+{found.screen?.kind === "card" ? (
+  <BaseLayout title={DELETE_HEADING}>
+    <DeleteConfirmation
+      name={found.screen.name}
+      action={actions.admin.deleteCard.queryString}
+      detailHref={registrationPath(businessId)}
+      wrongWord={failure?.kind === "word"}
+    />
+  </BaseLayout>
+) : (
+  <BaseLayout title={heading}>
+    <DecisionScreen heading={heading} queueHref={queueHref}>
+      {detail && <p class="max-w-sm text-ink">{detail}</p>}
+    </DecisionScreen>
+  </BaseLayout>
+)}

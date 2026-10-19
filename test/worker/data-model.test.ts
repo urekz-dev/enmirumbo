@@ -525,6 +525,7 @@ describe("The migration tree applies in full and its constraints survive", () =>
       "municipalities",
       "pending_edits",
       "permissions",
+      "photo_cache_purges",
       "reports",
       "role_assignments",
       "role_permissions",

@@ -1,0 +1,32 @@
+---
+// "Borrar definitivamente" on the detail of a card, whatever its status
+// (docs/specs/admin-review.md, "Permanent deletion is confirmed in two steps,
+// by typing a word" and "The detail offers the actions that correspond to the
+// status, with the context in sight"): a link to the confirmation of the
+// deletion, which a GET opens and which deletes nothing; never a button that
+// deletes. It is set apart from the other actions as the irreversible one by
+// a stronger border and the text "Acción irreversible", never by a colour
+// alone and without a colour outside the palette. No client JavaScript.
+import { DELETE_CONTROL, IRREVERSIBLE_TAG } from "../../core/review/texts.ts";
+import { SECONDARY_BUTTON } from "../../lib/buttons.ts";
+
+interface Props {
+  /** The confirmation of the deletion of this card. */
+  href: string;
+}
+
+const { href } = Astro.props;
+---
+
+<section
+  class="flex flex-col gap-3 rounded-xl border-2 border-ink p-4"
+  data-testid="delete-control"
+>
+  <p class="text-sm font-semibold text-ink">
+    <span aria-hidden="true">⚠ </span>
+    {IRREVERSIBLE_TAG}
+  </p>
+  <a href={href} class={`${SECONDARY_BUTTON} w-full px-4 text-base`}>
+    {DELETE_CONTROL}
+  </a>
+</section>

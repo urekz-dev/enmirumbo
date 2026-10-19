@@ -29,8 +29,10 @@
 //    (and is what a resolution that came too late answers, with a 409); a
 //    pending one offers "Aplicar los cambios" and "Descartar los cambios"
 //    after the comparison, again with what the admin chose or wrote and its
-//    errors after a failed resolution, with "No se aplicó nada: …" when its
-//    card is no longer published, with the WhatsApp another card has above
+//    errors after a failed resolution, with "No se aplicó nada: …" or "No
+//    se descartó nada: …" when its card is no longer published (a discard
+//    would tell the owner that it still is), with the WhatsApp another card
+//    has above
 //    the apply button, and with "No se pudo guardar" when saving failed. Any
 //    other POST is a 405.
 import { actions } from "astro:actions";
@@ -47,7 +49,12 @@ import { comparedFields, editDetail, parseEditId } from "../../../core/review/ed
 import { panelLocalities, zoneNamesByLocality } from "../../../core/review/localities.ts";
 import { appliedPath, discardedPath, queuePath } from "../../../core/review/paths.ts";
 import { panelScope, queueLocalities } from "../../../core/review/scope.ts";
-import { EDIT_CARD_UNPUBLISHED, EDIT_HEADING, SAVE_FAILED } from "../../../core/review/texts.ts";
+import {
+  DISCARD_CARD_UNPUBLISHED,
+  EDIT_CARD_UNPUBLISHED,
+  EDIT_HEADING,
+  SAVE_FAILED,
+} from "../../../core/review/texts.ts";
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { forbiddenResponse } from "../../../lib/access/admin-gate.ts";
 import { editFailure } from "../../../lib/edit-review.ts";
@@ -125,7 +132,7 @@ const reason = sent === "discard" && submission !== null ? formText(submission, 
     {form && failure?.kind === "unpublished" && (
       <p role="alert" class="rounded-xl border-2 border-ink p-4 font-semibold text-ink">
         <span aria-hidden="true">⚠ </span>
-        {EDIT_CARD_UNPUBLISHED}
+        {sent === "discard" ? DISCARD_CARD_UNPUBLISHED : EDIT_CARD_UNPUBLISHED}
       </p>
     )}
     {form && failure?.kind === "server" && (

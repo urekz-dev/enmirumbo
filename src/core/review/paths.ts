@@ -8,6 +8,14 @@
 //                               its decisions are posted
 //   /admin/registros/<id>/rechazado
 //                               the confirmation of a rejection
+//   /admin/registros/<id>/despublicado
+//                               the confirmation of an unpublishing
+//   /admin/registros/<id>/borrar
+//                               the confirmation of a permanent deletion,
+//                               where the deletion is posted
+//   /admin/borrado              what a permanent deletion did, under no
+//                               card's address: nothing of what it deleted
+//                               travels in it
 //   /admin/ediciones/<id>       the detail of a pending edit, by its number,
 //                               where its resolutions are posted
 //   /admin/ediciones/<id>/aplicada
@@ -17,7 +25,9 @@
 //
 // The queue and the list carry their filters in the query: `localidad` (the
 // INEGI code of a locality, only while the locality filter is shown),
-// `estado`, `q` and `pagina`. Nothing else travels in their addresses. Pure.
+// `estado`, `q` and `pagina`; the screen of a deletion, only whether the
+// photo still waits for its purge (`foto=pendiente`). Nothing else travels in
+// their addresses. Pure.
 import type { BusinessStatus } from "../db/schema/index.ts";
 
 export const QUEUE_PATH = "/admin";
@@ -31,6 +41,31 @@ export function registrationPath(businessId: string): string {
 /** The confirmation of the rejection of a card, which a rejection answers with a 303. */
 export function rejectedPath(businessId: string): string {
   return `${registrationPath(businessId)}/rechazado`;
+}
+
+/** The confirmation of the unpublishing of a card, which an unpublishing answers with a 303. */
+export function unpublishedPath(businessId: string): string {
+  return `${registrationPath(businessId)}/despublicado`;
+}
+
+/** The confirmation of the permanent deletion of a card, where the deletion is posted. */
+export function deletionPath(businessId: string): string {
+  return `${registrationPath(businessId)}/borrar`;
+}
+
+export const DELETED_PATH = "/admin/borrado";
+
+/** The value of `foto` on the screen of a deletion whose photo still waits for its purge. */
+export const PHOTO_CACHED_PARAM = "pendiente";
+
+/**
+ * What a deletion did, which it answers with a 303: no identifier or anything
+ * else of the deleted card, only whether its photo may still be cached.
+ */
+export function deletedPath(photoCached: boolean): string {
+  return photoCached
+    ? `${DELETED_PATH}?${new URLSearchParams({ foto: PHOTO_CACHED_PARAM })}`
+    : DELETED_PATH;
 }
 
 /** The detail of a pending edit. */

@@ -66,8 +66,8 @@ export const OPERATIONAL_PENDING_ITEMS: readonly OperationalPendingItem[] = [
     commitment:
       'The notice says the four ARCO rights are served from the admin panel: the admin sends the business a copy of its data by WhatsApp, corrects its card, unpublishes it or deletes it ("Los atiende quien administra el directorio desde su panel").',
     today:
-      "The panel has none of those actions yet: unpublishing and deleting arrive with F3, and editing any card and sending a copy of its data with F6. Until then a request of access, rectification, cancellation or opposition is served by hand against the database.",
-    tickets: "EMR-48 (F3) and EMR-51 (F6, access and rectification from the panel)",
+      "The panel unpublishes a card and deletes it for good (EMR-48), so cancellation and opposition are served from it; editing any card and sending a copy of its data arrive with F6, and until then a request of access or rectification is served by hand against the database.",
+    tickets: "EMR-51 (F6, access and rectification from the panel)",
   },
   {
     commitment:

@@ -845,7 +845,7 @@ Every business, pending edit, report and audit log entry MUST reference the loca
 
 ### Requirement: The audit log records the destructive actions of the admin (v2)
 
-Added in v2 — source: PRD §4, ADR 0010.
+Added in v2 — source: PRD §4, ADR 0010. Since EMR-48 the unpublishing and the permanent deletion of the panel write their entries (`admin-review`, "Unpublishing, a new link and the permanent deletion are forms of the detail, and their actions check everything again (v2)").
 
 The system MUST keep an audit log with one entry for each destructive or irreversible admin action: reject, unpublish, permanent deletion, purge, and edits to contact data. Nothing else MUST be logged. Each entry MUST hold who did it (the email of the Access identity, or `scheduled-job` for the scheduled job), when, the locality, which card (its identifier), the action (`reject`, `unpublish`, `delete`, `purge` or `edit_contact`) and the previous state of the card. The previous state is the status of the card before the action (`in_review`, `published` or `rejected`); an entry MUST NOT copy any field of the card, so the log holds no personal data of the business (LFPDPPP principles of proportionality and quality). An entry MUST NOT depend on the card existing: deleting the card MUST NOT delete its entries. The entries of a permanent deletion or a purge MUST NOT contain personal data of the deleted business (name, WhatsApp, address, reasons).
 
@@ -1316,3 +1316,24 @@ The previous rejection is internal data of the panel, of the same kind as the re
 
 - **WHEN** a previous rejection is saved with a moment and no reason, or a reason and no moment
 - **THEN** the database rejects the write
+
+### Requirement: The photo addresses waiting for their purge are the only thing kept of a deleted photo (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-48): a deleted photo is purged from the cache of the media hostname, and a purge that fails is retried without needing the card (`deployment`, "A deleted photo is purged from the cache of the media hostname, and a purge that fails is retried every hour (v2)"). It completes "Permanent deletion of a business (ARCO operation)", whose deletion of the files "leaving no data or images recoverable by any address of the site" now includes the cached copies, and whose files include the new photos of the card's edits, whatever their status.
+
+When the purge of a deleted photo fails, the database MUST keep, in `photo_cache_purges`, the two addresses of that photo on the media hostname and the moment they were kept, and nothing else: no key of a card, no identifier, no name, no number, no locality. A CHECK in the migration MUST admit only an https address of a variant of a photo, `https://<host>/photos/<photo key>/card.webp` or `full.webp`, so the table can hold nothing about a business. An address is kept once, however many times its purge fails. The table points to no other table and no table points to it: a permanent deletion never waits on it, the purges never depend on the card existing, and the cascade check of "Permanent deletion of a business (ARCO operation)" is unchanged. The hourly retry deletes each address once Cloudflare has purged it. The photo's objects are already gone from R2 when its addresses are kept: only a cached copy may remain.
+
+#### Scenario: a failed purge
+
+- **WHEN** a photo is deleted and the purge of its addresses fails
+- **THEN** `photo_cache_purges` holds exactly its two addresses, each with the moment it was kept, and no other column
+
+#### Scenario: nothing but addresses
+
+- **WHEN** a business name, a number, an http address or the address of anything but a variant of a photo is written to `photo_cache_purges`
+- **THEN** the database rejects the write
+
+#### Scenario: purged and forgotten
+
+- **WHEN** the hourly retry purges the addresses that waited
+- **THEN** they are no longer in the table

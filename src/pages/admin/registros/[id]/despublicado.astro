@@ -1,0 +1,49 @@
+---
+// The confirmation of an unpublishing, at /admin/registros/<id>/despublicado
+// (docs/specs/admin-review.md, "On unpublishing, an offer is made to notify
+// the business by WhatsApp" and "Unpublish a published card, with a
+// mandatory reason and conditioned on the status"): where an unpublishing
+// answers with a 303, so reloading it never unpublishes again. "Ya la
+// despublicaste.", the minute the site takes, and "Avisarle por WhatsApp"
+// with the reason stored, never one an address carries. It exists only for
+// an unpublishing that happened: a card that is not in review, was never
+// unpublished, has a blank reason, does not exist, or that the user may not
+// unpublish goes back to the detail, which answers for itself (a 404 for a
+// card the user may not see), with nothing of the card in this answer. It
+// reads through HYPERDRIVE_FRESH, behind the panel's Access check, headers
+// and layout rules, and answers any method but GET or HEAD with a 405.
+import { env, waitUntil } from "cloudflare:workers";
+import UnpublishConfirmation from "../../../../components/admin/UnpublishConfirmation.astro";
+import { withDb } from "../../../../core/db/client.ts";
+import { queuePath, registrationPath } from "../../../../core/review/paths.ts";
+import { panelScope, queueLocalities } from "../../../../core/review/scope.ts";
+import { UNPUBLISHED } from "../../../../core/review/texts.ts";
+import { unpublishNotice } from "../../../../core/review/unpublish.ts";
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../../../lib/access/admin-gate.ts";
+import { seeOther } from "../../../../lib/locality.ts";
+
+const admin = Astro.locals.admin;
+// Second line of defense: never render the panel without an identity.
+if (admin === undefined) return forbiddenResponse();
+if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+}
+
+const businessId = Astro.params.id ?? "";
+const found = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  const notice = await unpublishNotice(db, { email: admin.email, businessId });
+  if (notice === null) return null;
+  return { notice, opensQueue: queueLocalities(await panelScope(db, admin.email)).length > 0 };
+});
+if (found === null) return seeOther(registrationPath(businessId));
+---
+
+<BaseLayout title={UNPUBLISHED}>
+  <UnpublishConfirmation
+    name={found.notice.name}
+    whatsapp={found.notice.whatsapp}
+    reason={found.notice.reason}
+    queueHref={found.opensQueue ? queuePath() : null}
+  />
+</BaseLayout>

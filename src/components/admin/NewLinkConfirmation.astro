@@ -1,0 +1,34 @@
+---
+// The confirmation of a new management link (docs/specs/admin-review.md, "The
+// admin can generate a new link, and the previous one stops working"):
+// "Listo, el enlace anterior ya no sirve.", "Mándale el mensaje ahora: este
+// enlace solo se ve aquí." and "Mandarle el enlace por WhatsApp" with the
+// notice, whose message carries the new link, absolute. With the approval's,
+// the only screen of the panel that ever shows a management link, in the one
+// answer to its submission (src/lib/review.ts): leaving it without sending
+// the message, the admin needs another link to have it again. A new link
+// changes nothing public, so it does not say that the site takes a minute.
+// No client JavaScript.
+import { newLinkMessage } from "../../core/review/notices.ts";
+import { LINK_SHOWN_ONCE, REGENERATED, SEND_LINK_BUTTON } from "../../core/review/texts.ts";
+import type { NewLinkNotice } from "../../lib/review.ts";
+import DecisionScreen from "./DecisionScreen.astro";
+import NoticeButton from "./NoticeButton.astro";
+
+interface Props {
+  notice: NewLinkNotice;
+  /** "Volver a la cola", when the user may open the queue. */
+  queueHref: string | null;
+}
+
+const { notice, queueHref } = Astro.props;
+---
+
+<DecisionScreen heading={REGENERATED} queueHref={queueHref}>
+  <p class="max-w-sm font-semibold text-ink">{LINK_SHOWN_ONCE}</p>
+  <NoticeButton
+    whatsapp={notice.whatsapp}
+    message={newLinkMessage(notice.name, notice.managementUrl)}
+    label={SEND_LINK_BUTTON}
+  />
+</DecisionScreen>
