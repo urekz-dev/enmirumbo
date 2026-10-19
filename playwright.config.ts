@@ -43,6 +43,7 @@ export default defineConfig({
         "search-pages/**",
         "registration.spec.ts",
         "edit.spec.ts",
+        "admin.spec.ts",
         "turnstile-real.spec.ts",
       ],
     },
@@ -85,17 +86,28 @@ export default defineConfig({
       testMatch: "edit.spec.ts",
       dependencies: ["phone, registration"],
     },
+    // The review screens of the panel (test/e2e/admin.spec.ts): it adds
+    // fictitious cards to Tizayuca, one published, with reports and a pending
+    // edit, and narrows the roles of the local identity for a while, which
+    // the queue, the sitemap and the crawls would see, so it runs alone,
+    // after "phone, edit" and before the second locality.
+    {
+      name: "phone, admin",
+      use: PHONE,
+      testMatch: "admin.spec.ts",
+      dependencies: ["phone, edit"],
+    },
     // The same site with a second, fictitious active locality
     // (test/e2e/two-localities/): the list of localities at the root, the
     // locality cookie and the link to change municipality, and the crawls
     // again, now through the list. It runs after "phone", "phone, many cards",
-    // "phone, search pages", "phone, registration" and "phone, edit", whose
-    // tests expect Tizayuca alone, and its teardown removes the second
-    // locality.
+    // "phone, search pages", "phone, registration", "phone, edit" and "phone,
+    // admin", whose tests expect Tizayuca alone, and its teardown removes the
+    // second locality.
     {
       name: "second locality",
       testMatch: "two-localities/second-locality.setup.ts",
-      dependencies: ["phone, edit"],
+      dependencies: ["phone, admin"],
       teardown: "no second locality",
     },
     {

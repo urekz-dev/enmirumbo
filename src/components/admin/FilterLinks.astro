@@ -1,0 +1,44 @@
+---
+// A filter of the panel's lists, made of links that change only the query of
+// the address (docs/specs/admin-review.md, "The listing is filtered by status
+// without leaving the view" and "The panel filters by locality, and the filter
+// is hidden while there is one (v2)"): no form, no client JavaScript. The
+// chosen option is marked in words for screen readers (`aria-current`) and
+// drawn with a thicker outline and in bold, never only by a colour. Each
+// option measures at least 44px.
+interface Option {
+  text: string;
+  href: string;
+  current: boolean;
+}
+
+interface Props {
+  /** The heading of the filter, which also names its navigation. */
+  label: string;
+  options: readonly Option[];
+}
+
+const { label, options } = Astro.props;
+---
+
+<nav aria-label={label} class="flex flex-col gap-2">
+  <p class="text-sm font-semibold text-ink">{label}</p>
+  <ul class="flex flex-wrap gap-2">
+    {options.map((option) => (
+      <li>
+        <a
+          href={option.href}
+          aria-current={option.current ? "true" : undefined}
+          class:list={[
+            "inline-flex min-h-11 items-center rounded-full px-3.5 py-1.5 text-sm",
+            option.current
+              ? "border-2 border-ink font-bold text-ink underline underline-offset-4"
+              : "border border-control font-semibold text-ink-muted",
+          ]}
+        >
+          {option.text}
+        </a>
+      </li>
+    ))}
+  </ul>
+</nav>

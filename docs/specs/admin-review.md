@@ -1158,9 +1158,9 @@ When the team domain or the AUD tag of an environment is missing or empty, the p
 
 ### Requirement: Locally, a fixed identity is injected only when the environment says `local` (v2)
 
-Added in v2 — source: ADR 0010.
+Added in v2 — source: ADR 0010. Amended on 2026-10-18 by EMR-46: the fixed identity is a panel user like any other.
 
-In local development a fixed admin identity (`admin@enmirumbo.test`) MAY be injected, and only when the environment variable says exactly `local` and the request arrives on a loopback host (`localhost`, `127.0.0.1` or `[::1]`), so that a Worker deployed by mistake with the local variables still refuses it. Deployed environments (`dev`, `stage`, production) MUST NEVER accept it, and a test MUST prove it.
+In local development a fixed admin identity (`admin@enmirumbo.test`) MAY be injected, and only when the environment variable says exactly `local` and the request arrives on a loopback host (`localhost`, `127.0.0.1` or `[::1]`), so that a Worker deployed by mistake with the local variables still refuses it. Deployed environments (`dev`, `stage`, production) MUST NEVER accept it, and a test MUST prove it. What the fixed identity may do comes from the database, as for any panel user ("Inside the panel, a user can do only what their roles allow (v2)"): without a user of that email with an active role assignment, the panel answers it the same 403. It is created by hand in the local database, as the first super admin of every environment is (README), and the end-to-end tests make it a super admin in their own database; no migration or seed creates it.
 
 #### Scenario: local
 
@@ -1171,6 +1171,11 @@ In local development a fixed admin identity (`admin@enmirumbo.test`) MAY be inje
 
 - **WHEN** the environment is `dev`, `stage` or production and a request relies on the fixed identity
 - **THEN** it is rejected with a 403, and a test covers it
+
+#### Scenario: the fixed identity without a role
+
+- **WHEN** the environment variable is `local`, `/admin` is opened on `localhost` and `admin@enmirumbo.test` has no active role assignment
+- **THEN** the answer is the panel's 403, with no data
 
 #### Scenario: local variables on a deployed host
 
@@ -1232,9 +1237,11 @@ From the detail of any card, the admin MUST be able to open WhatsApp to the busi
 
 ### Requirement: The panel filters by locality, and the filter is hidden while there is one (v2)
 
-Added in v2 — source: ADR 0006.
+Added in v2 — source: ADR 0006. Amended on 2026-10-18 by EMR-46: how the filter is written and which localities it offers.
 
 There MUST be a single admin panel. Its queue and list MUST accept a locality filter, which MUST be hidden while only one locality is active.
+
+The filter is a group of links under the literal label "Filtrar por municipio", with the option "Todos" (the default) and one option per locality, written "<municipio>, <estado>" from the locality record, such as "Tizayuca, Hidalgo". Its options are the active localities where the user sees something in that screen ("Each review screen checks its permission in the locality of what it shows (v2)"), and it MUST be shown only while there are two or more of them: a user who sees one active locality never sees it, whatever the number of localities of the site. The chosen locality travels in the query as `localidad=<INEGI code>`; a value that is not one of the options, empty or repeated, MUST be treated as "Todos", with no error. The chosen option is marked in words and not only by a colour, like the status filter, and changing it returns the list to its first page and keeps its status filter and its search. While the rows of several localities are shown, each row MUST also say its locality, so two zones of the same name are not confused. "Todos" lists the cards of every locality the user sees, inactive ones included: a locality turned off still has cards the admin must be able to reach.
 
 #### Scenario: one locality
 
@@ -1245,6 +1252,11 @@ There MUST be a single admin panel. Its queue and list MUST accept a locality fi
 
 - **WHEN** a second locality is active and the admin filters the list by it
 - **THEN** only the businesses of that locality are listed
+
+#### Scenario: a locality the user does not see
+
+- **WHEN** a second locality is active but the user holds no permission there, or someone writes the code of a locality the user does not see in `localidad`
+- **THEN** no locality filter is shown, and the screen lists what "Todos" lists
 
 ### Requirement: The admin can hide and rename the zones of a locality (v2)
 
@@ -1264,9 +1276,9 @@ The panel MUST let the admin hide, show and rename the zones of a locality. Rena
 
 ### Requirement: Dates in the panel use the time zone of the locality (v2)
 
-Added in v2 — source: ADR 0006, prototype debt (docs/backlog.md, T-018).
+Added in v2 — source: ADR 0006, prototype debt (docs/backlog.md, T-018). Amended on 2026-10-18 by EMR-46: how the dates are written.
 
-Every date and time shown in the panel MUST be written in the IANA time zone of the locality of the card, not in the server's.
+Every date and time shown in the panel MUST be written in the IANA time zone of the locality of the card, not in the server's. A day is written in full, "3 de septiembre de 2026", as the list's "Se registró el 3 de septiembre de 2026" and the consent record's "3 de septiembre de 2026 (versión 1)" quote it; a moment of the detail adds its local time in 24 hours, "3 de septiembre de 2026, 14:05". A wait is written in hours below 48 ("Hace menos de una hora", "Hace 1 hora", "Hace 3 horas") and in days from then on ("Hace 2 días"), in the queue and in the reports of a detail alike.
 
 #### Scenario: near midnight
 
@@ -1362,3 +1374,144 @@ Applying a pending edit MUST also carry out what it asks of the photo (`data-mod
 
 - **WHEN** the admin discards a pending edit that carries a new photo
 - **THEN** the objects of that photo no longer exist, and the card keeps its own
+
+### Requirement: The review screens live at fixed addresses under `/admin` (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-46); ADR 0010. It settles the address of the pending edit detail, which no earlier requirement gave.
+
+The review screens of the panel MUST live at these addresses, all of them under `/admin`, so that the Access check, the panel's headers, its no-indexing and its referrer policy reach them by where they live:
+
+- `/admin`: the review queue, the panel's main screen ("Review queue with the pending registrations, oldest first"), which replaces the placeholder that only named the signed-in email.
+- `/admin/negocios`: "Todos los negocios".
+- `/admin/registros/<id>`: the detail of a card, by its identifier ("The card is identified by a short random id (v2)" in `data-model`), whatever its status. The queue's "Revisar" of an "Alta nueva", the list's "Ver detalle" and the reported section's "Ver reportes" lead here.
+- `/admin/ediciones/<n>`: the detail of a pending edit, by its number. The queue's "Revisar" of an "Edición" leads here. Applying or discarding acts on the edit of that number, which is what lets them refuse an edit that is no longer the one the admin had in front of them ("A pending edit is resolved only once and only if it is still the latest").
+
+An identifier or a number of another shape, one that no card or edit has, and a card or edit the user may not see MUST all answer the site's 404, under the panel's headers. The queue and the list carry in their query only what "The listing is filtered by status without leaving the view", "The listing searches by name or WhatsApp (v2)" and "The panel filters by locality, and the filter is hidden while there is one (v2)" allow; the details carry nothing in theirs. Until the stories of their actions arrive, the two details are read-only: they show everything their requirements ask and no form, button or action that changes anything. Their actions come after what they show.
+
+#### Scenario: the panel's main screen
+
+- **WHEN** a panel user opens `/admin`
+- **THEN** they see "Registros por revisar", not a placeholder
+
+#### Scenario: Revisar leads to the right detail
+
+- **WHEN** the admin taps "Revisar" on an "Alta nueva" and on an "Edición"
+- **THEN** the first opens `/admin/registros/<id>` of that card and the second `/admin/ediciones/<n>` of that edit
+
+#### Scenario: an address that names nothing
+
+- **WHEN** the admin opens `/admin/registros/nada`, `/admin/registros/<an identifier no card has>` or `/admin/ediciones/<a number no edit has>`
+- **THEN** each answers the site's 404, with `noindex, nofollow`, and nothing about any card
+
+### Requirement: Each review screen checks its permission in the locality of what it shows (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-46); ADR 0021. It details, for the review screens, "Inside the panel, a user can do only what their roles allow (v2)".
+
+Every review screen MUST first find out what the signed-in user may see, from the permissions of their active role assignments (`data-model`, "Panel users, roles and permissions live in the database (v2)"), through the fresh connection to the database, and show only that. A global assignment grants its permissions in every locality of the site, active or not; a locality assignment, in its own. The screens use these permissions of the catalogue, and no new one:
+
+- the "Alta nueva" rows of the queue: `businesses.review` in the card's locality;
+- the "Edición" rows of the queue and the detail of a pending edit: `edits.review` in the card's locality;
+- "Negocios reportados" in the queue, and "Reportes sin atender" in the detail of a card: `reports.manage` in the card's locality;
+- the detail of a card, and so its row in "Todos los negocios": any permission that acts on a card in its locality (`businesses.review`, `businesses.edit`, `businesses.unpublish`, `businesses.delete`, `reports.manage` or `links.manage`), because the actions of those permissions live in that detail. Resolving pending edits alone does not open the detail of a card in review.
+
+A screen with nothing the user may see —a user who does not exist, is inactive, has no active assignment, or holds none of that screen's permissions anywhere— MUST answer the panel's generic 403, before reading any card. A card or an edit of a locality where the user may not see it MUST answer the same 404 as one that does not exist, so the panel cannot tell a user that it exists. A link to a screen the user may not open is not shown: "Ver todos los negocios" and "Volver a la cola" appear only to who may open the list and the queue. The panel's actions, when they arrive, check their own permission again in the locality of what they touch.
+
+#### Scenario: a locality admin
+
+- **WHEN** a user with `locality_admin` in locality A opens the queue, the list and the details
+- **THEN** they see the cards, edits and reports of A, and every card or edit of B answers the 404
+
+#### Scenario: a super admin
+
+- **WHEN** a user with `super_admin` opens the queue and the list
+- **THEN** they see the cards of every locality, an inactive one included
+
+#### Scenario: a role that only attends reports
+
+- **WHEN** a user whose only role grants `reports.manage` in A opens the queue
+- **THEN** they see "Negocios reportados" with the reported cards of A and no row of "Registros por revisar", can open the detail of a reported card with its reports, and get the 403 on the detail of a pending edit
+
+#### Scenario: on the Access policy but without a role
+
+- **WHEN** a person whose email is on the Access policy, but who has no active role assignment, opens `/admin`, `/admin/negocios`, the detail of a card or the detail of an edit
+- **THEN** each answers the panel's 403, which names no card
+
+### Requirement: The listing searches by name or WhatsApp (v2)
+
+Added in v2 — source: backlog of epic F, story F1 (EMR-46): "a search by name or WhatsApp". It amends "The listing is filtered by status without leaving the view": besides the status and the page, the query of the list may carry what the admin searched.
+
+"Todos los negocios" MUST offer a search box under the literal label "Buscar por nombre o WhatsApp", with the button "Buscar", as a GET form to the list itself, so it works without client JavaScript. It finds the cards whose name contains every word typed (up to four), ignoring capitals, accents and punctuation as the directory's search does, and the card whose WhatsApp is the number typed, read as the registration reads it: ten digits, with or without `+52` or `521`, spaces, hyphens or brackets. A search keeps the status and locality filters, the filters keep the search, and searching returns to the first page; the count of the header counts what was found. Without results the screen says, literally, "No encontramos negocios con esa búsqueda." While a search is applied, the link "Quitar la búsqueda" returns to the list without it. What was typed comes back in the box, cut to 80 characters and without invisible characters; a `q` that is empty or repeated is no search.
+
+What the admin typed is the only text that MAY travel in the list's query besides the filters and the page: it never names a card the admin did not type, the panel's responses are never stored by a cache, its referrer policy sends no path to any page, and nothing the panel shows or receives is written to the log.
+
+#### Scenario: by name
+
+- **WHEN** the admin searches "tacos guero" in a list that has "Tacos del Güero"
+- **THEN** that card is listed, and so is any other whose name has both words
+
+#### Scenario: by WhatsApp
+
+- **WHEN** the admin searches "+52 771 999 0101"
+- **THEN** the card whose WhatsApp is `7719990101` is listed
+
+#### Scenario: nothing found
+
+- **WHEN** the search finds no card
+- **THEN** the screen says "No encontramos negocios con esa búsqueda." and keeps the filters and the box in sight
+
+### Requirement: The panel shows the photos it reviews from the media hostname (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-46); ADR 0011; `public-directory`, "The photo of an unpublished business is referenced on no public surface (v2)". It amends "Registration detail with all the captured data, only inside the panel": the panel has no photo address of its own any more.
+
+The panel MUST show the photo of a card in review, rejected or unpublished, and the new photo of a pending edit, from the environment's media hostname, at the address built from the stored key, like the public pages do for a published card: `photos/<key>/full.webp`, at its own size (1200×900), large enough to judge it against the photo policy. The key is opaque, 24 random characters of about 119 bits, and only the panel's pages name a key that is not a published card's; those pages are behind Access, never indexed nor cached, and their referrer policy sends no path to any page. So the sentence of "Registration detail with all the captured data, only inside the panel" that asks that "the address with which the panel shows the photo of an unpublished registration MUST NOT serve anything without a valid session", and its scenario "the photo of the in-review registration does not leave the panel", no longer apply: the address serves the photo to whoever has it, and nobody outside the panel can have it. A stored value that is not a key the server generated is no photo, and the panel says "Sin foto".
+
+No public page names the key of a card that is not published, and the photos of the panel do not change that.
+
+#### Scenario: the photo of a registration in review
+
+- **WHEN** the admin opens the detail of a registration in review that uploaded a photo
+- **THEN** they see it under "Foto del negocio", from the media hostname at its `full` size, and no public page names its key
+
+#### Scenario: a stored value that is not a key
+
+- **WHEN** a card stores as its photo a URL or any value that is not a key the server generated
+- **THEN** the panel shows "Sin foto" and builds no address from it
+
+### Requirement: The detail of a pending edit shows the photo it proposes (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-46); `data-model`, "A pending edit may change the photo of its card (v2)". It settles how the detail shows the photo, which "Applying or discarding a pending edit carries out what it asks of the photo (v2)" left to this screen.
+
+After the fields of the form, the comparison MUST show the photo, under the label "Foto del negocio", with "Lo que está publicado" and "Lo que quiere cambiar" like every field: the card's own photo, or "Sin foto", against what the edit asks of it. An edit that keeps the photo shows the card's photo on both sides, without "Cambió"; one that replaces it shows the new photo, with "Cambió"; one that removes it shows "Sin foto", with "Cambió" only when the card had a photo. The new photo is shown while the edit is pending; once it is resolved, its photo is the card's or no longer exists, so the detail only says "Una foto nueva" in its place.
+
+An edit that is no longer pending can still be opened, read-only, and MUST say what happened to it before the comparison: an applied or discarded one, "Estos cambios ya los habías resuelto."; a superseded one, "Estos cambios ya no son los últimos: el negocio mandó otros más nuevos."
+
+#### Scenario: an edit with a new photo
+
+- **WHEN** the admin opens a pending edit that replaces the photo of a card that had one
+- **THEN** they see both photos, the card's under "Lo que está publicado" and the new one under "Lo que quiere cambiar", and "Cambió" next to "Foto del negocio"
+
+#### Scenario: an edit that removes the photo
+
+- **WHEN** the admin opens a pending edit that leaves the card without a photo
+- **THEN** they see the card's photo and "Sin foto", with "Cambió"
+
+#### Scenario: an edit that keeps the photo
+
+- **WHEN** the admin opens a pending edit that does not touch the photo
+- **THEN** they see the card's photo on both sides, without "Cambió"
+
+#### Scenario: a superseded edit
+
+- **WHEN** the admin opens the address of an edit that a newer one replaced
+- **THEN** they read "Estos cambios ya no son los últimos: el negocio mandó otros más nuevos." above the comparison
+
+### Requirement: The verification message names the card's locality from its record (v2)
+
+Added in v2 — source: ADR 0006 ("texts that name the locality are parametrised"). It amends the literal message of "Verification button that opens WhatsApp with a prefilled message" and the descriptor of "No panel message is presented with the previous brand", which name Tizayuca.
+
+The first-contact message MUST name the locality of the card, read from its record: "Hola, te escribo de enmirumbo, el directorio de negocios de <municipio>. Recibimos el registro de «<nombre del negocio>». ¿Nos confirmas que el negocio es tuyo y que este es tu WhatsApp?". For a card of Tizayuca it is exactly the prototype's message. No panel message writes the name of a locality in the code. The button appears in the detail of a card, after its data and its reports, and in the detail of a pending edit that changes the WhatsApp, toward the proposed number; it opens a new tab and carries `rel="noopener noreferrer"`.
+
+#### Scenario: a card of another locality
+
+- **WHEN** the admin taps "Escribirle por WhatsApp" on the detail of a card of a second locality
+- **THEN** the message says "el directorio de negocios de" followed by that locality's name

@@ -1,0 +1,154 @@
+---
+// The review queue, the panel's main screen (docs/specs/admin-review.md,
+// "Review queue with the pending registrations, oldest first", "Visible
+// indicator for registrations waiting more than 48 hours", "The queue tells
+// which businesses have unattended reports", "The queue has a visible entry
+// to the listing, and the listing returns to the queue" and "The panel
+// filters by locality, and the filter is hidden while there is one (v2)").
+//
+// "Registros por revisar", oldest first: each row says in words what it is
+// ("Alta nueva" or "Edición"), its name, its zone, how long it has waited,
+// "Ya estaba publicada, la despublicaste" and "Lleva más de 48 horas" when
+// they apply, and "Revisar", to the detail of the card or of the edit. Above
+// the rows, how many wait past the goal. Below, "Negocios reportados", only
+// while a card has unattended reports. The page decides what the user may
+// see (src/core/review/scope.ts) and passes only that. Each row is one link
+// stretched over it, at least 44px tall. No client JavaScript.
+import type { QueueRow, ReportedBusiness } from "../../core/review/queue.ts";
+import { editPath, registrationPath } from "../../core/review/paths.ts";
+import { waitText } from "../../core/review/time.ts";
+import {
+  EDIT_TAG,
+  NEW_REGISTRATION_TAG,
+  OVERDUE_TAG,
+  overdueCountText,
+  pendingReportsText,
+  QUEUE_EMPTY,
+  QUEUE_HEADING,
+  REPORTED_HEADING,
+  reportedCountText,
+  REVIEW_LINK,
+  SEE_ALL_BUSINESSES,
+  SEE_REPORTS,
+  UNPUBLISHED_TAG,
+} from "../../core/review/texts.ts";
+import FilterLinks from "./FilterLinks.astro";
+import PanelTag from "./PanelTag.astro";
+
+interface FilterOption {
+  text: string;
+  href: string;
+  current: boolean;
+}
+
+interface Props {
+  /** "Registros por revisar", oldest first, each zone with its display name. */
+  rows: readonly QueueRow[];
+  /** "Negocios reportados", the oldest unattended report first. */
+  reported: readonly ReportedBusiness[];
+  /** The moment the queue is read at, the clock of every wait. */
+  now: Date;
+  /** The options of the locality filter; none hides it. */
+  localityFilter: readonly FilterOption[];
+  /** The label of the filter. */
+  localityFilterLabel: string;
+  /** The name of each locality, by code, while the rows of several are shown; null otherwise. */
+  localityNames: ReadonlyMap<string, string> | null;
+  /** "Ver todos los negocios", when the user may open the list. */
+  listHref: string | null;
+}
+
+const { rows, reported, now, localityFilter, localityFilterLabel, localityNames, listHref } =
+  Astro.props;
+const overdue = rows.filter((row) => row.overdue).length;
+const rowClass = "relative flex flex-col gap-1.5 rounded-xl border border-line bg-background p-4";
+const entryClass =
+  "inline-flex min-h-11 w-fit items-center font-semibold text-action-strong underline underline-offset-4 after:absolute after:inset-0";
+---
+
+<section class="flex flex-col gap-6">
+  <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{QUEUE_HEADING}</h1>
+
+  {listHref && (
+    <a
+      href={listHref}
+      class="inline-flex min-h-11 w-fit items-center font-semibold text-action-strong underline underline-offset-4"
+    >
+      {SEE_ALL_BUSINESSES}
+    </a>
+  )}
+
+  {localityFilter.length > 0 && (
+    <FilterLinks label={localityFilterLabel} options={localityFilter} />
+  )}
+
+  {overdue > 0 && (
+    <p class="font-semibold text-ink" data-testid="overdue-count">
+      {overdueCountText(overdue)}
+    </p>
+  )}
+
+  {rows.length === 0 ? (
+    <p class="text-ink-muted">{QUEUE_EMPTY}</p>
+  ) : (
+    <ul class="flex flex-col gap-3" data-testid="queue">
+      {rows.map((row) => (
+        <li>
+          <article class={rowClass}>
+            <h2 class="font-semibold break-words text-ink">{row.name}</h2>
+            {row.zoneName && <p class="text-sm break-words text-ink-muted">{row.zoneName}</p>}
+            {localityNames && (
+              <p class="text-sm text-ink-muted">{localityNames.get(row.localityCode)}</p>
+            )}
+            <p class="text-sm text-ink-muted">{waitText(row.since, now)}</p>
+            <div class="flex flex-wrap gap-2">
+              <PanelTag text={row.kind === "edit" ? EDIT_TAG : NEW_REGISTRATION_TAG} />
+              {row.unpublished && <PanelTag text={UNPUBLISHED_TAG} />}
+              {row.overdue && <PanelTag text={OVERDUE_TAG} strong icon="⏰" />}
+            </div>
+            <a
+              href={
+                row.kind === "edit" && row.editId !== null
+                  ? editPath(row.editId)
+                  : registrationPath(row.businessId)
+              }
+              aria-label={`${REVIEW_LINK}: ${row.name}`}
+              class={entryClass}
+            >
+              {REVIEW_LINK}
+            </a>
+          </article>
+        </li>
+      ))}
+    </ul>
+  )}
+
+  {reported.length > 0 && (
+    <section class="flex flex-col gap-3" aria-labelledby="reported-heading">
+      <h2 id="reported-heading" class="text-lg font-bold tracking-tight text-ink">
+        {REPORTED_HEADING}
+      </h2>
+      <p class="font-semibold text-ink">{reportedCountText(reported.length)}</p>
+      <ul class="flex flex-col gap-3" data-testid="reported">
+        {reported.map((business) => (
+          <li>
+            <article class={rowClass}>
+              <h3 class="font-semibold break-words text-ink">{business.name}</h3>
+              {localityNames && (
+                <p class="text-sm text-ink-muted">{localityNames.get(business.localityCode)}</p>
+              )}
+              <p class="text-sm text-ink-muted">{pendingReportsText(business.pending)}</p>
+              <a
+                href={registrationPath(business.businessId)}
+                aria-label={`${SEE_REPORTS}: ${business.name}`}
+                class={entryClass}
+              >
+                {SEE_REPORTS}
+              </a>
+            </article>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
+</section>

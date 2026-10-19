@@ -1,0 +1,161 @@
+---
+// The detail of a pending edit, read-only (docs/specs/admin-review.md, "The
+// pending edit detail compares what is published with what is proposed", "A
+// pending edit is resolved only once and only if it is still the latest" and
+// "The detail of a pending edit shows the photo it proposes (v2)").
+//
+// "Cambios por revisar" and the card's name, then every field of the form,
+// one under the other so a 390px phone never scrolls sideways: "Lo que está
+// publicado" and "Lo que quiere cambiar", with "Cambió" in words next to each
+// field whose text differs, and the photo last: the card's own and the one
+// the edit proposes (the same one, "Sin foto", or the new photo). A new
+// WhatsApp is warned about, and "Escribirle por WhatsApp" opens the
+// conversation with the proposed number. An edit no longer pending says
+// what happened to it. The actions F4 adds (apply and discard) go after all
+// of it. No client JavaScript.
+import type { ComparedField, EditDetail } from "../../core/review/edit.ts";
+import { changesWhatsapp } from "../../core/review/edit.ts";
+import { isPhotoKey } from "../../core/photos/photo.ts";
+import {
+  BACK_TO_QUEUE,
+  CHANGED_TAG,
+  EDIT_ALREADY_RESOLVED,
+  EDIT_HEADING,
+  EDIT_SUPERSEDED,
+  NEW_PHOTO,
+  NO_PHOTO,
+  PHOTO_LABEL,
+  PROPOSED_COLUMN,
+  PUBLISHED_COLUMN,
+  WHATSAPP_CHANGE_WARNING,
+} from "../../core/review/texts.ts";
+import PanelPhoto from "./PanelPhoto.astro";
+import PanelTag from "./PanelTag.astro";
+import VerifyButton from "./VerifyButton.astro";
+
+interface Props {
+  detail: EditDetail;
+  /** The fields of the form, published against proposed. */
+  fields: readonly ComparedField[];
+  /** "Volver a la cola", when the user may open the queue. */
+  queueHref: string | null;
+}
+
+const { detail, fields, queueHref } = Astro.props;
+const name = detail.published.name;
+const pending = detail.status === "pending";
+const notice =
+  detail.status === "superseded"
+    ? EDIT_SUPERSEDED
+    : detail.status === "pending"
+      ? null
+      : EDIT_ALREADY_RESOLVED;
+const cardHasPhoto = isPhotoKey(detail.publishedPhotoKey);
+// What the edit asks of the photo, as the admin reads it. The new photo of a
+// `replace` is shown while the edit waits; once resolved it is the card's or
+// it is gone, and the edit only says it brought one.
+const photoChanged =
+  detail.photoChange === "replace" || (detail.photoChange === "remove" && cardHasPhoto);
+const proposedPhotoKey =
+  detail.photoChange === "keep"
+    ? detail.publishedPhotoKey
+    : detail.photoChange === "replace" && pending
+      ? detail.newPhotoKey
+      : null;
+const column = "flex min-w-0 flex-col gap-0.5";
+---
+
+<article class="flex flex-col gap-8">
+  {queueHref && (
+    <a
+      href={queueHref}
+      class="inline-flex min-h-11 w-fit items-center font-semibold text-action-strong underline underline-offset-4"
+    >
+      {BACK_TO_QUEUE}
+    </a>
+  )}
+
+  {notice && (
+    <p role="status" class="rounded-xl border-2 border-ink p-4 font-semibold text-ink">
+      {notice}
+    </p>
+  )}
+
+  <div class="flex flex-col gap-1">
+    <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{EDIT_HEADING}</h1>
+    <p class="break-words text-ink-muted">{name}</p>
+  </div>
+
+  <div class="flex flex-col" data-testid="comparison">
+    {fields.map((field) => (
+      <section class="flex min-w-0 flex-col gap-2 border-b border-line py-3" data-field={field.key}>
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-sm font-semibold text-ink">{field.label}</h2>
+          {field.changed && <PanelTag text={CHANGED_TAG} strong />}
+        </div>
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div class={column}>
+            <p class="text-xs font-semibold text-ink-muted">{PUBLISHED_COLUMN}</p>
+            <p class="break-words text-ink-muted">{field.published}</p>
+          </div>
+          <div class={column}>
+            <p class="text-xs font-semibold text-ink-muted">{PROPOSED_COLUMN}</p>
+            <p
+              class:list={[
+                "break-words",
+                field.changed ? "font-semibold text-ink" : "text-ink-muted",
+              ]}
+            >
+              {field.proposed}
+            </p>
+          </div>
+        </div>
+      </section>
+    ))}
+    <section class="flex min-w-0 flex-col gap-2 py-3" data-field="photo">
+      <div class="flex flex-wrap items-center gap-2">
+        <h2 class="text-sm font-semibold text-ink">{PHOTO_LABEL}</h2>
+        {photoChanged && <PanelTag text={CHANGED_TAG} strong />}
+      </div>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class={column}>
+          <p class="text-xs font-semibold text-ink-muted">{PUBLISHED_COLUMN}</p>
+          <PanelPhoto photoKey={detail.publishedPhotoKey} alt={`Foto publicada de ${name}`} />
+        </div>
+        <div class={column}>
+          <p class="text-xs font-semibold text-ink-muted">{PROPOSED_COLUMN}</p>
+          {detail.photoChange === "replace" && !pending ? (
+            <p class="font-semibold text-ink">{NEW_PHOTO}</p>
+          ) : detail.photoChange === "remove" ? (
+            <p class:list={["italic", photoChanged ? "font-semibold text-ink" : "text-ink-muted"]}>
+              {NO_PHOTO}
+            </p>
+          ) : (
+            <PanelPhoto
+              photoKey={proposedPhotoKey}
+              alt={
+                detail.photoChange === "replace"
+                  ? `Foto nueva de ${name}`
+                  : `Foto publicada de ${name}`
+              }
+            />
+          )}
+        </div>
+      </div>
+    </section>
+  </div>
+
+  {changesWhatsapp(detail) && (
+    <div class="flex flex-col gap-3 rounded-xl border-2 border-ink p-4">
+      <p class="font-semibold text-ink">
+        <span aria-hidden="true">⚠ </span>
+        {WHATSAPP_CHANGE_WARNING}
+      </p>
+      <VerifyButton
+        whatsapp={detail.proposed.whatsapp}
+        businessName={name}
+        localityName={detail.localityName}
+      />
+    </div>
+  )}
+</article>

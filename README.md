@@ -46,13 +46,36 @@ The dev server, the build and the preview run Astro in workerd, the Workers runt
 
 ### Admin panel
 
-`/admin` is protected by Cloudflare Access ([ADR 0010](docs/adr/0010-admin-access-with-cloudflare-access.md)), and the Worker verifies the Access token on every request. Locally it opens without signing in, as `admin@enmirumbo.test`, because `wrangler.jsonc` sets `ENVIRONMENT` to `local`; that identity works only on `localhost`. The Worker variables that configure it (all of them are in [Deployment](#deployment)):
+`/admin` is protected by Cloudflare Access ([ADR 0010](docs/adr/0010-admin-access-with-cloudflare-access.md)), and the Worker verifies the Access token on every request. Locally it opens without signing in, as `admin@enmirumbo.test`, because `wrangler.jsonc` sets `ENVIRONMENT` to `local`; that identity works only on `localhost`. What a person may do in the panel comes from the database ([Panel users and roles](#panel-users-and-roles)), and the local identity is no exception: until it is a user with a role, `/admin` answers 403. To make it a super admin of the local database, once:
+
+```sh
+docker compose exec -T postgres psql -U enmirumbo enmirumbo <<'SQL'
+INSERT INTO users (email, name) VALUES ('admin@enmirumbo.test', 'Admin local') ON CONFLICT DO NOTHING;
+INSERT INTO role_assignments (user_id, role_id, role_scope)
+SELECT u.id, r.id, r.scope FROM users u, roles r
+WHERE u.email = 'admin@enmirumbo.test' AND r.key = 'super_admin'
+ON CONFLICT DO NOTHING;
+SQL
+```
+
+The end-to-end tests do the same in their own database (`test/e2e/local-admin.ts`). The Worker variables that configure Access (all of them are in [Deployment](#deployment)):
 
 | Variable             | What it is                                                                    |
 | -------------------- | ----------------------------------------------------------------------------- |
 | `ENVIRONMENT`        | `local`, `dev`, `stage` or `prod`. Any other value, or none, closes `/admin`. |
 | `ACCESS_TEAM_DOMAIN` | The Access team domain, `urekz.cloudflareaccess.com`.                         |
 | `ACCESS_AUD`         | The AUD tag of the `enmirumbo admin` Access application. Empty locally.       |
+
+The review screens ([admin-review](docs/specs/admin-review.md)) read through `HYPERDRIVE_FRESH` and show each person only the localities where a role lets them see each part (`src/core/review/scope.ts`): the "Alta nueva" rows need `businesses.review`, the "Edición" rows and the detail of an edit `edits.review`, the reported cards and their reports `reports.manage`, and the detail of a card, with its row in the list, any permission that acts on a card. A screen with nothing to show answers 403; a card of another locality answers 404. Every date is written in the time zone of the card's locality.
+
+| Address                 | Screen                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/admin`                | "Registros por revisar": the cards in review and the pending edits of published cards, one row per card, oldest first by when each entered the queue (its registration or resubmission, or its last unpublishing, the later; an edit, when it was sent), with "Lleva más de 48 horas" and their count; below, "Negocios reportados", the cards with unattended reports. |
+| `/admin/negocios`       | "Todos los negocios": every card, most recently registered first, 25 a page ("Página n de m", "Ver más antiguos", "Ver más nuevos"), with a status filter (`?estado=en-revision`, `publicados`, `rechazados`) and a search by name or WhatsApp (`?q=`), all links or a GET form. Its rows show only name, zone, registration date and status.                           |
+| `/admin/registros/<id>` | The detail of a card: everything it captured, its photo, its status, origin, dates, consent record, unpublishing trace and since when it has a management link, its unattended reports and "Escribirle por WhatsApp".                                                                                                                                                   |
+| `/admin/ediciones/<n>`  | The detail of a pending edit: what is published against what the owner sent, field by field, with "Cambió", the photo it proposes and, when it changes the WhatsApp, the warning and the button to the new number.                                                                                                                                                      |
+
+The screens are read-only for now: approving, rejecting, unpublishing, deleting, regenerating a link and resolving an edit arrive with the next stories of epic F, after what the details show. With two or more active localities the queue and the list offer "Filtrar por municipio" (`?localidad=<INEGI code>`). The panel shows any photo it reviews, a card in review included, from the media hostname at the address of its key (`panelPhoto`, `src/lib/media.ts`); only the panel names such a key.
 
 To run the scheduled handler while `vp run dev` is running:
 

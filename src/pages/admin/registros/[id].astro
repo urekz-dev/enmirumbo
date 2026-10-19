@@ -1,0 +1,67 @@
+---
+// The detail of a card, at /admin/registros/<id> (docs/specs/admin-review.md,
+// "Registration detail with all the captured data, only inside the panel",
+// "The business detail lists its unattended reports", "Verification button
+// that opens WhatsApp with a prefilled message", "Dates in the panel use the
+// time zone of the locality (v2)", "The panel shows the photos it reviews
+// from the media hostname (v2)" and "Each review screen checks its
+// permission in the locality of what it shows (v2)"). Read-only for now: the
+// actions of F2, F3 and F4 add their forms after what it shows.
+//
+// Behind the same Access check, headers and layout rules as the rest of the
+// panel (see src/pages/admin/index.astro). Then:
+//
+// 1. A user who may open no card anywhere, or who is not a panel user, gets
+//    the panel's 403 before the card is read.
+// 2. The card is read by its identifier. One that does not exist, and one of
+//    a locality where the user holds no permission that opens a card's
+//    detail, answer the same 404, the site's 404 page, suggesting nothing.
+// 3. Its unattended reports are read and shown only for a user who attends
+//    reports in its locality.
+import { env, waitUntil } from "cloudflare:workers";
+import RegistrationDetail from "../../../components/admin/RegistrationDetail.astro";
+import { permissionsOf } from "../../../core/access/queries.ts";
+import { withDb } from "../../../core/db/client.ts";
+import { panelLocalities, zoneNamesByLocality, zoneText } from "../../../core/review/localities.ts";
+import { queuePath } from "../../../core/review/paths.ts";
+import { pendingReports, registrationDetail } from "../../../core/review/registration.ts";
+import { opensCard, panelScope, queueLocalities } from "../../../core/review/scope.ts";
+import { REGISTRATION_TITLE } from "../../../core/review/texts.ts";
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../../lib/access/admin-gate.ts";
+import { notFound } from "../../../lib/locality.ts";
+
+const admin = Astro.locals.admin;
+// Second line of defense: never render the panel without an identity.
+if (admin === undefined) return forbiddenResponse();
+
+const now = new Date();
+const result = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  const scope = await panelScope(db, admin.email);
+  if (scope.cards.length === 0) return "forbidden" as const;
+  const detail = await registrationDetail(db, Astro.params.id ?? "");
+  if (detail === null) return "not-found" as const;
+  const granted = await permissionsOf(db, admin.email, detail.localityCode);
+  if (!opensCard(granted)) return "not-found" as const;
+  const reports = granted.has("reports.manage") ? await pendingReports(db, detail.id) : null;
+  const [locality] = await panelLocalities(db, [detail.localityCode]);
+  const names = locality
+    ? (await zoneNamesByLocality(db, [locality])).get(locality.code)
+    : undefined;
+  return { scope, detail, reports, zone: zoneText(detail, names) };
+});
+if (result === "forbidden") return forbiddenResponse();
+if (result === "not-found") return notFound();
+
+const { scope, detail, reports, zone } = result;
+---
+
+<BaseLayout title={REGISTRATION_TITLE}>
+  <RegistrationDetail
+    detail={detail}
+    zone={zone}
+    reports={reports}
+    now={now}
+    queueHref={queueLocalities(scope).length > 0 ? queuePath() : null}
+  />
+</BaseLayout>

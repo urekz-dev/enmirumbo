@@ -1,0 +1,162 @@
+---
+// The detail of a card in the panel, read-only (docs/specs/admin-review.md,
+// "Registration detail with all the captured data, only inside the panel",
+// "The business detail lists its unattended reports", "Verification button
+// that opens WhatsApp with a prefilled message", "Approving a registration
+// generates its management link, unique and unrepeatable", "Dates in the
+// panel use the time zone of the locality (v2)" and "The panel shows the
+// photos it reviews from the media hostname (v2)").
+//
+// In this order: the name and category; "Foto del negocio", large enough to
+// judge it, or "Sin foto"; everything the business captured, "No capturado"
+// for what it left blank; the internal data (status, origin, dates, the
+// consent record with its version or "versión no registrada", the
+// re-acceptance, the rejection, "Cuándo la despublicaste" and "Por qué la
+// despublicaste" only when it was unpublished, and since when it has a
+// management link, never the link); "Reportes sin atender", only with some
+// and only for who attends reports; and "Escribirle por WhatsApp". The
+// actions that F2, F3 and F4 add go after all of it, so the admin reads
+// before acting. Every date is in the time zone of the card's locality. No
+// client JavaScript.
+import type { PendingReport, RegistrationDetail } from "../../core/review/registration.ts";
+import { panelDate, panelDateTime, waitText } from "../../core/review/time.ts";
+import {
+  BACK_TO_QUEUE,
+  consentText,
+  FIELD_LABELS,
+  INTERNAL_DATA_HEADING,
+  managementLinkText,
+  ORIGIN_TEXT,
+  PENDING_REPORTS_HEADING,
+  PHOTO_LABEL,
+  reconsentLabel,
+  STATUS_TEXT,
+  UNPUBLISH_REASON_LABEL,
+  UNPUBLISHED_AT_LABEL,
+  yesNo,
+} from "../../core/review/texts.ts";
+import { REPORT_REASON_LABELS } from "../../core/report/submission.ts";
+import DataRow from "./DataRow.astro";
+import PanelPhoto from "./PanelPhoto.astro";
+import VerifyButton from "./VerifyButton.astro";
+
+interface Props {
+  detail: RegistrationDetail;
+  /** The zone as the admin reads it: its display name, or the free text of "Otra" marked as such. */
+  zone: string | null;
+  /** Its unattended reports, oldest first; null when the user does not attend reports. */
+  reports: readonly PendingReport[] | null;
+  /** The clock of the reports' waits. */
+  now: Date;
+  /** "Volver a la cola", when the user may open the queue. */
+  queueHref: string | null;
+}
+
+const { detail, zone, reports, now, queueHref } = Astro.props;
+const at = (date: Date) => panelDateTime(date, detail.timeZone);
+---
+
+<article class="flex flex-col gap-8">
+  {queueHref && (
+    <a
+      href={queueHref}
+      class="inline-flex min-h-11 w-fit items-center font-semibold text-action-strong underline underline-offset-4"
+    >
+      {BACK_TO_QUEUE}
+    </a>
+  )}
+
+  <div class="flex flex-col gap-1">
+    <h1 class="text-2xl font-bold tracking-tight break-words sm:text-3xl">{detail.name}</h1>
+    <p class="text-ink-muted">{detail.categoryName}</p>
+  </div>
+
+  <div class="flex flex-col gap-1.5">
+    <p class="text-sm font-semibold text-ink">{PHOTO_LABEL}</p>
+    <PanelPhoto photoKey={detail.photoKey} alt={`Foto de ${detail.name}`} />
+  </div>
+
+  <dl class="flex flex-col">
+    <DataRow label={FIELD_LABELS.whatsapp} value={detail.whatsapp} />
+    <DataRow label={FIELD_LABELS.zone} value={zone} />
+    <DataRow label={FIELD_LABELS.whatYouOffer} value={detail.whatYouOffer} />
+    <DataRow label={FIELD_LABELS.homeDelivery} value={yesNo(detail.homeDelivery)} />
+    <DataRow label={FIELD_LABELS.landline} value={detail.landline} />
+    <DataRow label={FIELD_LABELS.address} value={detail.address} />
+    <DataRow label={FIELD_LABELS.openingHours} value={detail.openingHours} />
+    <DataRow label={FIELD_LABELS.facebookUrl} value={detail.facebookUrl} />
+  </dl>
+
+  <section
+    class="flex flex-col gap-1 rounded-lg border border-line bg-surface p-4"
+    aria-labelledby="internal-data"
+  >
+    <h2 id="internal-data" class="text-sm font-semibold text-ink">
+      {INTERNAL_DATA_HEADING}
+    </h2>
+    <dl class="flex flex-col">
+      <DataRow label={FIELD_LABELS.status} value={STATUS_TEXT[detail.status]} />
+      <DataRow label={FIELD_LABELS.origin} value={ORIGIN_TEXT[detail.origin]} />
+      <DataRow label={FIELD_LABELS.registeredAt} value={at(detail.registeredAt)} />
+      <DataRow
+        label={FIELD_LABELS.consent}
+        value={consentText(
+          panelDate(detail.consentedToNoticeAt, detail.timeZone),
+          detail.consentedToNoticeVersion,
+        )}
+      />
+      {detail.reconsentedToNoticeAt && detail.reconsentedToNoticeVersion && (
+        <DataRow
+          label={reconsentLabel(detail.reconsentedToNoticeVersion)}
+          value={panelDate(detail.reconsentedToNoticeAt, detail.timeZone)}
+        />
+      )}
+      {detail.publishedAt && (
+        <DataRow label={FIELD_LABELS.publishedAt} value={at(detail.publishedAt)} />
+      )}
+      {detail.rejectedAt && (
+        <DataRow label={FIELD_LABELS.rejectedAt} value={at(detail.rejectedAt)} />
+      )}
+      {detail.rejectionReason && (
+        <DataRow label={FIELD_LABELS.rejectionReason} value={detail.rejectionReason} />
+      )}
+      {detail.unpublishedAt && (
+        <DataRow label={UNPUBLISHED_AT_LABEL} value={at(detail.unpublishedAt)} />
+      )}
+      {detail.unpublishReason && (
+        <DataRow label={UNPUBLISH_REASON_LABEL} value={detail.unpublishReason} />
+      )}
+    </dl>
+    {detail.managementLinkCreatedAt && (
+      <p class="text-sm text-ink-muted">{managementLinkText(at(detail.managementLinkCreatedAt))}</p>
+    )}
+  </section>
+
+  {reports && reports.length > 0 && (
+    <section
+      class="flex flex-col gap-4 rounded-xl border border-line p-4"
+      aria-labelledby="pending-reports"
+    >
+      <h2 id="pending-reports" class="font-semibold text-ink">
+        {PENDING_REPORTS_HEADING}
+      </h2>
+      <ul class="flex flex-col gap-4" data-testid="pending-reports">
+        {reports.map((report) => (
+          <li class="flex min-w-0 flex-col gap-1 border-b border-line pb-4 last:border-0 last:pb-0">
+            <p class="font-semibold text-ink">{REPORT_REASON_LABELS[report.reason]}</p>
+            <p class="text-sm text-ink-muted">{waitText(report.createdAt, now)}</p>
+            {report.comment !== null && (
+              <p class="break-words whitespace-pre-line text-ink-muted">{report.comment}</p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
+
+  <VerifyButton
+    whatsapp={detail.whatsapp}
+    businessName={detail.name}
+    localityName={detail.localityName}
+  />
+</article>

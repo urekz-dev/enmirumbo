@@ -1,0 +1,57 @@
+---
+// The detail of a pending edit, at /admin/ediciones/<id>, the number of the
+// edit (docs/specs/admin-review.md, "The pending edit detail compares what is
+// published with what is proposed", "A pending edit is resolved only once and
+// only if it is still the latest", "The detail of a pending edit shows the
+// photo it proposes (v2)" and "Each review screen checks its permission in
+// the locality of what it shows (v2)"). Read-only for now: F4 adds apply and
+// discard after what it shows.
+//
+// Behind the same Access check, headers and layout rules as the rest of the
+// panel (see src/pages/admin/index.astro). A user who resolves edits nowhere,
+// or who is not a panel user, gets the panel's 403 before the edit is read;
+// an edit that does not exist, and an edit of a card of a locality where the
+// user may not resolve edits (`edits.review`), answer the same 404.
+import { env, waitUntil } from "cloudflare:workers";
+import EditDetail from "../../../components/admin/EditDetail.astro";
+import { can } from "../../../core/access/queries.ts";
+import { withDb } from "../../../core/db/client.ts";
+import { comparedFields, editDetail, parseEditId } from "../../../core/review/edit.ts";
+import { panelLocalities, zoneNamesByLocality } from "../../../core/review/localities.ts";
+import { queuePath } from "../../../core/review/paths.ts";
+import { panelScope, queueLocalities } from "../../../core/review/scope.ts";
+import { EDIT_HEADING } from "../../../core/review/texts.ts";
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../../lib/access/admin-gate.ts";
+import { notFound } from "../../../lib/locality.ts";
+
+const admin = Astro.locals.admin;
+// Second line of defense: never render the panel without an identity.
+if (admin === undefined) return forbiddenResponse();
+
+const result = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  const scope = await panelScope(db, admin.email);
+  if (scope.edits.length === 0) return "forbidden" as const;
+  const id = parseEditId(Astro.params.id);
+  const detail = id === null ? null : await editDetail(db, id);
+  if (detail === null) return "not-found" as const;
+  if (!(await can(db, admin.email, "edits.review", detail.localityCode))) {
+    return "not-found" as const;
+  }
+  const seen = await panelLocalities(db, [detail.localityCode]);
+  const names = (await zoneNamesByLocality(db, seen)).get(detail.localityCode);
+  return { scope, detail, fields: comparedFields(detail, names) };
+});
+if (result === "forbidden") return forbiddenResponse();
+if (result === "not-found") return notFound();
+
+const { scope, detail, fields } = result;
+---
+
+<BaseLayout title={EDIT_HEADING}>
+  <EditDetail
+    detail={detail}
+    fields={fields}
+    queueHref={queueLocalities(scope).length > 0 ? queuePath() : null}
+  />
+</BaseLayout>
