@@ -8,7 +8,12 @@
 //                               its decisions are posted
 //   /admin/registros/<id>/rechazado
 //                               the confirmation of a rejection
-//   /admin/ediciones/<id>       the detail of a pending edit, by its number
+//   /admin/ediciones/<id>       the detail of a pending edit, by its number,
+//                               where its resolutions are posted
+//   /admin/ediciones/<id>/aplicada
+//                               the confirmation of an applied edit
+//   /admin/ediciones/<id>/descartada
+//                               the confirmation of a discarded edit
 //
 // The queue and the list carry their filters in the query: `localidad` (the
 // INEGI code of a locality, only while the locality filter is shown),
@@ -29,8 +34,18 @@ export function rejectedPath(businessId: string): string {
 }
 
 /** The detail of a pending edit. */
-export function editPath(editId: number): string {
-  return `/admin/ediciones/${editId}`;
+export function editPath(editId: number | string): string {
+  return `/admin/ediciones/${encodeURIComponent(editId)}`;
+}
+
+/** The confirmation of an applied edit, which an apply answers with a 303. */
+export function appliedPath(editId: number | string): string {
+  return `${editPath(editId)}/aplicada`;
+}
+
+/** The confirmation of a discarded edit, which a discard answers with a 303. */
+export function discardedPath(editId: number | string): string {
+  return `${editPath(editId)}/descartada`;
 }
 
 /** The status filter of the list: "Todos" or one status. */

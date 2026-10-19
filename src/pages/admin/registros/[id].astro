@@ -10,15 +10,16 @@
 // trades, normalizes the zone, marks the origin and publishes the card", "On
 // approving, an offer is made to notify the business by WhatsApp with its
 // card link and its management link", "Rejecting requires a reason, stores it
-// with its date and offers to notify by WhatsApp" and "A transition is only
-// applied to a registration that is still in review"). The actions of F3 and
-// F4 add their forms after these.
+// with its date and offers to notify by WhatsApp", "A transition is only
+// applied to a registration that is still in review" and "Marking a report
+// as attended, only once"). The actions of F3 add their forms after these.
 //
 // Behind the same Access check, headers and layout rules as the rest of the
 // panel (see src/pages/admin/index.astro). The forms of a card in review
 // post here with the actions `admin.approve` and `admin.reject`
 // (src/actions/index.ts), which Astro runs before this page
-// (src/lib/review.ts). Then:
+// (src/lib/review.ts), and so does "Marcar como atendido" of each pending
+// report, with `admin.attendReport` (src/lib/report-review.ts). Then:
 //
 // 1. An approval answers here, in this one answer to its POST, with its
 //    confirmation: the notice that carries the management link. It is never
@@ -29,15 +30,22 @@
 //    reason, so a reload never sends it again.
 // 3. A card already resolved shows "Este registro ya lo habías resuelto." A
 //    card that does not exist, or that the user may not see, is the site's
-//    404; one the user sees but may not decide on, the panel's 403.
-// 4. Anything else renders the detail, as a GET does: a user who may open no
+//    404; one the user sees but may not decide on, the panel's 403. A
+//    marking of a report that does not exist or is of another card is the
+//    same 404; one whose card's reports the user may not attend, the 403.
+// 4. A marking answers here with the detail, as a GET renders it, and its
+//    notice: "Reporte atendido.", or "Este reporte ya lo habías atendido."
+//    (409) for a report attended before, which is what sending it again by
+//    reloading finds. No other answer paints either.
+// 5. Anything else renders the detail, as a GET does: a user who may open no
 //    card anywhere gets the 403 before the card is read; a card that does
 //    not exist, or of a locality where the user holds no permission that
 //    opens a card's detail, answers the same 404; its unattended reports
 //    only for who attends reports in its locality; and the approval and
 //    rejection forms only for a card in review and a user with
 //    `businesses.review` in its locality, again with what the admin sent and
-//    its errors after a failed decision. Any other POST is a 405.
+//    its errors after a failed decision; each unattended report has its
+//    "Marcar como atendido". Any other POST is a 405.
 import { actions } from "astro:actions";
 import { env, waitUntil } from "cloudflare:workers";
 import ApprovalConfirmation from "../../../components/admin/ApprovalConfirmation.astro";
@@ -58,11 +66,14 @@ import {
   ALREADY_RESOLVED,
   APPROVED,
   REGISTRATION_TITLE,
+  REPORT_ALREADY_ATTENDED,
+  REPORT_ATTENDED,
   SAVE_FAILED,
 } from "../../../core/review/texts.ts";
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { forbiddenResponse } from "../../../lib/access/admin-gate.ts";
 import { notFound, seeOther } from "../../../lib/locality.ts";
+import { attendFailure } from "../../../lib/report-review.ts";
 import { decisionFailure } from "../../../lib/review.ts";
 
 const admin = Astro.locals.admin;
@@ -72,8 +83,9 @@ if (admin === undefined) return forbiddenResponse();
 const id = Astro.params.id ?? "";
 const approval = Astro.getActionResult(actions.admin.approve);
 const rejection = Astro.getActionResult(actions.admin.reject);
+const attend = Astro.getActionResult(actions.admin.attendReport);
 if (rejection !== undefined && !rejection.error) return seeOther(rejectedPath(id));
-if (approval === undefined && rejection === undefined) {
+if (approval === undefined && rejection === undefined && attend === undefined) {
   if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
     return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
   }
@@ -87,6 +99,19 @@ const failure = approval?.error
     : null;
 if (failure?.kind === "not-found") return notFound();
 if (failure?.kind === "forbidden") return forbiddenResponse();
+
+// A marking of a report: its notice, painted by the detail below.
+const attendFail = attend?.error ? attendFailure(attend.error) : null;
+if (attendFail?.kind === "not-found") return notFound();
+if (attendFail?.kind === "forbidden") return forbiddenResponse();
+const reportNotice =
+  attend === undefined
+    ? null
+    : attendFail === null
+      ? REPORT_ATTENDED
+      : attendFail.kind === "already-attended"
+        ? REPORT_ALREADY_ATTENDED
+        : SAVE_FAILED;
 
 // Only a user who may decide on a card in review reaches a decision's
 // answer, and that permission always opens the queue.
@@ -147,6 +172,9 @@ const reason =
       reports={result.reports}
       now={now}
       queueHref={queueLocalities(result.scope).length > 0 ? queuePath() : null}
+      attendAction={result.reports !== null ? actions.admin.attendReport.queryString : null}
+      reportNotice={reportNotice}
+      reportAlert={attendFail?.kind === "server"}
     >
       {failure?.kind === "server" && (
         <p role="alert" class="font-semibold text-ink">

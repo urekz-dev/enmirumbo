@@ -15,13 +15,19 @@
 // despublicaste" only when it was unpublished, "La rechazaste antes por: …"
 // and its date only when a resubmission answered a rejection, and since when
 // it has a management link, never the link); "Reportes sin atender", only
-// with some and only for who attends reports; and "Escribirle por WhatsApp".
-// The actions the page offers (its default slot) go after all of it, so the
-// admin reads before acting. Every date is in the time zone of the card's
-// locality. No client JavaScript.
+// with some and only for who attends reports, each with its "Marcar como
+// atendido" (docs/specs/admin-review.md, "Marking a report as attended, only
+// once"), a form posted to the detail; and "Escribirle por WhatsApp". The
+// notice of a marking ("Reporte atendido." or "Este reporte ya lo habías
+// atendido.") goes where the section is, and stays when the section went
+// away with the last report; the form's address carries its id as the
+// fragment, so the answer opens on it. The actions the page offers (its
+// default slot) go after all of it, so the admin reads before acting. Every
+// date is in the time zone of the card's locality. No client JavaScript.
 import type { PendingReport, RegistrationDetail } from "../../core/review/registration.ts";
 import { panelDate, panelDateTime, waitText } from "../../core/review/time.ts";
 import {
+  ATTEND_BUTTON,
   BACK_TO_QUEUE,
   consentText,
   FIELD_LABELS,
@@ -39,6 +45,8 @@ import {
   yesNo,
 } from "../../core/review/texts.ts";
 import { REPORT_REASON_LABELS } from "../../core/report/submission.ts";
+import { REPORT_FIELD } from "../../core/review/attend.ts";
+import { SECONDARY_BUTTON } from "../../lib/buttons.ts";
 import DataRow from "./DataRow.astro";
 import PanelPhoto from "./PanelPhoto.astro";
 import VerifyButton from "./VerifyButton.astro";
@@ -53,10 +61,30 @@ interface Props {
   now: Date;
   /** "Volver a la cola", when the user may open the queue. */
   queueHref: string | null;
+  /**
+   * The address "Marcar como atendido" posts to: the detail with the action
+   * `admin.attendReport`. Null shows the reports without it.
+   */
+  attendAction?: string | null;
+  /** The notice of the marking this page answers; null on any other answer. */
+  reportNotice?: string | null;
+  /** The notice says the marking could not be saved: an alert, not a status. */
+  reportAlert?: boolean;
 }
 
-const { detail, zone, reports, now, queueHref } = Astro.props;
+const {
+  detail,
+  zone,
+  reports,
+  now,
+  queueHref,
+  attendAction = null,
+  reportNotice = null,
+  reportAlert = false,
+} = Astro.props;
 const at = (date: Date) => panelDateTime(date, detail.timeZone);
+/** Where the notice of a marking is, which the answer to a marking opens on. */
+const REPORT_NOTICE_ID = "report-notice";
 ---
 
 <article class="flex flex-col gap-8">
@@ -143,6 +171,17 @@ const at = (date: Date) => panelDateTime(date, detail.timeZone);
     )}
   </section>
 
+  {reportNotice && (
+    <p
+      id={REPORT_NOTICE_ID}
+      role={reportAlert ? "alert" : "status"}
+      class="rounded-xl border-2 border-ink p-4 font-semibold text-ink"
+    >
+      {reportAlert && <span aria-hidden="true">⚠ </span>}
+      {reportNotice}
+    </p>
+  )}
+
   {reports && reports.length > 0 && (
     <section
       class="flex flex-col gap-4 rounded-xl border border-line p-4"
@@ -154,10 +193,29 @@ const at = (date: Date) => panelDateTime(date, detail.timeZone);
       <ul class="flex flex-col gap-4" data-testid="pending-reports">
         {reports.map((report) => (
           <li class="flex min-w-0 flex-col gap-1 border-b border-line pb-4 last:border-0 last:pb-0">
-            <p class="font-semibold text-ink">{REPORT_REASON_LABELS[report.reason]}</p>
+            <p id={`report-${report.id}`} class="font-semibold text-ink">
+              {REPORT_REASON_LABELS[report.reason]}
+            </p>
             <p class="text-sm text-ink-muted">{waitText(report.createdAt, now)}</p>
             {report.comment !== null && (
               <p class="break-words whitespace-pre-line text-ink-muted">{report.comment}</p>
+            )}
+            {attendAction && (
+              <form
+                method="post"
+                action={`${attendAction}#${REPORT_NOTICE_ID}`}
+                class="pt-2"
+                data-testid="attend-report"
+              >
+                <input type="hidden" name={REPORT_FIELD} value={String(report.id)} />
+                <button
+                  type="submit"
+                  aria-describedby={`report-${report.id}`}
+                  class={`${SECONDARY_BUTTON} w-full px-4 text-base sm:w-auto`}
+                >
+                  {ATTEND_BUTTON}
+                </button>
+              </form>
             )}
           </li>
         ))}

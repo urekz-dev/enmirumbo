@@ -9,9 +9,13 @@ import { env, waitUntil } from "cloudflare:workers";
 import { can } from "../core/access/queries.ts";
 import { type Db, withDb } from "../core/db/client.ts";
 import { submitEdit } from "../core/edit/submit.ts";
+import { deletePhoto } from "../core/photos/upload.ts";
 import { submitRegistration } from "../core/registration/submit.ts";
 import { submitReport } from "../core/report/submit.ts";
+import { submitApplyEdit } from "../core/review/apply.ts";
 import { submitApproval } from "../core/review/approval.ts";
+import { submitAttendReport } from "../core/review/attend.ts";
+import { submitDiscardEdit } from "../core/review/discard.ts";
 import { submitRejection } from "../core/review/rejection.ts";
 import {
   addZone,
@@ -21,9 +25,11 @@ import {
 } from "../core/zones/manage.ts";
 import { requireAdmin } from "../lib/access/require-admin.ts";
 import { editActionError, editTarget } from "../lib/edit.ts";
+import { applyActionError, discardActionError, editReviewTarget } from "../lib/edit-review.ts";
 import { takeQuota } from "../lib/quota/quota.ts";
 import { registrationActionError, registrationLocality } from "../lib/registration.ts";
 import { reportActionError, reportTarget } from "../lib/report.ts";
+import { attendActionError } from "../lib/report-review.ts";
 import {
   approvalActionError,
   approvalNotice,
@@ -135,7 +141,8 @@ export const server = {
   // verifies the request's own Access token, posts to a page under /admin
   // (Access adds its token only there) and checks its own permission in the
   // locality of what it touches (the decisions on a card in
-  // src/core/review/decision.ts, the zones with withZonesOf). Reads and
+  // src/core/review/decision.ts, the resolutions of a pending edit in
+  // src/core/review/edit-decision.ts, the zones with withZonesOf). Reads and
   // writes go through HYPERDRIVE_FRESH.
   admin: {
     // Approving a registration from its detail, /admin/registros/<id>
@@ -180,6 +187,81 @@ export const server = {
           { useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run) },
         );
         const error = rejectionActionError(outcome);
+        if (error !== null) throw error;
+      },
+    }),
+
+    // Marking a report of a card as attended from the card's detail,
+    // /admin/registros/<id> (docs/specs/admin-review.md, "Marking a report as
+    // attended, only once"): only while it is still pending and of that card
+    // (src/core/review/attend.ts), with `reports.manage` in its locality. The
+    // card is the one of the page's address (reviewTarget); the report, the
+    // one the form names. The page paints the detail again with its notice.
+    attendReport: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        const businessId = reviewTarget(context);
+        if (businessId === null) throw new ActionError({ code: "NOT_FOUND" });
+        const outcome = await submitAttendReport(
+          form,
+          { email: admin.email, businessId },
+          { useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run) },
+        );
+        const error = attendActionError(outcome);
+        if (error !== null) throw error;
+      },
+    }),
+
+    // Applying a pending edit from its detail, /admin/ediciones/<n>
+    // (docs/specs/admin-review.md, "Applying the pending edit updates the
+    // published card and only that"): the form's fields and what it asks of
+    // the photo, to the card, in one transaction only while the edit is still
+    // pending and the card published, the zone of an "Otra" normalized and
+    // the WhatsApp checked again (src/core/review/apply.ts), with
+    // `edits.review` in its locality. The edit is the one of the page's
+    // address (editReviewTarget). The photo the card no longer names is
+    // deleted once it is saved. The page then answers a 303 to its
+    // confirmation.
+    applyEdit: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        const editId = editReviewTarget(context);
+        if (editId === null) throw new ActionError({ code: "NOT_FOUND" });
+        const outcome = await submitApplyEdit(
+          form,
+          { email: admin.email, editId },
+          {
+            useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
+            deletePhoto: (photoKey) => deletePhoto(env.MEDIA, photoKey),
+          },
+        );
+        const error = applyActionError(outcome);
+        if (error !== null) throw error;
+      },
+    }),
+
+    // Discarding a pending edit from its detail, with a reason of up to 500
+    // characters that is never trimmed, only while the edit is still pending
+    // (src/core/review/discard.ts), with `edits.review` in its locality. The
+    // card does not change; the new photo the edit carried is deleted once
+    // it is discarded. The page then answers a 303 to its confirmation.
+    discardEdit: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        const editId = editReviewTarget(context);
+        if (editId === null) throw new ActionError({ code: "NOT_FOUND" });
+        const outcome = await submitDiscardEdit(
+          form,
+          { email: admin.email, editId },
+          {
+            useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
+            deletePhoto: (photoKey) => deletePhoto(env.MEDIA, photoKey),
+          },
+        );
+        const error = discardActionError(outcome);
         if (error !== null) throw error;
       },
     }),

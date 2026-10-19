@@ -225,8 +225,8 @@ export const NOTIFY_BUTTON = "Avisarle por WhatsApp";
 /**
  * After every action of the panel that changes what the public pages show
  * ("The panel says that a change takes up to a minute to reach the site
- * (v2)"): approving here, and the zones screen (../zones/texts.ts). Written
- * once for the whole panel.
+ * (v2)"): approving and applying an edit here, and the zones screen
+ * (../zones/texts.ts). Written once for the whole panel.
  */
 export const PUBLIC_DELAY = "Listo. El cambio puede tardar hasta un minuto en verse en el sitio.";
 /**
@@ -265,6 +265,33 @@ export function reasonTooLongText(limit: number): string {
 
 // "A transition is only applied to a registration that is still in review".
 export const ALREADY_RESOLVED = "Este registro ya lo habías resuelto.";
+
+// Attending a report ("Marking a report as attended, only once").
+export const ATTEND_BUTTON = "Marcar como atendido";
+export const REPORT_ATTENDED = "Reporte atendido.";
+export const REPORT_ALREADY_ATTENDED = "Este reporte ya lo habías atendido.";
+
+// Applying a pending edit ("Applying the pending edit updates the published
+// card and only that"): its form, what stops it and its confirmation.
+export const APPLY_HEADING = "Aplicar los cambios";
+export const APPLY_BUTTON = "Aplicar los cambios";
+export const EDIT_APPLIED = "Listo, la ficha ya se actualizó.";
+export const WHATSAPP_TAKEN_ON_APPLY =
+  "Ese número ya está en otra ficha: no se pudieron aplicar los cambios.";
+/**
+ * The card stopped being published: what did not happen, why, and that
+ * nothing was lost (the prototype's copy).
+ */
+export const EDIT_CARD_UNPUBLISHED =
+  "No se aplicó nada: esta ficha ya no está publicada. Los cambios siguen esperando; vuelve a publicarla y aplícalos.";
+
+// Discarding a pending edit ("Discarding the pending edit requires a reason,
+// does not touch the card and offers to notify by WhatsApp").
+export const DISCARD_HEADING = "Descartar los cambios";
+export const DISCARD_REASON_LABEL = "¿Por qué no aplicas los cambios?";
+export const DISCARD_BUTTON = "Descartar los cambios";
+export const DISCARD_REASON_REQUIRED = "Escribe por qué descartas los cambios";
+export const EDIT_DISCARDED = "Cambios descartados.";
 
 /** A decision that could not be saved: nothing was decided (the panel's copy). */
 export const SAVE_FAILED = "No se pudo guardar. Vuelve a intentarlo.";

@@ -1,8 +1,10 @@
 // The WhatsApp notices of the panel (docs/specs/admin-review.md, "On
 // approving, an offer is made to notify the business by WhatsApp with its
 // card link and its management link", "Rejecting requires a reason, stores
-// it with its date and offers to notify by WhatsApp" and "No panel message
-// is presented with the previous brand"): each opens the conversation with
+// it with its date and offers to notify by WhatsApp", "Applying the pending
+// edit updates the published card and only that", "Discarding the pending
+// edit requires a reason, does not touch the card and offers to notify by
+// WhatsApp" and "No panel message is presented with the previous brand"): each opens the conversation with
 // the business, the message already written; the admin sends it, and the
 // system never sends anything by itself (PRD §6.6). The messages are the
 // specification's literals. They reach someone the verification message
@@ -42,5 +44,19 @@ export function rejectedMessage(businessName: string, reason: string): string {
     `Hola, revisamos el registro de «${businessName}» en enmirumbo y por ahora no lo pudimos ` +
     `publicar: ${reason}. Si lo corriges, lo puedes volver a enviar desde el mismo formulario ` +
     "con este mismo número."
+  );
+}
+
+/** The notice of an applied edit, with the card's public link, absolute. */
+export function updatedMessage(businessName: string, cardUrl: string): string {
+  return `¡Listo! Ya actualizamos la ficha de «${businessName}» en enmirumbo. Así quedó: ${cardUrl}`;
+}
+
+/** The notice of a discarded edit, with the reason the admin wrote, whole. */
+export function discardedMessage(businessName: string, reason: string): string {
+  return (
+    `Hola, revisamos los cambios que mandaste para «${businessName}» en enmirumbo y por ahora ` +
+    `no los pudimos aplicar: ${reason}. Tu ficha sigue publicada como estaba y puedes ` +
+    "mandarlos otra vez con tu mismo enlace."
   );
 }

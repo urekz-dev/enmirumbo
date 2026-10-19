@@ -108,13 +108,13 @@ export interface Approval {
 
 const collator = new Intl.Collator("es-MX", { sensitivity: "base", numeric: true });
 
-/** The trades and every zone of `localityCode`, for the form and its check. */
-export async function approvalCatalogue(db: Db, localityCode: string): Promise<ApprovalCatalogue> {
-  const [tradeRows, zoneRows, [municipality]] = await Promise.all([
-    db
-      .select({ id: trades.id, slug: trades.slug, name: trades.name })
-      .from(trades)
-      .orderBy(asc(trades.id)),
+/**
+ * Every zone of `localityCode`, hidden ones included, alphabetically by
+ * display name: what the admin gives a card whose zone is "Otra", on
+ * approving it and on applying an owner's edit (./apply.ts).
+ */
+export async function localityZoneChoices(db: Db, localityCode: string): Promise<ApprovalZone[]> {
+  const [zoneRows, [municipality]] = await Promise.all([
     db
       .select({
         id: zones.id,
@@ -135,17 +135,26 @@ export async function approvalCatalogue(db: Db, localityCode: string): Promise<A
   // arrived as "Otra", since the registration no longer offers it, and the
   // admin gives it the zone that really applies.
   const names = zoneDisplayNames(zoneRows, municipality?.name ?? "");
-  return {
-    trades: tradeRows,
-    zones: zoneRows
-      .map(({ id, slug, name, visible }) => ({
-        id,
-        slug,
-        displayName: names.get(slug) ?? name.trim(),
-        hidden: !visible,
-      }))
-      .toSorted((a, b) => collator.compare(a.displayName, b.displayName)),
-  };
+  return zoneRows
+    .map(({ id, slug, name, visible }) => ({
+      id,
+      slug,
+      displayName: names.get(slug) ?? name.trim(),
+      hidden: !visible,
+    }))
+    .toSorted((a, b) => collator.compare(a.displayName, b.displayName));
+}
+
+/** The trades and every zone of `localityCode`, for the form and its check. */
+export async function approvalCatalogue(db: Db, localityCode: string): Promise<ApprovalCatalogue> {
+  const [tradeRows, zoneChoices] = await Promise.all([
+    db
+      .select({ id: trades.id, slug: trades.slug, name: trades.name })
+      .from(trades)
+      .orderBy(asc(trades.id)),
+    localityZoneChoices(db, localityCode),
+  ]);
+  return { trades: tradeRows, zones: zoneChoices };
 }
 
 /** What the approval form of a card in review needs: the catalogue and what it starts with. */
