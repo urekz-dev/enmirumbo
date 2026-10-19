@@ -1375,3 +1375,25 @@ describe("The queue labels the resubmission of a rejected card, and its detail s
     expect(visibleText(await renderRegistration())).not.toContain("La rechazaste antes");
   });
 });
+
+it("offers rectification and the data copy only with links authorized by its page", async () => {
+  const copyHref =
+    "https://wa.me/527719990101?text=" +
+    encodeURIComponent("Nombre: Negocio de Mentira\nFoto guardada: Sí");
+  const html = await container.renderToString(RegistrationDetail, {
+    props: {
+      detail: REGISTRATION,
+      zone: "Huicalco",
+      reports: [],
+      now: NOW,
+      queueHref: null,
+      editHref: "/admin/registros/b5q68b2e72/editar",
+      copyHref,
+    },
+  });
+  expect(linksNamed(html, "Editar ficha")[0]?.href).toBe("/admin/registros/b5q68b2e72/editar");
+  expect(linksNamed(html, "Mandar copia de sus datos por WhatsApp")[0]?.href).toBe(copyHref);
+  const without = await renderRegistration();
+  expect(linksNamed(without, "Editar ficha")).toEqual([]);
+  expect(linksNamed(without, "Mandar copia de sus datos por WhatsApp")).toEqual([]);
+});

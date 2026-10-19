@@ -69,6 +69,7 @@ import NewLinkForm from "../../../components/admin/NewLinkForm.astro";
 import RegistrationDetail from "../../../components/admin/RegistrationDetail.astro";
 import RejectForm from "../../../components/admin/RejectForm.astro";
 import UnpublishForm from "../../../components/admin/UnpublishForm.astro";
+import { dataCopyLink } from "../../../core/review/data-copy.ts";
 import { permissionsOf } from "../../../core/access/queries.ts";
 import { withDb } from "../../../core/db/client.ts";
 import { formText } from "../../../core/forms/text.ts";
@@ -77,6 +78,7 @@ import { panelLocalities, zoneNamesByLocality, zoneText } from "../../../core/re
 import { linkVersion } from "../../../core/review/new-link.ts";
 import {
   deletionPath,
+  rectificationPath,
   queuePath,
   rejectedPath,
   unpublishedPath,
@@ -197,6 +199,15 @@ const result =
           card: {
             detail,
             reports,
+            edits: granted.has("businesses.edit"),
+            copyHref: await dataCopyLink(
+              db,
+              admin.email,
+              detail,
+              detail.zoneSlug === null
+                ? detail.zoneOther
+                : (names?.get(detail.zoneSlug) ?? detail.zoneName),
+            ),
             zone: zoneText(detail, names),
             form,
             unpublishes: published && granted.has("businesses.unpublish"),
@@ -241,6 +252,8 @@ const reason = (field: string, form: DetailForm) =>
       attendAction={card.reports !== null ? actions.admin.attendReport.queryString : null}
       reportNotice={reportNotice}
       reportAlert={attendFail?.kind === "server"}
+      editHref={card.edits ? rectificationPath(card.detail.id) : null}
+      copyHref={card.copyHref}
     >
       {failure?.kind === "server" && (
         <p role="alert" class="font-semibold text-ink">

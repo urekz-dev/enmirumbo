@@ -32,8 +32,8 @@ const START = [
   "/hidalgo/tizayuca/reportar/gracias?negocio=b5q68b2e72",
   "/hidalgo/tizayuca/registro/gracias",
 ];
-/** Enough for every page the seeded directory links to, with two localities. */
-const MAX_PAGES = 150;
+/** Includes the editor linked by every panel card, with two localities. */
+const MAX_PAGES = 200;
 
 /** The paths of the sitemap. */
 async function sitemapPaths(page: Page): Promise<string[]> {
@@ -148,6 +148,13 @@ test("every page is an es-MX document inside the layout, with its base metadata"
           expect.stringMatching(/^module \/_astro\/RegistrationForm\.[^/]*\.js$/),
           expect.stringMatching(/^module \/_astro\/TurnstileWidget\.[^/]*\.js$/),
         ]);
+    } else if (/^\/admin\/registros\/[^/]+\/editar$/.test(new URL(page.url()).pathname)) {
+      // The shared registration form's progressive enhancement only; no widget.
+      await expect.soft(own, path).toHaveCount(1);
+      await expect.soft(own, path).toHaveAttribute("type", "module");
+      await expect
+        .soft(own, path)
+        .toHaveAttribute("src", /^\/_astro\/RegistrationForm\.[^/]*\.js$/);
     } else {
       await expect.soft(own, path).toHaveCount(0);
     }

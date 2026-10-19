@@ -6,6 +6,10 @@
 //   /admin/negocios             "Todos los negocios"
 //   /admin/registros/<id>       the detail of a card, by its identifier, where
 //                               its decisions are posted
+//   /admin/registros/<id>/editar
+//                               direct rectification in any status
+//   /admin/registros/<id>/editado
+//                               its confirmation after the save
 //   /admin/registros/<id>/rechazado
 //                               the confirmation of a rejection
 //   /admin/registros/<id>/despublicado
@@ -122,4 +126,12 @@ export function businessesPath(view: Partial<BusinessesView> = {}): string {
   if (view.page !== undefined && view.page > 1) params.set("pagina", String(view.page));
   const query = params.toString();
   return query === "" ? BUSINESSES_PATH : `${BUSINESSES_PATH}?${query}`;
+}
+
+/** The direct rectification form and its confirmation. */
+export function rectificationPath(businessId: string): string {
+  return `${registrationPath(businessId)}/editar`;
+}
+export function rectifiedPath(businessId: string): string {
+  return `${registrationPath(businessId)}/editado`;
 }

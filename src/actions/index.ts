@@ -24,6 +24,8 @@ import {
 } from "../lib/panel-management.ts";
 import { can } from "../core/access/queries.ts";
 import { type Db, withDb } from "../core/db/client.ts";
+import { submitRectification } from "../core/review/rectification.ts";
+import { rectificationActionError, rectificationTarget } from "../lib/rectification.ts";
 import { submitEdit } from "../core/edit/submit.ts";
 import { submitRegistration } from "../core/registration/submit.ts";
 import { submitReport } from "../core/report/submit.ts";
@@ -267,6 +269,24 @@ export const server = {
       },
     }),
 
+    rectify: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        const businessId = rectificationTarget(context);
+        if (businessId === null) throw new ActionError({ code: "NOT_FOUND" });
+        const outcome = await submitRectification(
+          form,
+          { email: admin.email, businessId },
+          {
+            useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
+            photos: { images: env.IMAGES, bucket: mediaBucket(env) },
+          },
+        );
+        const error = rectificationActionError(outcome);
+        if (error !== null) throw error;
+      },
+    }),
     // Approving a registration from its detail, /admin/registros/<id>
     // (docs/specs/admin-review.md, the approval requirements): trades, the
     // zone of an "Otra", the origin, the publication and the management link,

@@ -46,6 +46,10 @@
 // waiting carries a new photo, that it stays unless another is chosen;
 // Turnstile's action `edit`; and "Enviar cambios".
 //
+// The panel uses `mode="panel"`: direct rectification with "Guardar cambios",
+// without the trap, consent or Turnstile; its Access identity and locality
+// permission protect the submission (admin-review, F6).
+//
 // While Turnstile is on (docs/specs/business-registration.md, "Without
 // JavaScript the registration says so and cannot be sent while Turnstile is
 // on (v2)"), the widget (TurnstileWidget.astro) goes before the submit
@@ -70,6 +74,10 @@ import {
   EDIT_SUBMIT,
   editErrorMessage,
 } from "../core/edit/submission.ts";
+import {
+  ZONE_REQUIRED as CATALOGUE_ZONE_REQUIRED,
+  RECTIFICATION_SUBMIT,
+} from "../core/review/texts.ts";
 import type { RegistrationCatalogue } from "../core/registration/catalogue.ts";
 import {
   GENERIC_WHAT_YOU_OFFER_EXAMPLE,
@@ -120,10 +128,12 @@ interface Props {
   general: GeneralError | null;
   /** Turnstile, with the environment's site key, while its switch is on; null when it is off. */
   turnstile: { siteKey: string | null } | null;
-  /** The registration, or the edit of a published card from its management link. */
-  mode?: "registration" | "edit";
+  /** Registration, owner edit, or direct panel rectification without public defenses. */
+  mode?: "registration" | "edit" | "panel";
   /** The edit only: whether the edit waiting carries a new photo, which stays unless another comes. */
   keptPhoto?: boolean;
+  /** Published panel cards must keep a catalogue zone, including hidden choices. */
+  catalogueZoneOnly?: boolean;
 }
 
 const {
@@ -136,8 +146,12 @@ const {
   turnstile,
   mode = "registration",
   keptPhoto = false,
+  catalogueZoneOnly = false,
 } = Astro.props;
-const editing = mode === "edit";
+const panel = mode === "panel";
+const catalogueOnly = panel && catalogueZoneOnly;
+const editing = mode !== "registration";
+const publicTurnstile = panel ? null : turnstile;
 const generalMessages = editing ? EDIT_GENERAL_ERROR_MESSAGES : GENERAL_ERROR_MESSAGES;
 const fieldMessage = editing ? editErrorMessage : errorMessage;
 
@@ -147,6 +161,7 @@ const errorId = (field: ErrorField) => `${id(field)}-error`;
 /** The message next to `field`, or null. */
 const message = (field: ErrorField): string | null => {
   const code = errors[field];
+  if (catalogueOnly && field === "zone" && code === "required") return CATALOGUE_ZONE_REQUIRED;
   return code === undefined ? null : fieldMessage(field, code);
 };
 /** The first field with an error, which takes the focus. */
@@ -171,7 +186,7 @@ const checkboxLabel =
 const chosen = catalogue.categories.find(({ slug }) => slug === draft.category);
 const zoneGroups = postalCodeGroups(catalogue.zones);
 const chosenZone = catalogue.zones.find(({ slug }) => slug === draft.zone);
-const otherZone = chosenZone === undefined && draft.zone === OTHER_ZONE;
+const otherZone = !catalogueOnly && chosenZone === undefined && draft.zone === OTHER_ZONE;
 /** What the photo field says: its error, or that the photo sent has to be chosen again. */
 const photoMessage = message("photo") ?? (draft.photo ? PHOTO_NOT_KEPT_MESSAGE : null);
 /** The edit's note that the new photo of the edit waiting stays, when nothing else is said of the photo. */
@@ -187,9 +202,9 @@ const keptPhotoNote =
   class="flex flex-col gap-6"
   data-registration-form
 >
-  <HoneypotField />
+  {!panel && <HoneypotField />}
 
-  {turnstile && (
+  {publicTurnstile && (
     <noscript>
       <p class="rounded-lg border border-control px-4 py-3 text-sm font-semibold text-ink">
         {editing ? EDIT_NO_JAVASCRIPT_MESSAGE : NO_JAVASCRIPT_MESSAGE}
@@ -301,11 +316,13 @@ const keptPhotoNote =
       <p id={`${id(F.postalCode)}-help`} class={help}>
         Si no te lo sabes, viene en tu recibo de luz o de agua.
       </p>
-      <p
-        role="status"
-        class="pt-1 text-sm font-semibold text-ink empty:p-0"
-        data-postal-code-hint={UNKNOWN_POSTAL_CODE_HINT}
-      ></p>
+      {!catalogueOnly && (
+        <p
+          role="status"
+          class="pt-1 text-sm font-semibold text-ink empty:p-0"
+          data-postal-code-hint={UNKNOWN_POSTAL_CODE_HINT}
+        ></p>
+      )}
     </div>
     <FieldError id={errorId("postalCode")} message={message("postalCode")} />
   </div>
@@ -320,7 +337,7 @@ const keptPhotoNote =
       required
       autofocus={first === "zone"}
       aria-invalid={invalid("zone")}
-      aria-describedby={describedBy("zone", `${id(F.zone)}-help`)}
+      aria-describedby={describedBy("zone", catalogueOnly ? undefined : `${id(F.zone)}-help`)}
       class={field("zone")}
       data-zone-select
     >
@@ -343,34 +360,40 @@ const keptPhotoNote =
           ))}
         </optgroup>
       ))}
-      <option value={OTHER_ZONE} selected={otherZone} data-other-zone>
-        {OTHER_ZONE_LABEL}
-      </option>
+      {!catalogueOnly && (
+        <option value={OTHER_ZONE} selected={otherZone} data-other-zone>
+          {OTHER_ZONE_LABEL}
+        </option>
+      )}
     </select>
-    <p id={`${id(F.zone)}-help`} class={help}>
-      Si tu colonia no aparece en la lista, elige “Mi colonia no aparece” y escríbela abajo.
-    </p>
+    {!catalogueOnly && (
+      <p id={`${id(F.zone)}-help`} class={help}>
+        Si tu colonia no aparece en la lista, elige “Mi colonia no aparece” y escríbela abajo.
+      </p>
+    )}
     <FieldError id={errorId("zone")} message={message("zone")} />
   </div>
 
-  <div class="flex flex-col gap-1.5" data-zone-other>
-    <label for={id(F.zoneOther)} class={label}>
-      Si tu colonia no aparece, escribe cómo se llama
-    </label>
-    <input
-      type="text"
-      id={id(F.zoneOther)}
-      name={F.zoneOther}
-      value={draft.zoneOther}
-      maxlength={MAX_LENGTHS.zoneOther}
-      autocomplete="off"
-      autofocus={first === "zoneOther"}
-      aria-invalid={invalid("zoneOther")}
-      aria-describedby={describedBy("zoneOther")}
-      class={field("zoneOther")}
-    />
-    <FieldError id={errorId("zoneOther")} message={message("zoneOther")} />
-  </div>
+  {!catalogueOnly && (
+    <div class="flex flex-col gap-1.5" data-zone-other>
+      <label for={id(F.zoneOther)} class={label}>
+        Si tu colonia no aparece, escribe cómo se llama
+      </label>
+      <input
+        type="text"
+        id={id(F.zoneOther)}
+        name={F.zoneOther}
+        value={draft.zoneOther}
+        maxlength={MAX_LENGTHS.zoneOther}
+        autocomplete="off"
+        autofocus={first === "zoneOther"}
+        aria-invalid={invalid("zoneOther")}
+        aria-describedby={describedBy("zoneOther")}
+        class={field("zoneOther")}
+      />
+      <FieldError id={errorId("zoneOther")} message={message("zoneOther")} />
+    </div>
+  )}
 
   <div class="flex flex-col gap-1.5">
     <label for={id(F.whatYouOffer)} class={label}>
@@ -522,7 +545,7 @@ const keptPhotoNote =
     </label>
   </div>
 
-  {editing ? (
+  {panel ? null : editing ? (
     <PrivacyNote />
   ) : (
     <>
@@ -537,17 +560,17 @@ const keptPhotoNote =
     </>
   )}
 
-  {turnstile && (
-    <TurnstileWidget siteKey={turnstile.siteKey} action={editing ? "edit" : "registration"} />
+  {publicTurnstile && (
+    <TurnstileWidget siteKey={publicTurnstile.siteKey} action={editing ? "edit" : "registration"} />
   )}
 
   <button
     type="submit"
     class={`${PRIMARY_BUTTON} w-full px-6 py-3 text-base disabled:cursor-not-allowed disabled:opacity-70`}
-    disabled={Boolean(turnstile)}
+    disabled={Boolean(publicTurnstile)}
     data-sending-text={SENDING_TEXT}
   >
-    {editing ? EDIT_SUBMIT : "Registrar mi negocio"}
+    {panel ? RECTIFICATION_SUBMIT : editing ? EDIT_SUBMIT : "Registrar mi negocio"}
   </button>
 </form>
 
@@ -579,9 +602,10 @@ const keptPhotoNote =
     const first = select.options[0];
     const otherOption = select.querySelector("option[data-other-zone]");
     const groups = [...select.querySelectorAll("optgroup")];
-    if (!first || !(otherOption instanceof HTMLOptionElement)) return;
+    if (!first) return;
     const showOther = () => {
-      if (other instanceof HTMLElement) other.hidden = !otherOption.selected;
+      if (other instanceof HTMLElement && otherOption instanceof HTMLOptionElement)
+        other.hidden = !otherOption.selected;
     };
     const narrow = () => {
       const code = postalCode.value.trim();
@@ -591,7 +615,11 @@ const keptPhotoNote =
       const shown = complete
         ? groups.filter((group) => own.includes(group) || group.dataset["postalCode"] === "")
         : groups;
-      select.replaceChildren(first, ...shown, otherOption);
+      select.replaceChildren(
+        first,
+        ...shown,
+        ...(otherOption instanceof HTMLOptionElement ? [otherOption] : []),
+      );
       const still = [...select.options].some((option) => option.value === chosen);
       select.value = still ? chosen : "";
       if (hint instanceof HTMLElement) {

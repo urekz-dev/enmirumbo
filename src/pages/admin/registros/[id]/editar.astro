@@ -1,0 +1,68 @@
+---
+// Direct rectification of any status, behind Access and businesses.edit.
+import { actions } from "astro:actions";
+import { env, waitUntil } from "cloudflare:workers";
+import RectificationForm from "../../../../components/admin/RectificationForm.astro";
+import { withDb } from "../../../../core/db/client.ts";
+import { rectificationForm } from "../../../../core/review/rectification.ts";
+import { cardDraft } from "../../../../core/edit/submission.ts";
+import { registrationDraft } from "../../../../core/registration/submission.ts";
+import { cardToDecide } from "../../../../core/review/decision.ts";
+import { panelLocalities } from "../../../../core/review/localities.ts";
+import { rectifiedPath, registrationPath } from "../../../../core/review/paths.ts";
+import { registrationDetail } from "../../../../core/review/registration.ts";
+import { RECTIFICATION_HEADING } from "../../../../core/review/texts.ts";
+import { panelScope } from "../../../../core/review/scope.ts";
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../../../lib/access/admin-gate.ts";
+import { notFound, seeOther } from "../../../../lib/locality.ts";
+import { registrationPageFailure } from "../../../../lib/registration.ts";
+
+const admin = Astro.locals.admin;
+if (admin === undefined) return forbiddenResponse();
+const id = Astro.params.id ?? "";
+const sent = Astro.getActionResult(actions.admin.rectify);
+if (sent !== undefined && !sent.error) return seeOther(rectifiedPath(id));
+if (sent?.error?.code === "NOT_FOUND") return notFound();
+if (sent?.error?.code === "FORBIDDEN") return forbiddenResponse();
+if (sent === undefined && Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+}
+const failure = sent?.error ? registrationPageFailure(sent.error) : null;
+const result = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  const scope = await panelScope(db, admin.email);
+  if (scope.cards.length === 0) return { kind: "forbidden" } as const;
+  const access = await cardToDecide(db, { email: admin.email, businessId: id }, "businesses.edit");
+  if (access.kind !== "card") return access;
+  const [locality] = await panelLocalities(db, [access.card.localityCode]);
+  if (locality === undefined) return { kind: "not-found" } as const;
+  const detail = await registrationDetail(db, id);
+  if (detail === null) return { kind: "not-found" } as const;
+  const form = await rectificationForm(db, locality, id, detail.status === "published");
+  return form === null
+    ? ({ kind: "not-found" } as const)
+    : ({ kind: "form", form, detail, locality } as const);
+});
+if (result.kind === "forbidden") return forbiddenResponse();
+if (result.kind !== "form") return notFound();
+const submission = failure?.keepsDraft ? await Astro.request.formData().catch(() => null) : null;
+const draft =
+  submission === null
+    ? cardDraft(result.form.card, result.form.catalogue)
+    : registrationDraft(submission);
+---
+
+<BaseLayout title={RECTIFICATION_HEADING}>
+  <RectificationForm
+    action={actions.admin.rectify.queryString}
+    catalogue={result.form.catalogue}
+    catalogueZoneOnly={result.detail.status === "published"}
+    municipality={result.locality.name}
+    draft={draft}
+    errors={failure?.errors ?? {}}
+    general={failure?.general ?? null}
+    waiting={result.form.waiting !== null}
+    photoKey={result.detail.photoKey}
+    detailHref={registrationPath(id)}
+  />
+</BaseLayout>

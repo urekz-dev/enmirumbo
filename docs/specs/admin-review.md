@@ -1042,7 +1042,7 @@ Every WhatsApp message the panel builds for the admin to send to a business MUST
 
 ### Requirement: The panel is operated from the phone and without unnecessary client JavaScript
 
-The panel MUST be mobile-first: queue —**including the section of reported businesses**—, listing of all businesses with its filters and its pagination, detail —**including the list of unattended reports**—, **comparative detail of the pending edit**, forms to approve, reject, unpublish, apply the changes, discard the changes, generate a new link and mark as attended, and the deletion confirmation screen MUST look complete and be usable in a 390px viewport, without horizontal scroll, with touch targets of at least 44px and AA contrast (PRD §8). The comparison between what is published and what is proposed MUST be readable on that screen, without forcing the admin to scroll sideways. The panel screens MUST be Server Components and their forms MUST work without client JavaScript, just like the public registration. In the listing, filtering and changing page are links, not controls with JavaScript: the whole view works with client JavaScript disabled.
+The panel MUST be mobile-first: queue —**including the section of reported businesses**—, listing of all businesses with its filters and its pagination, detail —**including the list of unattended reports**—, **comparative detail of the pending edit**, forms to approve, reject, unpublish, apply the changes, discard the changes, generate a new link and mark as attended, and the deletion confirmation screen MUST look complete and be usable in a 390px viewport, without horizontal scroll, with touch targets of at least 44px and AA contrast (PRD §8). The comparison between what is published and what is proposed MUST be readable on that screen, without forcing the admin to scroll sideways. Amended on 2026-10-19 (EMR-51): the direct rectification form reuses the registration's bundled script only for its postal-code select, offer example and submission state; it remains fully usable without JavaScript. The panel screens MUST be Server Components and their forms MUST work without client JavaScript, just like the public registration. In the listing, filtering and changing page are links, not controls with JavaScript: the whole view works with client JavaScript disabled.
 
 #### Scenario: review from the phone
 
@@ -1208,7 +1208,42 @@ Each reject, unpublish, permanent deletion and edit of contact data done from th
 
 Added in v2 — source: PRD §3 (Flow E), PRD §7, prototype backlog E3-7.
 
+Amended on 2026-10-19 (EMR-51) by decision of the product owner: the photo may be changed or removed, and a pending owner edit stays waiting.
+
 From the detail of any card, whatever its state, the admin MUST be able to edit it with the same form and the same validations as the registration, including removing an optional field at the request of the business. The change applies to the card directly and does not create a pending edit. Each edit of contact data MUST write an entry in the audit log.
+
+The detail offers "Editar ficha" only with `businesses.edit` in the card's locality. It opens `/admin/registros/<id>/editar`, prefilled with the card itself, never its pending edit. The form MUST reuse the registration's fields and `validateBusinessFields`, including the postal-code-narrowed zone field. Cards in review or rejected keep "Mi colonia no aparece" and the current zone even if hidden. It asks for no new consent, honeypot, Turnstile or per-IP quota: Access and the locality permission protect it. Its submit button reads "Guardar cambios". If an owner edit waits, it says exactly "Este negocio tiene cambios esperando revisión; si los aplicas después, reemplazan lo que cambies aquí." Saving MUST leave that edit untouched.
+
+Amended on 2026-10-19 (EMR-51) by decision of the product owner: a published card MUST always keep a catalogue zone of its locality. Its rectification form MUST offer every local catalogue zone, hidden ones included and marked "(oculta)" as in approval, grouped and narrowed by the postal code. It MUST NOT offer "Mi colonia no aparece" or its free-text field. A missing choice, free text or a zone outside that locality is refused next to the zone select with the approval's literal "Elige la colonia de este negocio". Other registration validation, including the postal code's match, stays in force. The server MUST enforce the catalogue-zone requirement again against the card's current status and locality under its save lock: publishing a card after its form was opened cannot let a free-text correction through. Cards still in review or rejected keep the registration's free-text behavior. A zone that does not yet exist is added through the existing zones screen before rectifying the published card.
+
+The action `admin.rectify` MUST start by verifying its own request's Access identity, refuse any route other than the edit page as not found (the `/_actions/` endpoint included), take the card from the address and check `businesses.edit` again in its locality through the fresh connection. The same not-found and forbidden rules of the other card decisions apply. The save locks the card first and writes its validated fields directly, leaving status, origin, trades, dates, consent and management link as they were; the database derives the search columns. A WhatsApp another card of the locality has, in any status, is refused beside its field with "Ese número ya está en otra ficha del directorio." An unchanged contact writes nothing to the audit log; a change or removal of WhatsApp, landline, address or Facebook link writes exactly one `edit_contact` entry in the same transaction, with the Access email and the previous status, never a field of the card. An audit failure rolls the correction back and visibly returns the form with its save error.
+
+A new photo MUST go through `storePhoto` after the other form checks; an unsuccessful save deletes that upload. A removed or replaced card photo is deleted after the save through `deletePhoto` or `removePhoto` with `mediaBucket`, including the purge of both cached addresses. No upload keeps the current photo. A valid save answers a 303 to `/admin/registros/<id>/editado`, headed "Cambios guardados." with "Volver al detalle"; for a published card it includes the one-minute message. An error returns the same form, what was typed and the registration's field errors; the save failure reads "No pudimos guardar tus cambios. Vuelve a intentarlo en un momento." Neither a field value nor a photo address goes into a redirect or a cookie.
+
+#### Scenario: a published card cannot become free text
+
+- **WHEN** the admin sends a rectification of a published card with no catalogue zone, including a forged "Mi colonia no aparece"
+- **THEN** nothing is saved and the zone select says "Elige la colonia de este negocio"
+
+#### Scenario: a hidden catalogue zone is still available to the admin
+
+- **WHEN** the admin rectifies a published card whose locality has a hidden zone
+- **THEN** that zone is offered as "<nombre> (oculta)" within its postal-code group and can be saved
+
+#### Scenario: cards not yet published keep the registration's zone rules
+
+- **WHEN** the admin rectifies a card in review or rejected with "Mi colonia no aparece" and a valid zone name
+- **THEN** the free text is saved with the registration's validation
+
+#### Scenario: an owner edit is waiting
+
+- **WHEN** the admin opens the rectification form of a card with a pending owner edit
+- **THEN** the form shows the card's fields and the warning, and saving leaves the pending edit as it was
+
+#### Scenario: photo replacement or removal
+
+- **WHEN** the admin replaces or removes a card's photo and saves
+- **THEN** the new photo, if any, has both stored variants and the old photo's two objects and cached addresses are deleted after the save
 
 #### Scenario: correcting a field
 
@@ -1229,7 +1264,11 @@ From the detail of any card, whatever its state, the admin MUST be able to edit 
 
 Added in v2 — source: PRD §3 (Flow E), PRD §7.
 
+Amended on 2026-10-19 (EMR-51) by decision of the product owner: the copy lists every captured field, trades, accepted privacy notice dates and versions, and whether a photo is stored, never its address.
+
 From the detail of any card, the admin MUST be able to open WhatsApp to the business's number with a prefilled message that carries a copy of the data stored on its card, to serve the right of access. The data MUST be only that of the card.
+
+The button reads "Mandar copia de sus datos por WhatsApp", needs `businesses.edit` in the card's locality (the existing permission for serving rectification and access), and opens a `wa.me` link to the card's WhatsApp with the message prefilled, as the other panel notices do. It sends nothing automatically and writes no audit entry. The message begins "Hola, esta es la copia de los datos de tu ficha que guardamos en enmirumbo:" and lists one field per line: "Nombre", "Categoría", "Municipio" (from its record), "WhatsApp", "Teléfono fijo", "Colonia" (the catalogue display name or the free text), "Código postal", "Dirección o referencias", "Horario", "¿Qué ofreces?", "Link de Facebook", "Entregas o servicio a domicilio" ("Sí" or "No"), "Giros" (when any), "Aviso de privacidad aceptado" (date and time in the locality's time zone, and version), the same as "Aviso de privacidad aceptado de nuevo" when there was re-acceptance, and "Foto guardada" ("Sí" or "No"). An empty field reads "No capturado" and a missing notice version "no registrada". The copy MUST contain no card identifier, lifecycle data, reasons, reports, management token or fingerprint, photo key or photo address. Without a usable WhatsApp number there is no broken link.
 
 #### Scenario: the copy
 
@@ -1460,11 +1499,14 @@ Applying a pending edit MUST also carry out what it asks of the photo (`data-mod
 
 Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-46); ADR 0010. It settles the address of the pending edit detail, which no earlier requirement gave. Amended on 2026-10-18 by EMR-47: the confirmation of a rejection has its own address, and the detail of a card in review offers its decisions ("Approving and rejecting are forms of the detail, and their action checks everything again (v2)"). Amended on 2026-10-18 by EMR-49: the confirmations of an applied and a discarded edit have their own addresses, the detail of a card offers "Marcar como atendido" and the detail of a pending edit its resolutions ("Attending a report and resolving a pending edit are forms of their details, and their action checks everything again (v2)"). Amended on 2026-10-18 by EMR-48: the confirmations of an unpublishing and of a permanent deletion, and the screen a deletion lands on, have their addresses, and the detail of a card offers unpublishing, a new link and the deletion ("Unpublishing, a new link and the permanent deletion are forms of the detail, and their actions check everything again (v2)").
 
+Amended on 2026-10-19 (EMR-51): the direct rectification form and its confirmation have fixed addresses under the card.
+
 The review screens of the panel MUST live at these addresses, all of them under `/admin`, so that the Access check, the panel's headers, its no-indexing and its referrer policy reach them by where they live:
 
 - `/admin`: the review queue, the panel's main screen ("Review queue with the pending registrations, oldest first"), which replaces the placeholder that only named the signed-in email.
 - `/admin/negocios`: "Todos los negocios".
 - `/admin/registros/<id>`: the detail of a card, by its identifier ("The card is identified by a short random id (v2)" in `data-model`), whatever its status. The queue's "Revisar" of an "Alta nueva", the list's "Ver detalle" and the reported section's "Ver reportes" lead here.
+- `/admin/registros/<id>/editar`: direct rectification with the registration form, for `businesses.edit`, in any status; `/admin/registros/<id>/editado`: its confirmation after the save.
 - `/admin/registros/<id>/rechazado`: the confirmation of the rejection of that card, where a rejection lands ("Approving and rejecting are forms of the detail, and their action checks everything again (v2)").
 - `/admin/registros/<id>/despublicado`: the confirmation of the unpublishing of that card, where an unpublishing lands.
 - `/admin/registros/<id>/borrar`: the confirmation of the permanent deletion of that card, the first of its two steps, where the deletion is posted.
@@ -1472,7 +1514,7 @@ The review screens of the panel MUST live at these addresses, all of them under 
 - `/admin/ediciones/<n>`: the detail of a pending edit, by its number. The queue's "Revisar" of an "Edición" leads here. Applying or discarding acts on the edit of that number, which is what lets them refuse an edit that is no longer the one the admin had in front of them ("A pending edit is resolved only once and only if it is still the latest").
 - `/admin/ediciones/<n>/aplicada` and `/admin/ediciones/<n>/descartada`: the confirmations of applying and of discarding that edit, where those resolutions land.
 
-An identifier or a number of another shape, one that no card or edit has, and a card or edit the user may not see MUST all answer the site's 404, under the panel's headers. The queue and the list carry in their query only what "The listing is filtered by status without leaving the view", "The listing searches by name or WhatsApp (v2)" and "The panel filters by locality, and the filter is hidden while there is one (v2)" allow; the details carry nothing in theirs but the name of the action a form posts with. The detail of a card in review offers approving and rejecting to who may review it, the detail of a card offers "Marcar como atendido" on each of its unattended reports to who attends them, the detail of a pending edit offers applying and discarding it while it is pending, and the detail of any card offers unpublishing, a new link and the permanent deletion as "Unpublishing, a new link and the permanent deletion are forms of the detail, and their actions check everything again (v2)" says; every other action of the details arrives with its own story, and until then they show no form, button or action that changes anything. Their actions come after what they show.
+An identifier or a number of another shape, one that no card or edit has, and a card or edit the user may not see MUST all answer the site's 404, under the panel's headers. The queue and the list carry in their query only what "The listing is filtered by status without leaving the view", "The listing searches by name or WhatsApp (v2)" and "The panel filters by locality, and the filter is hidden while there is one (v2)" allow; the details carry nothing in theirs but the name of the action a form posts with. The detail of a card in review offers approving and rejecting to who may review it, the detail of a card offers "Marcar como atendido" on each of its unattended reports to who attends them, the detail of a pending edit offers applying and discarding it while it is pending, and the detail of any card offers unpublishing, a new link and the permanent deletion as "Unpublishing, a new link and the permanent deletion are forms of the detail, and their actions check everything again (v2)" says; every other action of the details arrives with its own story, and until then they show no form, button or action that changes anything. Since EMR-51, the detail also offers direct rectification and the data copy to who holds `businesses.edit` in its locality. Their actions come after what they show.
 
 #### Scenario: the panel's main screen
 

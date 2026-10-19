@@ -381,3 +381,10 @@ export const DELETED_PHOTO_CACHED_DETAIL =
 export function deleteWarningText(businessName: string): string {
   return `Esto borra para siempre el registro de «${businessName}», sus giros y sus reportes. No hay papelera y no se puede deshacer.`;
 }
+
+/** Direct panel rectification (admin-review, F6). */
+export const RECTIFICATION_HEADING = "Editar ficha";
+export const RECTIFICATION_SUBMIT = "Guardar cambios";
+export const RECTIFICATION_SAVED = "Cambios guardados.";
+export const RECTIFICATION_WARNING =
+  "Este negocio tiene cambios esperando revisión; si los aplicas después, reemplazan lo que cambies aquí.";
