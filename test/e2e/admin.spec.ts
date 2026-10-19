@@ -969,6 +969,11 @@ test.describe("each user sees only the localities and parts their roles allow", 
       await expect(page.getByRole("main")).not.toContainText(NAMES.old);
     }
     expect((await page.goto(`/admin/registros/${ids.elsewhere}`))?.status()).toBe(200);
+
+    // The audit log of that locality: nothing of Tizayuca, and this user sees it.
+    await page.goto("/admin/bitacora");
+    await expect(page.getByText("Todavía no hay movimientos en la bitácora.")).toBeVisible();
+    expect(await page.content()).not.toContain(ids.old);
   });
 
   test("a user on the Access policy but without any role gets the 403 and sees no data", async ({
@@ -979,6 +984,7 @@ test.describe("each user sees only the localities and parts their roles allow", 
     for (const path of [
       "/admin",
       "/admin/negocios",
+      "/admin/bitacora",
       `/admin/registros/${ids.old}`,
       `/admin/ediciones/${editId}`,
     ]) {
@@ -1012,6 +1018,7 @@ test.describe("each user sees only the localities and parts their roles allow", 
     await page.getByRole("link", { name: `Ver reportes: ${NAMES.reported}` }).click();
     await expect(page.getByTestId("pending-reports").getByRole("listitem")).toHaveCount(2);
     expect((await page.goto(`/admin/ediciones/${editId}`))?.status()).toBe(403);
+    expect((await page.goto("/admin/bitacora"))?.status()).toBe(403);
 
     // It opens the detail of a card in review, without its decisions, and may not decide.
     expect((await page.goto(`/admin/registros/${ids.old}`))?.status()).toBe(200);

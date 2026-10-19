@@ -1,0 +1,28 @@
+---
+// The audit log of one card, on its detail (docs/specs/admin-review.md, "The
+// panel shows the audit log, read-only (v2)"): the same rows as the log,
+// newest first. The page shows it only to a user who holds `audit_log.view`
+// in the card's locality, and only while the card has entries; it offers no
+// action, no form and no client JavaScript. The user reached this detail, so
+// they may open a card's detail in its locality: the row links the card.
+import type { AuditRow } from "../../core/review/audit-log.ts";
+import { AUDIT_LOG_SECTION_HEADING } from "../../core/review/texts.ts";
+import AuditLogRow from "./AuditLogRow.astro";
+
+interface Props {
+  entries: readonly AuditRow[];
+}
+
+const { entries } = Astro.props;
+---
+
+<section class="flex flex-col gap-4" aria-labelledby="business-audit-log-heading">
+  <h2 id="business-audit-log-heading" class="font-semibold text-ink">
+    {AUDIT_LOG_SECTION_HEADING}
+  </h2>
+  <ul class="flex flex-col gap-3" data-testid="business-audit-log">
+    {entries.map((row) => (
+      <AuditLogRow row={row} canOpenCard={true} />
+    ))}
+  </ul>
+</section>

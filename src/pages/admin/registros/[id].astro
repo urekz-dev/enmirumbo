@@ -74,6 +74,7 @@ import { permissionsOf } from "../../../core/access/queries.ts";
 import { withDb } from "../../../core/db/client.ts";
 import { formText } from "../../../core/forms/text.ts";
 import { approvalForm, readApproval } from "../../../core/review/approval.ts";
+import { cardAuditEntries } from "../../../core/review/audit-log.ts";
 import { panelLocalities, zoneNamesByLocality, zoneText } from "../../../core/review/localities.ts";
 import { linkVersion } from "../../../core/review/new-link.ts";
 import {
@@ -187,6 +188,9 @@ const result =
         const granted = await permissionsOf(db, admin.email, detail.localityCode);
         if (!opensCard(granted)) return "not-found" as const;
         const reports = granted.has("reports.manage") ? await pendingReports(db, detail.id) : null;
+        const auditEntries = granted.has("audit_log.view")
+          ? await cardAuditEntries(db, detail.id)
+          : null;
         const [locality] = await panelLocalities(db, [detail.localityCode]);
         const names = locality
           ? (await zoneNamesByLocality(db, [locality])).get(locality.code)
@@ -208,6 +212,7 @@ const result =
                 ? detail.zoneOther
                 : (names?.get(detail.zoneSlug) ?? detail.zoneName),
             ),
+            auditEntries,
             zone: zoneText(detail, names),
             form,
             unpublishes: published && granted.has("businesses.unpublish"),
@@ -247,6 +252,7 @@ const reason = (field: string, form: DetailForm) =>
       detail={card.detail}
       zone={card.zone}
       reports={card.reports}
+      auditEntries={card.auditEntries}
       now={now}
       queueHref={queueHref}
       attendAction={card.reports !== null ? actions.admin.attendReport.queryString : null}

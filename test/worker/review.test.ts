@@ -206,6 +206,7 @@ describe("Each review screen checks its permission in the locality of what it sh
       edits: [f.localityA],
       reports: [f.localityA],
       cards: [f.localityA],
+      log: [f.localityA],
     });
   });
 
@@ -214,7 +215,7 @@ describe("Each review screen checks its permission in the locality of what it sh
     await assign(email, "super_admin", null);
 
     const scope = await db((tx) => panelScope(tx, email));
-    for (const part of [scope.review, scope.edits, scope.reports, scope.cards]) {
+    for (const part of [scope.review, scope.edits, scope.reports, scope.cards, scope.log]) {
       expect(part).toEqual(expect.arrayContaining([f.localityA, f.localityB, "13069"]));
     }
   });
@@ -229,6 +230,7 @@ describe("Each review screen checks its permission in the locality of what it sh
       edits: [f.localityA],
       reports: [f.localityB],
       cards: [f.localityB],
+      log: [],
     });
   });
 
@@ -244,6 +246,7 @@ describe("Each review screen checks its permission in the locality of what it sh
         edits: [],
         reports: [],
         cards: [],
+        log: [],
       });
     }
   });
@@ -271,12 +274,14 @@ describe("Each review screen checks its permission in the locality of what it sh
       edits: [f.localityB],
       reports: [],
       cards: [f.localityA],
+      log: [f.localityA, f.localityB],
     };
     expect(narrowScope(scope, f.localityB)).toEqual({
       review: [f.localityB],
       edits: [f.localityB],
       reports: [],
       cards: [],
+      log: [f.localityB],
     });
     expect(narrowScope(scope, null)).toBe(scope);
   });

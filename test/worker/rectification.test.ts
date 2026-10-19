@@ -16,6 +16,8 @@ import {
   zones,
 } from "../../src/core/db/schema/index.ts";
 import { panelHome } from "../../src/core/access/home.ts";
+import { cardAuditEntries } from "../../src/core/review/audit-log.ts";
+import { AUDIT_ACTION_TEXT } from "../../src/core/review/texts.ts";
 import { editForm } from "../../src/core/edit/card.ts";
 import { cardDraft } from "../../src/core/edit/submission.ts";
 import { newPhotoKey, photoObjectKeys } from "../../src/core/photos/photo.ts";
@@ -212,6 +214,18 @@ describe("direct rectification", () => {
       zoneId: null,
       zoneOther: "Colonia de mentira",
     });
+    // The editor's entry reaches the audit log screen with its Spanish label.
+    const entries = await db((tx) => cardAuditEntries(tx, id));
+    expect(entries).toMatchObject([
+      {
+        action: "edit_contact",
+        businessId: id,
+        localityCode: f.localityA,
+        actor: EMAIL,
+        previousStatus: "in_review",
+      },
+    ]);
+    expect(AUDIT_ACTION_TEXT[entries[0]!.action]).toBe("Edición de datos de contacto");
   });
   it("refuses free text, no choice and another locality's zone on a published card", async () => {
     const id = await insertBusiness(f, { status: "published", postalCode: f.postalCodeA });

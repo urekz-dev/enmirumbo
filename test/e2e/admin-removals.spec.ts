@@ -52,6 +52,8 @@ const DAY = 24 * HOUR;
 const DELAY = "Listo. El cambio puede tardar hasta un minuto en verse en el sitio.";
 /** A role of this file, which reviews registrations and does nothing else. */
 const REVIEW_ONLY = "e2e_review_only";
+/** A role of this file, which only reads the audit log. */
+const AUDIT_ONLY = "e2e_audit_only";
 
 const NAMES = {
   unpublish: "Por Despublicar del Panel de Mentiras",
@@ -79,7 +81,7 @@ async function removeData(): Promise<void> {
     await db.delete(adminAuditLog).where(inArray(adminAuditLog.businessId, Object.values(ids)));
     await db.delete(businesses).where(like(businesses.whatsapp, `${PHONES}%`));
     await ensureLocalSuperAdmin(db);
-    await db.delete(roles).where(eq(roles.key, REVIEW_ONLY));
+    await db.delete(roles).where(inArray(roles.key, [REVIEW_ONLY, AUDIT_ONLY]));
   });
   await withLocalMediaBucket(async (bucket) => {
     await bucket.delete(Object.values(PHOTOS).flatMap(photoObjectKeys));
@@ -332,6 +334,32 @@ test.describe("the actions of a published card", () => {
         .filter({ has: page.getByRole("heading", { name: NAMES.unpublish, exact: true }) }),
     ).toHaveCount(1);
 
+    // Its entry is in the bitácora and on the detail, read-only.
+    await page.goto("/admin");
+    await page.getByRole("link", { name: "Ver la bitácora" }).click();
+    await expect(page).toHaveURL(/\/admin\/bitacora$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Bitácora");
+    const logRow = page
+      .getByTestId("audit-log")
+      .getByRole("listitem")
+      .filter({ has: page.getByRole("link", { name: ids.unpublish, exact: true }) });
+    await expect(logRow).toHaveCount(1);
+    await expect(logRow).toContainText("Despublicación");
+    await expect(logRow).toContainText("Publicado");
+    await expect(logRow).toContainText("admin@enmirumbo.test");
+    await expect(logRow.getByRole("link", { name: ids.unpublish })).toHaveAttribute(
+      "href",
+      `/admin/registros/${ids.unpublish}`,
+    );
+    await expect(page.getByRole("main").locator("form, button")).toHaveCount(0);
+    await expectPhoneReady(page);
+
+    await page.goto(`/admin/registros/${ids.unpublish}`);
+    await expect(page.getByRole("heading", { name: "Bitácora de esta ficha" })).toBeVisible();
+    const logSection = page.getByTestId("business-audit-log");
+    await expect(logSection).toContainText("Despublicación");
+    await expect(logSection).toContainText("Publicado");
+
     // The confirmation of a card that was never unpublished goes back to its detail.
     await page.goto(`/admin/registros/${ids.removeNoJs}/despublicado`);
     await expect(page).toHaveURL(`/admin/registros/${ids.removeNoJs}`);
@@ -496,6 +524,20 @@ test.describe("the actions of a published card", () => {
       404,
     );
 
+    // Its entry survives the card, with nothing of it but its identifier.
+    await page.goto("/admin/bitacora");
+    const deletedRow = page
+      .getByTestId("audit-log")
+      .getByRole("listitem")
+      .filter({ hasText: ids.remove });
+    await expect(deletedRow).toHaveCount(1);
+    await expect(deletedRow).toContainText("Borrado definitivo");
+    await expect(deletedRow).toContainText("Publicado");
+    await expect(deletedRow).toContainText("Ficha borrada");
+    await expect(deletedRow.getByRole("link", { name: ids.remove })).toHaveCount(0);
+    expect(await deletedRow.innerText()).not.toContain(NAMES.remove);
+    expect(await deletedRow.innerText()).not.toContain(`${PHONES}003`);
+
     // Deleting again: no server error, and it says the card no longer exists.
     await page.goto("/admin");
     const again = await page.request.post(
@@ -550,6 +592,7 @@ test.describe("the actions of a published card", () => {
         await expect(page.getByTestId(testId)).toHaveCount(0);
       }
       expect((await page.goto(`/admin/registros/${ids.untouched}/borrar`))?.status()).toBe(403);
+      expect((await page.goto("/admin/bitacora"))?.status()).toBe(403);
       for (const [path, form] of [
         [`/admin/registros/${ids.untouched}?_action=admin.unpublish`, { motivo: "Sin permiso" }],
         [`/admin/registros/${ids.untouched}?_action=admin.newLink`, { enlace: "" }],
@@ -567,6 +610,40 @@ test.describe("the actions of a published card", () => {
       await withDatabase(async (db) => {
         await ensureLocalSuperAdmin(db);
         await db.delete(roles).where(eq(roles.key, REVIEW_ONLY));
+      });
+    }
+  });
+
+  test("a user who only reads the log sees the card's identifier as text, never a dead link", async ({
+    page,
+  }) => {
+    await withDatabase(async (db) => {
+      const [role] = await db
+        .insert(roles)
+        .values({ key: AUDIT_ONLY, name: "Solo bitácora de prueba", scope: "locality" })
+        .returning({ id: roles.id });
+      await db
+        .insert(rolePermissions)
+        .values({ roleId: role!.id, permissionKey: "audit_log.view" });
+      await setLocalAdminRoles(db, [{ role: AUDIT_ONLY, locality: TIZAYUCA }]);
+    });
+    try {
+      await page.goto("/admin/bitacora");
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText("Bitácora");
+      const row = page
+        .getByTestId("audit-log")
+        .getByRole("listitem")
+        .filter({ hasText: ids.unpublish });
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText(ids.unpublish);
+      await expect(row.getByRole("link", { name: ids.unpublish })).toHaveCount(0);
+      // Without a card permission the detail is the panel's 403, so the plain
+      // text was the only honest rendering.
+      expect((await page.goto(`/admin/registros/${ids.unpublish}`))?.status()).toBe(403);
+    } finally {
+      await withDatabase(async (db) => {
+        await ensureLocalSuperAdmin(db);
+        await db.delete(roles).where(eq(roles.key, AUDIT_ONLY));
       });
     }
   });

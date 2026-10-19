@@ -4,7 +4,12 @@
 // here exactly as it quotes them, and the tests compare them character by
 // character; the rest is the prototype's copy, one to one. Colloquial Mexican
 // Spanish, the brand always "enmirumbo". Pure.
-import type { BusinessOrigin, BusinessStatus } from "../db/schema/index.ts";
+import {
+  type AuditAction,
+  type BusinessOrigin,
+  type BusinessStatus,
+  SCHEDULED_JOB_ACTOR,
+} from "../db/schema/index.ts";
 import type { StatusFilter } from "./paths.ts";
 
 // The queue ("Review queue with the pending registrations, oldest first",
@@ -388,3 +393,38 @@ export const RECTIFICATION_SUBMIT = "Guardar cambios";
 export const RECTIFICATION_SAVED = "Cambios guardados.";
 export const RECTIFICATION_WARNING =
   "Este negocio tiene cambios esperando revisión; si los aplicas después, reemplazan lo que cambies aquí.";
+
+// The audit log ("The panel shows the audit log, read-only (v2)"; data-model,
+// "The audit log records the destructive actions of the admin (v2)").
+export const AUDIT_LOG_HEADING = "Bitácora";
+export const AUDIT_LOG_EMPTY = "Todavía no hay movimientos en la bitácora.";
+export const SEE_AUDIT_LOG = "Ver la bitácora";
+export const AUDIT_LOG_SECTION_HEADING = "Bitácora de esta ficha";
+export const AUDIT_LOG_PAGES_LABEL = "Páginas de la bitácora";
+export const AUDIT_WHEN_LABEL = "Cuándo";
+export const AUDIT_ACTOR_LABEL = "Quién";
+export const AUDIT_PREVIOUS_STATUS_LABEL = "Estado anterior";
+export const AUDIT_CARD_LABEL = "Ficha";
+/** Marks the card of an entry that no longer exists, so only its identifier is shown. */
+export const AUDIT_DELETED_TAG = "Ficha borrada";
+/** The actor of the entries the scheduled job writes. */
+export const AUDIT_SCHEDULED_ACTOR = "Trabajo programado";
+
+/** The action of an entry, in Spanish. */
+export const AUDIT_ACTION_TEXT: Readonly<Record<AuditAction, string>> = {
+  reject: "Rechazo",
+  unpublish: "Despublicación",
+  delete: "Borrado definitivo",
+  purge: "Purga",
+  edit_contact: "Edición de datos de contacto",
+};
+
+/** Who did it: the Access email, or "Trabajo programado" for `scheduled-job`. */
+export function auditActorText(actor: string): string {
+  return actor === SCHEDULED_JOB_ACTOR ? AUDIT_SCHEDULED_ACTOR : actor;
+}
+
+/** "1 movimiento en la bitácora" / "<n> movimientos en la bitácora". */
+export function auditCountText(count: number): string {
+  return count === 1 ? "1 movimiento en la bitácora" : `${count} movimientos en la bitácora`;
+}

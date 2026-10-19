@@ -37,7 +37,7 @@ import {
   withZoneNames,
   zoneNamesByLocality,
 } from "../../core/review/localities.ts";
-import { businessesPath, queuePath } from "../../core/review/paths.ts";
+import { auditLogPath, businessesPath, queuePath } from "../../core/review/paths.ts";
 import { reportedBusinesses, reviewQueue } from "../../core/review/queue.ts";
 import { narrowScope, panelScope, queueLocalities } from "../../core/review/scope.ts";
 import { zonesPath } from "../../core/zones/paths.ts";
@@ -121,6 +121,7 @@ const localityNames =
         localityNames={localityNames}
         listHref={scope.cards.length > 0 ? businessesPath({ locality: chosen }) : null}
         zonesHref={zonesHref}
+        auditLogHref={queueView.scope.log.length > 0 ? auditLogPath() : null}
       />
     </div>
   ) : (

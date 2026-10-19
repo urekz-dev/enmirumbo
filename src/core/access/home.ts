@@ -3,7 +3,7 @@ import { eq, and } from "drizzle-orm";
 import type { Db } from "../db/client.ts";
 import { users, roleAssignments } from "../db/schema/index.ts";
 import { panelScope, queueLocalities } from "../review/scope.ts";
-import { businessesPath, queuePath } from "../review/paths.ts";
+import { auditLogPath, businessesPath, queuePath } from "../review/paths.ts";
 import { zonesPath } from "../zones/paths.ts";
 import { zonesLocalities } from "../zones/scope.ts";
 import { can } from "./queries.ts";
@@ -28,6 +28,7 @@ export async function panelHome(
   const links: PanelLink[] = [];
   if (queue) links.push({ href: queuePath(), text: "Cola de revisión" });
   if (scope.cards.length) links.push({ href: businessesPath(), text: "Todos los negocios" });
+  if (scope.log.length) links.push({ href: auditLogPath(), text: "Ver la bitácora" });
   if ((await zonesLocalities(db, email)).length)
     links.push({ href: zonesPath(), text: "Colonias" });
   if (await can(db, email, "users.manage", null))
