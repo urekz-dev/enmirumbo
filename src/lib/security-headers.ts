@@ -15,11 +15,13 @@
 // production, with a Website ID), Umami Cloud (ADR 0014). No inline script or
 // style, no plugin, no framing of the site by another one, and no form
 // posting to another site; the panel also lets its forms reach the Access
-// login, where Access sends a submission whose session expired. Images come
+// login, where Access sends a submission whose session expired. The panel and
+// the edit mode of the management link let no path leave as a referrer. Images come
 // from the site and from the environment's media hostname, MEDIA_URL, where
 // the business photos are (ADR 0011).
 import { isAdminRequest } from "./access/admin-gate.ts";
 import { parseTeamDomain } from "./access/verify.ts";
+import { isEditModeRequest } from "./edit-mode.ts";
 import {
   readAnalytics,
   UMAMI_COLLECTOR_ORIGINS,
@@ -39,10 +41,12 @@ export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 export const REFERRER_POLICY = "strict-origin-when-cross-origin";
 
 /**
- * The stricter policy of the admin panel (base-layout, "The measurement
- * carries no personal data or text typed by people"): not even the site's
- * own pages see a panel path, which can point to a person's registration.
- * It keeps the `Origin` of form submissions, which the panel needs.
+ * The stricter policy of the admin panel and the edit mode (base-layout, "The
+ * measurement carries no personal data or text typed by people"): not even
+ * the site's own pages see a panel path, which can point to a person's
+ * registration, or a path of the edit mode, which carries the key to a card
+ * (src/lib/edit-mode.ts). It keeps the `Origin` of form submissions, which
+ * both need without JavaScript; `no-referrer` would not.
  */
 export const PANEL_REFERRER_POLICY = "strict-origin";
 
@@ -95,13 +99,19 @@ export function policyOptions(vars: SecurityVars, panel: boolean): PolicyOptions
 
 /**
  * The security headers of a response. `panel` for the admin panel, which gets
- * the stricter referrer policy and may send its forms to the Access login.
- * Without `csp`, the policy is left out: only the dev server does that, whose
- * pages need Vite's inline styles and scripts.
+ * the stricter referrer policy and may send its forms to the Access login;
+ * `editMode` for the edit mode of the management link, which gets the
+ * stricter referrer policy too. Without `csp`, the policy is left out: only
+ * the dev server does that, whose pages need Vite's inline styles and
+ * scripts.
  */
 export function securityHeaders(
   vars: SecurityVars,
-  { panel = false, csp = true }: { panel?: boolean; csp?: boolean } = {},
+  {
+    panel = false,
+    editMode = false,
+    csp = true,
+  }: { panel?: boolean; editMode?: boolean; csp?: boolean } = {},
 ): Record<string, string> {
   return {
     ...(csp
@@ -109,7 +119,7 @@ export function securityHeaders(
       : {}),
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
-    "Referrer-Policy": panel ? PANEL_REFERRER_POLICY : REFERRER_POLICY,
+    "Referrer-Policy": panel || editMode ? PANEL_REFERRER_POLICY : REFERRER_POLICY,
   };
 }
 
@@ -127,8 +137,9 @@ export function withSecurityHeaders(
   vars: SecurityVars,
   { csp = true }: { csp?: boolean } = {},
 ): Response {
-  const panel = isAdminRequest(new URL(request.url), "");
-  const headers = securityHeaders(vars, { panel, csp });
+  const url = new URL(request.url);
+  const panel = isAdminRequest(url, "");
+  const headers = securityHeaders(vars, { panel, editMode: isEditModeRequest(url), csp });
   const apply = (target: Headers) => {
     for (const [name, value] of Object.entries(headers)) {
       if (!target.has(name)) target.set(name, value);

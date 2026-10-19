@@ -1,0 +1,84 @@
+---
+// The edit mode of a management link, /{estado}/{municipio}/editar/<token>
+// (docs/specs/business-registration.md, the edit requirements; ADR 0007, ADR
+// 0011, ADR 0012). The middleware has already resolved the active locality,
+// or answered 404.
+//
+// - The token is resolved by its fingerprint, always, in one query
+//   (src/core/management-link/link.ts): a token that does not open a
+//   published card of this locality (invented, altered, invalidated by a
+//   regeneration, of a card no longer published, of another locality or of
+//   a deleted card) answers the site's 404, exactly as any address that does
+//   not exist under the edit mode.
+// - The card is read through HYPERDRIVE_FRESH, everything on that one
+//   connection: the edit mode is a verification flow that follows writes,
+//   and the owner's last edit must be there when they come back. Only the
+//   fields of the form are read (src/core/edit/card.ts).
+// - The form is the registration's in its edit mode (EditPage.astro), posted
+//   to this same address with the action `edit` (src/actions/index.ts),
+//   which Astro runs before this page; then a received edit (saved, or a bot
+//   caught by the trap, which look the same) answers a 303 to the
+//   confirmation, which carries no token, so reloading it sends nothing
+//   again; any other answer renders the form again from the same
+//   submission, with the error next to each field and what the owner had
+//   written, with the status of its error (src/lib/edit.ts).
+// - Opened without a submission, the form is prefilled with the edit the
+//   card has waiting for review, if any, under the warning, or else with the
+//   card as it is published. When the edit waiting carries a new photo, the
+//   photo field says it stays unless another is chosen.
+//
+// Every response here is `no-store`, `noindex, nofollow`, with the referrer
+// policy `strict-origin`, and never measured, by where it lives
+// (src/lib/edit-mode.ts). Nothing here logs the token.
+import { actions } from "astro:actions";
+import { env, waitUntil } from "cloudflare:workers";
+import EditPage from "../../../../components/EditPage.astro";
+import { withDb } from "../../../../core/db/client.ts";
+import { editForm } from "../../../../core/edit/card.ts";
+import { editThanksPath } from "../../../../core/edit/paths.ts";
+import { cardDraft, waitingEditDraft } from "../../../../core/edit/submission.ts";
+import { resolveManagementLink } from "../../../../core/management-link/link.ts";
+import { registrationDraft } from "../../../../core/registration/submission.ts";
+import { isTurnstileEnabled } from "../../../../core/settings/settings.ts";
+import { notFound, requireLocality, seeOther } from "../../../../lib/locality.ts";
+import { registrationPageFailure } from "../../../../lib/registration.ts";
+import { turnstileSiteKey } from "../../../../lib/turnstile.ts";
+
+const locality = requireLocality(Astro.locals);
+const result = Astro.getActionResult(actions.edit);
+if (result && !result.error) return seeOther(editThanksPath(locality));
+
+const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  const link = await resolveManagementLink(db, locality.code, Astro.params.token ?? "");
+  if (link === null) return null;
+  const form = await editForm(db, locality, link.businessId);
+  return form && { ...form, turnstileOn: await isTurnstileEnabled(db) };
+});
+if (view === null) return notFound();
+
+Astro.response.headers.set("Cache-Control", "no-store");
+const failure = result?.error ? registrationPageFailure(result.error) : null;
+let draft = view.waiting
+  ? waitingEditDraft(view.waiting, view.catalogue)
+  : cardDraft(view.card, view.catalogue);
+if (failure?.keepsDraft) {
+  try {
+    draft = registrationDraft(await Astro.request.formData());
+  } catch {
+    // A body that is no form leaves the form as the page opens it.
+  }
+}
+const turnstile =
+  view.turnstileOn || failure?.general === "turnstile" ? { siteKey: turnstileSiteKey(env) } : null;
+---
+
+<EditPage
+  catalogue={view.catalogue}
+  action={actions.edit.queryString}
+  draft={draft}
+  errors={failure?.errors ?? {}}
+  general={failure?.general ?? null}
+  turnstile={turnstile}
+  waiting={view.waiting !== null}
+  keptPhoto={view.waiting?.photoChange === "replace"}
+/>

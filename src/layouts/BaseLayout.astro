@@ -25,6 +25,12 @@
 // (src/lib/media.ts). Without a base for absolute URLs, the canonical,
 // `og:url` and `og:image` are left out.
 //
+// The edit mode of the management link (everything at
+// `/{estado}/{municipio}/editar/` and below, src/lib/edit-mode.ts), whose
+// address carries the key to a card, is decided by where the page lives, not
+// by a prop: its pages, its 404 included, declare `noindex, nofollow` and the
+// referrer policy `strict-origin`, have no canonical and are never measured.
+//
 // Measurement: a page may tag its view with one of ANALYTICS_TAGS
 // (`analyticsTag`), which the Umami script carries as `data-tag`; with the
 // measurement off there is no script, so no tag either.
@@ -37,6 +43,7 @@ import SiteFooter from "../components/SiteFooter.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import { pageAnalytics, type AnalyticsTag } from "../lib/analytics.ts";
 import { readDeployInfo } from "../lib/deploy-info.ts";
+import { EDIT_MODE_REFERRER_POLICY, isEditModeRequest } from "../lib/edit-mode.ts";
 import { shareImage, type ShareImage } from "../lib/share-image.ts";
 import { documentTitle, SITE_NAME, siteDescription } from "../lib/site.ts";
 import { absoluteUrl } from "../lib/site-url.ts";
@@ -67,10 +74,12 @@ const {
   title,
   description,
   canonicalPath,
-  noindex = false,
+  noindex: noindexProp = false,
   analyticsTag,
   image: ownImage,
 } = Astro.props;
+const editMode = isEditModeRequest(Astro.url, Astro.routePattern);
+const noindex = noindexProp || editMode;
 const locality = Astro.locals.locality;
 const pageTitle = documentTitle(title, locality);
 const metaDescription = description ?? siteDescription(locality);
@@ -90,7 +99,8 @@ const deploy = readDeployInfo(env);
     <meta name="format-detection" content="telephone=no" />
     <title>{pageTitle}</title>
     {metaDescription && <meta name="description" content={metaDescription} />}
-    {noindex && <meta name="robots" content="noindex, follow" />}
+    {noindex && <meta name="robots" content={editMode ? "noindex, nofollow" : "noindex, follow"} />}
+    {editMode && <meta name="referrer" content={EDIT_MODE_REFERRER_POLICY} />}
     {canonical && <link rel="canonical" href={canonical} />}
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content={SITE_NAME} />

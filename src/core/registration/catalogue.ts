@@ -31,22 +31,31 @@ export interface RegistrationCatalogue {
 
 const collator = new Intl.Collator("es-MX", { sensitivity: "base", numeric: true });
 
-/** The visible zones of `all`, with their display names, in alphabetical order. */
+/**
+ * The visible zones of `all`, with their display names, in alphabetical
+ * order; and the zones of `alsoZoneIds` even when hidden: the edit of a card
+ * offers the zone the card already has, so a field left as it was keeps it.
+ */
 export function zoneOptions(
   all: readonly { id: number; slug: string; name: string; type: string; visible: boolean }[],
   localityName: string,
+  alsoZoneIds: readonly (number | null)[] = [],
 ): ZoneOption[] {
   const names = zoneDisplayNames(all, localityName);
   return all
-    .filter((zone) => zone.visible)
+    .filter((zone) => zone.visible || alsoZoneIds.includes(zone.id))
     .map(({ id, slug, name }) => ({ id, name: name.trim(), displayName: names.get(slug) ?? name }))
     .toSorted((a, b) => collator.compare(a.displayName, b.displayName));
 }
 
-/** The categories and the visible zones of `locality`. Two queries. */
+/**
+ * The categories and the visible zones of `locality`, and the zones of
+ * `alsoZoneIds` among them even when hidden (zoneOptions). Two queries.
+ */
 export async function registrationCatalogue(
   db: Db,
   locality: Pick<ServedLocality, "code" | "name">,
+  alsoZoneIds: readonly (number | null)[] = [],
 ): Promise<RegistrationCatalogue> {
   const [categoryRows, zoneRows] = await Promise.all([
     db
@@ -64,5 +73,5 @@ export async function registrationCatalogue(
       .from(zones)
       .where(eq(zones.localityCode, locality.code)),
   ]);
-  return { categories: categoryRows, zones: zoneOptions(zoneRows, locality.name) };
+  return { categories: categoryRows, zones: zoneOptions(zoneRows, locality.name, alsoZoneIds) };
 }

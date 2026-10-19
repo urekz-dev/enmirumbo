@@ -785,7 +785,7 @@ This replaces the zones of the scenario "closed catalogue lists" of "Required an
 
 ### Requirement: The registration and edit forms are protected by quotas, honeypot and Turnstile (v2)
 
-Added in v2 — source: ADR 0012, PRD §3 (Flow A), PRD §7. Amended on 2026-10-18 by EMR-42 and the decision of the product owner of that date: for the registration, Turnstile, its kill switch and the test keys are settled in "Turnstile is checked on the server, fails closed and has a switch in the database (v2)", and the alert of the daily threshold in "The daily registrations alert goes out once per local day (v2)"; the edit form (EMR-43) follows them with its own action.
+Added in v2 — source: ADR 0012, PRD §3 (Flow A), PRD §7. Amended on 2026-10-18 by EMR-42 and the decision of the product owner of that date: for the registration, Turnstile, its kill switch and the test keys are settled in "Turnstile is checked on the server, fails closed and has a switch in the database (v2)", and the alert of the daily threshold in "The daily registrations alert goes out once per local day (v2)"; the edit form (EMR-43) follows them with its own action. Amended on 2026-10-18 by EMR-43 and the decision of the product owner of that date: for the edit, the honeypot and the quota are settled in "The edit's honeypot and per-IP quota are those of the public forms (v2)", and Turnstile in "The edit form uses Turnstile with its own action, and without JavaScript says so while it is on (v2)".
 
 Both forms MUST be protected without a login and with the following controls, all of which MUST run before any image is opened and MUST save nothing when they block a submission: (1) an invisible honeypot field, trimmed before it is checked, where a whitespace-only value counts as empty; (2) a per-IP quota of 3 submissions per hour for registrations and 3 per hour for edits, each with its own counter, separate from the counters of reports, search and SMS; (3) Cloudflare Turnstile in managed mode, whose token MUST be validated on the server, and a submission without a valid token MUST be rejected. Turnstile MUST be on from day one behind a kill switch that turns it off without a deploy. Local and CI runs MUST work with Turnstile's test keys without network. The registration MUST also alert the admin when the registrations of a day exceed the threshold configured for the locality.
 
@@ -851,7 +851,7 @@ Both forms MUST be protected without a login and with the following controls, al
 
 ### Requirement: The registration and edit forms require JavaScript for the anti-bot check and say so (v2)
 
-Added in v2 — source: PRD §6.1, ADR 0012. Amended on 2026-10-18 by EMR-42 and the decision of the product owner of that date: the forms require JavaScript while Turnstile's switch is on, and the registration's message and behaviour are settled in "Without JavaScript the registration says so and cannot be sent while Turnstile is on (v2)"; with the switch off they work without JavaScript.
+Added in v2 — source: PRD §6.1, ADR 0012. Amended on 2026-10-18 by EMR-42 and the decision of the product owner of that date: the forms require JavaScript while Turnstile's switch is on, and the registration's message and behaviour are settled in "Without JavaScript the registration says so and cannot be sent while Turnstile is on (v2)"; with the switch off they work without JavaScript. Amended on 2026-10-18 by EMR-43 and the decision of the product owner of that date: the edit's message and behaviour are settled in "The edit form uses Turnstile with its own action, and without JavaScript says so while it is on (v2)".
 
 The registration and edit forms require client JavaScript, because the anti-bot check runs in the browser. This is the single exception to the rule that the site works without JavaScript. When JavaScript is missing, the page MUST say so plainly in Spanish, and the form MUST NOT be submittable. Listings, filters, pagination, search, legal pages and the whole admin panel keep working with server HTML only.
 
@@ -1097,7 +1097,7 @@ While Turnstile's switch is on, the registration page MUST show, above the field
 
 ### Requirement: The daily registrations alert goes out once per local day (v2)
 
-Added in v2 — source: ADR 0012, ADR 0013; decision of the product owner, 2026-10-18 (EMR-42). It settles the alert of the daily threshold of "The registration and edit forms are protected by quotas, honeypot and Turnstile (v2)" and of "Anti-abuse without a captcha on the public form".
+Added in v2 — source: ADR 0012, ADR 0013; decision of the product owner, 2026-10-18 (EMR-42). Amended on 2026-10-18 by EMR-43 and the decision of the product owner of that date: Workers Logs are off (`deployment`, "Workers Logs and traces stay off in every environment (v2)"), so until the email arrives the line is seen only live, with `wrangler tail`. It settles the alert of the daily threshold of "The registration and edit forms are protected by quotas, honeypot and Turnstile (v2)" and of "Anti-abuse without a captcha on the public form".
 
 Each locality has a daily registrations threshold, 20 by default (`data-model`, "The locality is a first-class record keyed by the INEGI municipality code (v2)"), which a super admin changes with SQL until the panel does (epic F, README, Operations); none disables the alert. A task of the hourly job (`deployment`, "Scheduled work runs from one hourly Cron Trigger per environment (v2)") counts, for each active locality with a threshold, the registrations of its local day, in its IANA time zone, up to the time the run was scheduled for: the organic businesses whose `registered_at` falls in that day, new cards and resubmitted rejected cards, whose wait restarts; a card the admin creates is not one. When they are more than the threshold, the admin MUST be alerted, once that day: the run that finds it first claims the alert by writing the locality's day in `daily_registration_alerted_on`, in the same statement that finds it, and only a locality whose last alert is of an earlier day can be claimed. So the later runs of the day, a run repeated, two runs at once and the first run after one that did not happen alert at most once, and the next local day counts from zero and may alert again. The alert blocks nobody and changes nothing else.
 
@@ -1220,3 +1220,169 @@ Locally and in the tests the binding is Wrangler's offline Images, which applies
 
 - **WHEN** an owner sends the form with an 11 MB photo
 - **THEN** the answer is a `413` with "Esa foto pesa más de 5 MB. Sube una más ligera." next to the photo field and the form empty, and nothing is saved
+
+### Requirement: The edit mode of a locality lives under it, and lands on its confirmation (v2)
+
+Added in v2 — source: ADR 0007, ADR 0019, EMR-43 and the decisions of the product owner of 2026-10-18; `base-layout`, "The admin panel and the edit mode stay out of the measurement by where they live (v2)"; "The registration page of a locality lives under it, and lands on its thank-you page (v2)", whose pattern every public form follows. It takes the place of the route `/editar/<token>` at the root in "The management link opens the card in edit mode with the same prefilled form" and "A token that is not exactly the current one opens nothing and gives nothing away", and settles what they, "Sending the edit does not touch the public card: it creates a pending edit", "The edit goes through the same validations as the registration and cannot set what is not its to set" and "Sending changes when others are already waiting replaces the previous ones" leave open.
+
+**The link.** The management link of a card is `/{estado}/{municipio}/editar/<token>`, under the locality of the card; `editar` is a reserved segment (`data-model`, "The slugs of the catalogues do not produce ambiguous URLs at the root of a locality (v2)"), and the token is the one of `data-model`, "The management link is issued by the panel alone and resolved by its fingerprint (v2)". The page MUST resolve the token before anything else, always by the fingerprint of what arrived in the address, in one query that asks for a published card of the page's locality with that fingerprint, and compare the fingerprint found with the one computed in constant time. Every address under `/{estado}/{municipio}/editar/` that does not open a card —an invented token, one altered in a character, one a regeneration invalidated, one of a card that is no longer published, of a card of another locality or of a deleted card, a token of any other shape, and the address without a token— MUST answer the site's 404 page, with the same body, status and headers for all of them; every token, whether it opens a card or not, costs that same single query before the answer is decided. They differ from the 404 of an address outside the edit mode only in the headers below, which every response of the edit mode carries.
+
+**What every response of the edit mode carries.** Every response at `/{estado}/{municipio}/editar/` and below, whatever its case or URL encoding —a page, its confirmation, a redirect and a 404 alike— MUST carry `Referrer-Policy: strict-origin`, the panel's, which sends at most the site's origin, also to the site's own pages such as the privacy notice and the home, and keeps the `Origin` of the form's submission; `X-Robots-Tag: noindex, nofollow`; and `Cache-Control: no-store`. Its pages MUST declare the same referrer policy and `noindex, nofollow` in their markup, MUST have no canonical, and are never measured (`base-layout`). No page of the edit mode links outside the site or to an address that carries the token, no public page links to the edit mode, the sitemap leaves it out and `robots.txt` never names it.
+
+**The page.** The page reads through `HYPERDRIVE_FRESH`, everything on one connection, the switch of Turnstile included: the edit mode is a verification flow and follows writes, so the owner's last edit is there when they come back. It reads only the fields of the form, never the status, the origin, the trades, the dates, the consent record, the link or the photo key. It MUST be headed with the literal text "Edita tu ficha" as its only `h1`, its title is that same static text, which names nothing of the card, and its form is the registration's with the differences the requirements of the edit name: the note and the link in place of the consent block, "Enviar cambios", the warning at the top while an edit waits, and its own messages. Opened without a submission, the form is prefilled with the edit the card has waiting, if any, or else with the card as it is published: the category chosen, the zone by the name the directory shows it with, or the free text of "Otra" as it was written, the optional fields as they are, "Dejar mi ficha sin foto" checked only when the waiting edit removes the photo, and the photo field empty, with the note of "The edit of a card may change its photo, which reaches the card only when the edit is applied (v2)" when the waiting edit carries a new photo. A zone the admin hid after the card took it is still offered to that card, so a zone left as it was keeps it. When the form comes back from a submission, it shows what that submission wrote; when the body was over the limit of the actions, which leaves nothing to read, the form comes back as the page opens it, with the photo's message.
+
+**The submission.** The form posts to the address of its own page with the server action of the edit, and the card is the one that address opens: no field of the submission chooses or changes the card or the locality. The action reached any other way —posted from another page, the confirmation included, or at its own endpoint `/_actions/edit`— and a submission whose token does not open a card MUST save nothing and answer 404. Received changes —saved, or caught by the trap field, which MUST look the same— MUST be answered with a `303` to the confirmation, `/{estado}/{municipio}/editar/gracias`, which the server builds and which carries no token, with `Cache-Control: no-store`, so that reloading it never sends the changes again. Any other answer renders the form again in the answer to that same submission, with the error next to each field and what the owner had written, with the status of its error (`400` for the fields, another card's number and a photo too large or unreadable included; `403` when Turnstile refused it; `413` for a body over the limit of the form; `429` over the quota; `500` when it could not be saved; `502` when Images could not process the photo; `503` when the server was busy with other photos) and no `Set-Cookie`. What the owner wrote MUST NOT travel in an address or a cookie. The log says that an edit could not be saved and the kind of the failure, never the token, whole or in part, or anything of the submission.
+
+A proposed WhatsApp is "another card's" when a card of the same locality other than this one has it, whatever its status: applying the edit could never give the card that number, and the admin checks it again when applying (`admin-review`). The pending edit is saved in one transaction that first locks the card the link opens, checked again —so a link the admin regenerated, or a card unpublished, a moment before saves nothing and answers 404—, then supersedes the edit waiting and saves the new one (`data-model`, "A pending edit replaced by a newer one is kept as superseded (v2)"); so two submissions at once wait for each other and leave exactly one pending edit, and neither owner sees an error.
+
+**The confirmation.** The confirmation MUST show the literal message of "Sending the edit does not touch the public card: it creates a pending edit" as its only `h1` and a link "Volver al inicio" to the home of the locality, and nothing else. It has no form, no query and no token, reads nothing, and its title is the static "Gracias por tus cambios".
+
+#### Scenario: the owner opens their link
+
+- **WHEN** the owner of a published card of Tizayuca opens `/hidalgo/tizayuca/editar/<token>`
+- **THEN** they see "Edita tu ficha" and the form prefilled with their card, and the response carries `Referrer-Policy: strict-origin`, `X-Robots-Tag: noindex, nofollow` and `Cache-Control: no-store`, declares no canonical and loads no script of another site but Turnstile's
+
+#### Scenario: the same 404 for every link that opens nothing
+
+- **WHEN** an invented token, the owner's token altered in its last character, a token a regeneration invalidated, the token of a card that is no longer published, of a card of another locality and of a deleted card, and `/hidalgo/tizayuca/editar` are opened, or an edit is posted with an invented token
+- **THEN** every answer is a 404 with the same body, the site's 404 page, and the same headers
+
+#### Scenario: from the edit page to the privacy notice
+
+- **WHEN** the owner taps "Lee el aviso de privacidad completo", or the wordmark, on their edit page
+- **THEN** the request carries as `Referer` the site's origin alone, never the edit address
+
+#### Scenario: valid changes without JavaScript
+
+- **WHEN** Turnstile's switch is off and the owner sends their changes with client JavaScript disabled
+- **THEN** the answer is a `303` to `/hidalgo/tizayuca/editar/gracias`, which shows "¡Gracias! Ya recibimos tus cambios. Los revisamos y en cuanto los aprobemos tu ficha se actualiza. Mientras tanto sigue publicada como está." and "Volver al inicio", and reloading it saves nothing again
+
+#### Scenario: a submission with errors
+
+- **WHEN** the owner sends their changes with the WhatsApp wrong
+- **THEN** the answer is the form again, with status `400`, `Cache-Control: no-store`, no cookie, "Revisa tu número de WhatsApp: deben ser 10 dígitos" next to the field, the focus on it and what they wrote still in the form, at the address of their link with only the name of the action
+
+#### Scenario: another card's number
+
+- **WHEN** the owner proposes the number of another card of Tizayuca, published, in review or rejected
+- **THEN** nothing is saved and they see "Ese número ya está en otra ficha del directorio." next to the field; the number of their own card, or of a card of another locality, is saved
+
+#### Scenario: the action reached from elsewhere
+
+- **WHEN** the edit action is posted to the home of a locality, to the registration, to the confirmation or to `/_actions/edit`
+- **THEN** the answer is a 404 and nothing is saved
+
+#### Scenario: the link stops working while the owner writes
+
+- **WHEN** the admin generates a new link, or unpublishes the card, while the owner is sending their changes
+- **THEN** nothing is saved, and the answer is the site's 404
+
+#### Scenario: two submissions at once
+
+- **WHEN** three submissions of the same card arrive at the same time
+- **THEN** all three land on the confirmation, and the card has exactly one pending edit and two superseded
+
+### Requirement: The edit's honeypot and per-IP quota are those of the public forms (v2)
+
+Added in v2 — source: ADR 0012; `deployment`, "Anti-abuse counters live in a Durable Object and never in PostgreSQL (v2)", which also says how the address is read; EMR-43 and the decision of the product owner of 2026-10-18. It settles, for the edit, the honeypot and the quota of "The registration and edit forms are protected by quotas, honeypot and Turnstile (v2)", which takes the place of "Anti-abuse for edit submissions, with its own quota".
+
+The server MUST decide an edit in this order, each step only when the one before let it through, so each step that refuses it saves nothing and opens no image: the token, from the address ("The edit mode of a locality lives under it, and lands on its confirmation (v2)"); the trap field; Turnstile, while its switch is on ("The edit form uses Turnstile with its own action, and without JavaScript says so while it is on (v2)"); every field, where the photo is only weighed; the per-IP quota; the photo; and the save.
+
+The edit form carries the trap field of the public forms, the same as the registration's: invisible, out of the keyboard's order, hidden from screen readers and away from autofill, and trimmed before it is checked, so that a value of only spaces counts as empty. A submission with it filled, and a token that opens a card, MUST be answered as received changes —the `303` to the confirmation— without saving anything.
+
+The per-IP quota of the edits is its own purpose of the quota counter, `edit`: 3 per address in a window of one hour that starts with its first counted edit, counted apart from the search, the reports, the registrations and the SMS. Only a submission that passed the token, the trap field, Turnstile (or came while its switch is off) and the validation of every field counts, whether it is then saved or meets another card's number; so a typo or a refused token spends no quota. Over it, nothing is saved and the form comes back with the literal text "Ya recibimos varios cambios desde aquí. Espera un rato y vuelve a intentar." above it, with what the owner had written, status `429` and `Cache-Control: no-store`. A request that carries no address of its visitor —only possible on a developer's machine— is not counted. When the counter cannot answer, the edit goes on as if it were within the quota.
+
+#### Scenario: the fourth edit of the hour
+
+- **WHEN** an address that sent three valid edits this hour sends a fourth
+- **THEN** nothing is saved, the answer is a `429` with "Ya recibimos varios cambios desde aquí. Espera un rato y vuelve a intentar." and what the owner had written, and another address edits the same card normally
+
+#### Scenario: what does not count
+
+- **WHEN** an address sends edits caught by the trap field, edits with a field wrong, edits Turnstile refused and edits whose token opens nothing
+- **THEN** none of them spends its quota
+
+#### Scenario: independent counters
+
+- **WHEN** an address over its edit quota registers or reports, or an address over its registration quota sends an edit
+- **THEN** the registration and the report are saved, and so is the edit
+
+#### Scenario: the trap field
+
+- **WHEN** an edit arrives with the trap field filled, or with only spaces in it
+- **THEN** the first lands on the confirmation and saves nothing; the second is saved normally
+
+### Requirement: The edit form uses Turnstile with its own action, and without JavaScript says so while it is on (v2)
+
+Added in v2 — source: ADR 0012; EMR-43 and the decision of the product owner of 2026-10-18. It settles, for the edit, Turnstile of "The registration and edit forms are protected by quotas, honeypot and Turnstile (v2)" and the message of "The registration and edit forms require JavaScript for the anti-bot check and say so (v2)".
+
+The edit form uses the registration's widget, check, switch and test keys ("Turnstile is checked on the server, fails closed and has a switch in the database (v2)"), with its own action, `edit`: a token issued for the registration does not pass on the edit, nor one of the edit on the registration. The widget goes after the note on the privacy notice and before the submit button. A refused submission saves nothing, spends no quota, opens no image, and comes back with status `403`, "No pudimos comprobar que eres una persona. Vuelve a intentarlo." above the form, what the owner had written and the widget.
+
+While Turnstile's switch is on, the edit page MUST show, above the fields, only to a browser that does not run JavaScript (a `noscript`), the literal text "Para editar tu ficha, activa JavaScript en tu navegador. Lo usamos para comprobar que eres una persona.", and the form MUST NOT be submittable: its one submit button is disabled in the page's markup, and only the widget's script enables it, once the widget has a token. A submission forged without the form is refused as one without a token. With JavaScript the text is never shown. With the switch off, the form is sent and validated without JavaScript and the text is not shown.
+
+#### Scenario: no JavaScript
+
+- **WHEN** an owner opens their edit page with JavaScript disabled while Turnstile is on
+- **THEN** they read "Para editar tu ficha, activa JavaScript en tu navegador. Lo usamos para comprobar que eres una persona." above the fields, and neither the button nor Enter sends the form
+
+#### Scenario: with JavaScript
+
+- **WHEN** an owner opens their edit page with JavaScript enabled
+- **THEN** the text is not shown, the widget renders with the action `edit`, and the button is enabled as soon as the widget has its token
+
+#### Scenario: a token of another form
+
+- **WHEN** an edit carries a valid token whose action is `registration`
+- **THEN** it is refused with status `403`, and nothing is saved
+
+#### Scenario: the switch off without JavaScript
+
+- **WHEN** Turnstile's switch is off and an owner sends their changes with JavaScript disabled
+- **THEN** the text is not shown and the edit is processed on the server as without Turnstile
+
+### Requirement: The edit of a card may change its photo, which reaches the card only when the edit is applied (v2)
+
+Added in v2 — source: decisions of the product owner, 2026-10-18 (EMR-43): the edit is "the same registration form", which has had the photo field since EMR-40, and a new photo the owner already sent stays with their later changes; ADR 0011. It settles the photo of "The management link opens the card in edit mode with the same prefilled form", whose form has the photo field, and of "Sending the edit does not touch the public card: it creates a pending edit"; and it amends "The edit goes through the same validations as the registration and cannot set what is not its to set" in one message, the one of a photo Images could not process.
+
+The edit form has the registration's photo field, its policy and "Dejar mi ficha sin foto", with the same checks, order and literal messages ("Photos are uploaded through the Images binding, within a ceiling of work (v2)"), but one: when Images cannot process the photo, the field of the edit says "No pudimos procesar tu foto. Intenta con otra o envía tus cambios sin cambiar la foto." The registration keeps its own message.
+
+An edit asks one of three things of the card's photo: a new photo, when a file is chosen; no photo, when "Dejar mi ficha sin foto" is checked, which wins over a file sent with it, never opened; or, when neither comes, to keep the photo as it stands: the new photo of the edit it supersedes, when that edit carried one, or else the photo the card has as it is published. A new photo is stored when the edit is submitted, after the quota, in both sizes, under a new photo key that no public page names, and the pending edit records what it asks (`data-model`, "A pending edit may change the photo of its card (v2)"). The card's photo MUST NOT change until the admin applies the edit (`admin-review`, "Applying or discarding a pending edit carries out what it asks of the photo (v2)").
+
+No browser can put a photo back in a file field, so while the edit waiting carries a new photo, the edit form MUST say so by the photo field, below it and tied to it, with the literal text "La foto nueva que nos mandaste se queda, a menos que elijas otra." It is shown only then, and not when the form comes back with "Dejar mi ficha sin foto" checked or with something else to say of the photo (its error, or that a photo sent has to be chosen again); it is a note, which neither marks the field invalid nor takes the focus.
+
+When the edit is not saved (another card's number, a link that stopped opening the card, a failure of the database), the photo just stored is deleted. When a newer edit supersedes one that carried a new photo, the newer edit takes that photo over when it keeps the photo, and nothing is deleted; when it brings another file or checks "Dejar mi ficha sin foto", the objects of that photo are deleted once the newer edit is saved. A deletion that fails is logged by its kind and does not fail the edit: what it leaves behind is an object that no card and no waiting edit names, for the orphan sweep.
+
+#### Scenario: a new photo in the edit
+
+- **WHEN** the owner of a card with a photo chooses another one and sends their changes
+- **THEN** the new photo is stored in its two sizes under a new key that the pending edit names, the card keeps its own photo, and no public page names the new one
+
+#### Scenario: removing the photo in the edit
+
+- **WHEN** the owner checks "Dejar mi ficha sin foto" and sends their changes
+- **THEN** the pending edit asks to leave the card without a photo, and the card keeps its photo until the edit is applied
+
+#### Scenario: the checkbox and a file
+
+- **WHEN** an edit checks "Dejar mi ficha sin foto" and also carries a file
+- **THEN** the pending edit asks to leave the card without a photo, and the file is never opened
+
+#### Scenario: the new photo of the edit waiting stays
+
+- **WHEN** the owner sent a new photo, opens their link again and sends other changes without choosing a file or checking "Dejar mi ficha sin foto"
+- **THEN** the form said "La foto nueva que nos mandaste se queda, a menos que elijas otra." by the photo field, the new edit keeps that same photo, whose objects are not deleted, and the card's own photo stays as it was
+
+#### Scenario: a newer edit replaces one with a new photo
+
+- **WHEN** the owner sent a new photo, and then sends other changes with another photo, or with "Dejar mi ficha sin foto" checked
+- **THEN** the first edit is superseded, the objects of its photo are deleted, and the card's own photo stays as it was
+
+#### Scenario: nothing about the photo
+
+- **WHEN** an edit chooses no file and leaves "Dejar mi ficha sin foto" unchecked, and the edit it supersedes, if any, carried no new photo
+- **THEN** the pending edit asks to keep the photo the card has as it is published
+
+#### Scenario: a photo Images could not process
+
+- **WHEN** Images fails on the photo of an edit
+- **THEN** nothing is saved and the field says "No pudimos procesar tu foto. Intenta con otra o envía tus cambios sin cambiar la foto.", with everything else the owner wrote

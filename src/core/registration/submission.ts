@@ -74,7 +74,8 @@ export type ErrorField = (typeof ERROR_FIELDS)[number];
 export const ERROR_CODES = {
   name: ["required", "length"],
   category: ["required"],
-  whatsapp: ["invalid", "duplicate"],
+  // `taken` is the edit's: the number of another card (src/core/edit/).
+  whatsapp: ["invalid", "duplicate", "taken"],
   zone: ["required", "length"],
   whatYouOffer: ["length"],
   landline: ["invalid", "length"],
@@ -104,6 +105,7 @@ const MESSAGES: { [F in ErrorField]: Record<ErrorCode<F>, string> } = {
     invalid: "Revisa tu número de WhatsApp: deben ser 10 dígitos",
     duplicate:
       "Este número ya tiene una ficha registrada. Si es tu negocio, no hace falta registrarlo otra vez: te vamos a pasar por WhatsApp el enlace para editarlo.",
+    taken: "Ese número ya está en otra ficha del directorio.",
   },
   zone: { required: "Escribe el nombre de tu colonia", length: lengthMessage(MAX_LENGTHS.zone) },
   whatYouOffer: { length: lengthMessage(MAX_LENGTHS.whatYouOffer) },
@@ -268,22 +270,27 @@ export function pageLink(text: string): string | null {
   return url.href;
 }
 
+/** What the fields of a valid submission describe: the business and what it asks of the photo. */
+interface BusinessFields {
+  registration: NewRegistration;
+  photo: PhotoRequest;
+}
+
 /**
- * Reads and validates a submission against the catalogue of its locality,
- * every field at once, so the form comes back with every error together.
- * The consent comes last: a notice version that is not the server's
- * (`noticeVersion`), missing or forged, is the notice that changed, which
- * matters more than an unchecked box. The version only detects the
- * mismatch: the one stored is always the server's (./save.ts).
+ * Reads the fields a business enters, against the catalogue of its locality,
+ * every one at once, and notes each error in `errors`: the same rules for the
+ * registration and the edit (business-registration, "The edit goes through
+ * the same validations as the registration and cannot set what is not its
+ * to set"). The photo is only weighed here, never opened. Null when a field
+ * is wrong.
  */
-export function validateRegistration(
+function readBusinessFields(
   form: FormData,
   catalogue: RegistrationCatalogue,
-  noticeVersion: string = NOTICE_VERSION,
-): RegistrationValidation {
+  errors: RegistrationErrors,
+): BusinessFields | null {
   const F = REGISTRATION_FIELDS;
   const text = (field: string) => formText(form, field).trim();
-  const errors: RegistrationErrors = {};
 
   const name = text(F.name);
   if (name === "") errors.name = "required";
@@ -323,19 +330,13 @@ export function validateRegistration(
   if (facebookText !== null && facebookUrl === null) errors.facebookUrl = "invalid";
 
   // Only its weight here: the file is opened after every defense
-  // (src/core/registration/submit.ts).
+  // (src/core/registration/submit.ts, src/core/edit/submit.ts).
   const removePhoto = isChecked(form, F.removePhoto);
   const file = removePhoto ? null : uploadedFile(form, F.photo);
   if (file !== null && file.size > MAX_PHOTO_BYTES) errors.photo = "too-large";
 
-  if (text(F.noticeVersion) !== noticeVersion) errors.consent = "notice-changed";
-  else if (!isChecked(form, F.consent)) errors.consent = "required";
-
-  if (Object.keys(errors).length > 0 || category === undefined || whatsapp === null) {
-    return { kind: "invalid", errors };
-  }
+  if (Object.keys(errors).length > 0 || category === undefined || whatsapp === null) return null;
   return {
-    kind: "valid",
     registration: {
       name,
       categoryId: category.id,
@@ -354,6 +355,53 @@ export function validateRegistration(
         ? { kind: "keep" }
         : { kind: "upload", file },
   };
+}
+
+/** The validation of `errors` and the fields they left. */
+function validation(
+  errors: RegistrationErrors,
+  fields: BusinessFields | null,
+): RegistrationValidation {
+  return fields === null || Object.keys(errors).length > 0
+    ? { kind: "invalid", errors }
+    : { kind: "valid", ...fields };
+}
+
+/**
+ * Reads and validates a registration against the catalogue of its locality,
+ * every field at once, so the form comes back with every error together.
+ * The consent comes last: a notice version that is not the server's
+ * (`noticeVersion`), missing or forged, is the notice that changed, which
+ * matters more than an unchecked box. The version only detects the
+ * mismatch: the one stored is always the server's (./save.ts).
+ */
+export function validateRegistration(
+  form: FormData,
+  catalogue: RegistrationCatalogue,
+  noticeVersion: string = NOTICE_VERSION,
+): RegistrationValidation {
+  const errors: RegistrationErrors = {};
+  const fields = readBusinessFields(form, catalogue, errors);
+  if (formText(form, REGISTRATION_FIELDS.noticeVersion).trim() !== noticeVersion) {
+    errors.consent = "notice-changed";
+  } else if (!isChecked(form, REGISTRATION_FIELDS.consent)) {
+    errors.consent = "required";
+  }
+  return validation(errors, fields);
+}
+
+/**
+ * Reads and validates the fields of a business with the registration's rules
+ * and messages, and nothing else: no consent, no notice version. The edit of
+ * the management link (src/core/edit/submission.ts) is this, since the
+ * consent of the registration stays in force.
+ */
+export function validateBusinessFields(
+  form: FormData,
+  catalogue: RegistrationCatalogue,
+): RegistrationValidation {
+  const errors: RegistrationErrors = {};
+  return validation(errors, readBusinessFields(form, catalogue, errors));
 }
 
 /** What the form shows again when it comes back: what the owner had written. */

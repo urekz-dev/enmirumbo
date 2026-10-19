@@ -1,7 +1,9 @@
 // Worker entry: Astro serves every request, and the scheduled handler runs
 // the hourly jobs (ADR 0013). Every response carries the security headers
 // (src/lib/security-headers.ts) and, in a deployed environment, asks not to be
-// indexed (src/lib/robots.ts, ADR 0008). The static assets never reach this
+// indexed (src/lib/robots.ts, ADR 0008); every response of the edit mode of
+// the management link also asks not to be indexed nor followed nor stored
+// (src/lib/edit-mode.ts). The static assets never reach this
 // Worker: the build gives them the same headers through `_headers`
 // (src/integrations/static-headers.ts). It also exports the Durable Object of
 // the per-IP quotas (src/lib/quota/counter.ts, ADR 0012).
@@ -11,6 +13,7 @@
 // (src/lib/media.ts): a deployed environment serves its media from its media
 // hostname, without this Worker (ADR 0011).
 import { handle } from "@astrojs/cloudflare/handler";
+import { withEditModeHeaders } from "./lib/edit-mode.ts";
 import { serveLocalMedia } from "./lib/media.ts";
 import { withRobotsPolicy } from "./lib/robots.ts";
 import { withSecurityHeaders } from "./lib/security-headers.ts";
@@ -34,7 +37,10 @@ async function answer(request: Request, env: Env, ctx: ExecutionContext): Promis
 export default {
   fetch: async (request, env, ctx) =>
     withSecurityHeaders(
-      withRobotsPolicy(await answer(request, env, ctx), env.ENVIRONMENT),
+      withRobotsPolicy(
+        withEditModeHeaders(await answer(request, env, ctx), request),
+        env.ENVIRONMENT,
+      ),
       request,
       env,
       // The dev server's pages need Vite's inline styles and scripts, which

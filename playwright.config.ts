@@ -42,6 +42,7 @@ export default defineConfig({
         "many-cards/**",
         "search-pages/**",
         "registration.spec.ts",
+        "edit.spec.ts",
         "turnstile-real.spec.ts",
       ],
     },
@@ -74,16 +75,27 @@ export default defineConfig({
       testMatch: "registration.spec.ts",
       dependencies: ["phone, search pages"],
     },
+    // The edit mode of the management link (test/e2e/edit.spec.ts): its flows
+    // without JavaScript turn Turnstile's switch off too, and it publishes
+    // fictitious cards in Tizayuca that the sitemap would list, so it runs
+    // alone, after "phone, registration" and before the second locality.
+    {
+      name: "phone, edit",
+      use: PHONE,
+      testMatch: "edit.spec.ts",
+      dependencies: ["phone, registration"],
+    },
     // The same site with a second, fictitious active locality
     // (test/e2e/two-localities/): the list of localities at the root, the
     // locality cookie and the link to change municipality, and the crawls
     // again, now through the list. It runs after "phone", "phone, many cards",
-    // "phone, search pages" and "phone, registration", whose tests expect
-    // Tizayuca alone, and its teardown removes the second locality.
+    // "phone, search pages", "phone, registration" and "phone, edit", whose
+    // tests expect Tizayuca alone, and its teardown removes the second
+    // locality.
     {
       name: "second locality",
       testMatch: "two-localities/second-locality.setup.ts",
-      dependencies: ["phone, registration"],
+      dependencies: ["phone, edit"],
       teardown: "no second locality",
     },
     {

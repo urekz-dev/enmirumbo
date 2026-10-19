@@ -1,7 +1,7 @@
 // The Turnstile check of a form that needs it (ADR 0012; docs/specs/
 // business-registration.md, "Turnstile is checked on the server, fails closed
-// and has a switch in the database (v2)"): the registration now, the edit
-// form (EMR-43) with the same call. With the switch off nothing is asked;
+// and has a switch in the database (v2)"): the registration and the edit form
+// of the management link, each with its own action. With the switch off nothing is asked;
 // with it on, the submission passes only with a token that ./verify.ts finds
 // valid.
 //

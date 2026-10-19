@@ -1,0 +1,80 @@
+---
+// The edit page of a management link, in the global layout
+// (docs/specs/business-registration.md, "The management link opens the card
+// in edit mode with the same prefilled form", "Sending changes when others
+// are already waiting replaces the previous ones" and "The edit mode of a
+// locality lives under it, and lands on its confirmation (v2)"): "Edita tu
+// ficha" as its only `h1`, the phrase under it, the warning while an edit
+// waits for review, and the registration form in its edit mode
+// (RegistrationForm.astro). The page
+// (src/pages/[state]/[municipality]/editar/[token].astro) reads the card and
+// the submission; this renders them, so each state is tested with the
+// Container API.
+//
+// Its title is static and names nothing of the card. The layout gives it, by
+// where it lives, `noindex, nofollow`, the referrer policy `strict-origin`, no
+// canonical and no measurement (src/lib/edit-mode.ts). It has no link that
+// leaves the site, and none that carries the token.
+import type { RegistrationCatalogue } from "../core/registration/catalogue.ts";
+import { EDIT_HEADING, EDIT_PHRASE, PENDING_EDIT_WARNING } from "../core/edit/submission.ts";
+import type {
+  GeneralError,
+  RegistrationDraft,
+  RegistrationErrors,
+} from "../core/registration/submission.ts";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { requireLocality } from "../lib/locality.ts";
+import RegistrationForm from "./RegistrationForm.astro";
+
+interface Props {
+  catalogue: RegistrationCatalogue;
+  /** Where the form posts: the page's own address with the action (`actions.edit`). */
+  action: string;
+  draft: RegistrationDraft;
+  errors: RegistrationErrors;
+  general: GeneralError | null;
+  /** Turnstile while its switch is on, with the environment's site key; null when it is off. */
+  turnstile: { siteKey: string | null } | null;
+  /** Whether the card has an edit waiting for review. */
+  waiting: boolean;
+  /** Whether the edit waiting carries a new photo, which stays unless another comes. */
+  keptPhoto?: boolean;
+}
+
+const {
+  catalogue,
+  action,
+  draft,
+  errors,
+  general,
+  turnstile,
+  waiting,
+  keptPhoto = false,
+} = Astro.props;
+const locality = requireLocality(Astro.locals);
+---
+
+<BaseLayout title={EDIT_HEADING}>
+  <section class="flex flex-col gap-6 py-4">
+    <div class="flex flex-col gap-2">
+      <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{EDIT_HEADING}</h1>
+      <p class="text-ink-muted">{EDIT_PHRASE}</p>
+    </div>
+    {waiting && (
+      <p role="status" class="rounded-lg border border-ink p-4 text-sm font-semibold text-ink">
+        {PENDING_EDIT_WARNING}
+      </p>
+    )}
+    <RegistrationForm
+      mode="edit"
+      action={action}
+      catalogue={catalogue}
+      municipality={locality.name}
+      draft={draft}
+      errors={errors}
+      general={general}
+      turnstile={turnstile}
+      keptPhoto={keptPhoto}
+    />
+  </section>
+</BaseLayout>

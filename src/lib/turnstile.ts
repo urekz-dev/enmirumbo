@@ -4,8 +4,8 @@
 // src/components/TurnstileWidget.astro with `turnstileSiteKey(env)` while
 // the switch is on, and its action gives its core `turnstileVerifier(env)`,
 // which src/core/turnstile/check.ts calls with the token and the form's
-// action. The registration does both now; the edit form (EMR-43) will do the
-// same, with its own action.
+// action. The registration and the edit form of the management link do both,
+// each with its own action.
 //
 // The secret is TURNSTILE_SECRET_KEY, a Worker secret. Locally none is
 // needed: with ENVIRONMENT `local` Cloudflare's test keys are emulated

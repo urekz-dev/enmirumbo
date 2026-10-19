@@ -20,6 +20,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { BUSINESS_ID_PATTERN } from "../../business/id.ts";
+import { PHOTO_KEY_PATTERN as SERVER_PHOTO_KEY_PATTERN } from "../../photos/photo.ts";
 import { coordinates, matches, oneOf, PHONE_PATTERN, together } from "./checks.ts";
 import { categories, trades } from "./catalogue.ts";
 import { localities, zones } from "./locality.ts";
@@ -32,6 +33,13 @@ export type BusinessOrigin = (typeof BUSINESS_ORIGINS)[number];
 
 export const PENDING_EDIT_STATUSES = ["pending", "applied", "discarded", "superseded"] as const;
 export type PendingEditStatus = (typeof PENDING_EDIT_STATUSES)[number];
+
+/**
+ * What a pending edit does to the card's photo once applied: leave it, put
+ * the new photo the edit uploaded in its place, or leave the card without one.
+ */
+export const PENDING_EDIT_PHOTO_CHANGES = ["keep", "replace", "remove"] as const;
+export type PendingEditPhotoChange = (typeof PENDING_EDIT_PHOTO_CHANGES)[number];
 
 export const REPORT_REASONS = ["closed", "not_real", "incorrect_data", "inappropriate"] as const;
 export type ReportReason = (typeof REPORT_REASONS)[number];
@@ -177,10 +185,13 @@ export const businessTrades = pgTable(
 
 /**
  * The full content a business sent from its management link, waiting for
- * review: the fields of the form and nothing else. Status, origin, trades,
- * publication date, consent record and link fingerprint are not editable and
- * have no column here. A business has at most one pending edit; a newer one
- * supersedes it.
+ * review: the fields of the form, the change it asks of the photo, and
+ * nothing else. Status, origin, trades, publication date, consent record and
+ * link fingerprint are not editable and have no column here. A business has
+ * at most one pending edit; a newer one supersedes it. A new photo is stored
+ * under its own key (`new_photo_key`), which no public page names until the
+ * admin applies the edit, and which one edit names at a time: a newer edit
+ * that keeps it takes it over. The card's own photo key is never copied here.
  */
 export const pendingEdits = pgTable(
   "pending_edits",
@@ -202,6 +213,10 @@ export const pendingEdits = pgTable(
     address: text("address"),
     openingHours: text("opening_hours"),
     facebookUrl: text("facebook_url"),
+    photoChange: text("photo_change", { enum: PENDING_EDIT_PHOTO_CHANGES })
+      .notNull()
+      .default("keep"),
+    newPhotoKey: text("new_photo_key").unique(),
 
     status: text("status", { enum: PENDING_EDIT_STATUSES }).notNull().default("pending"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
@@ -225,6 +240,14 @@ export const pendingEdits = pgTable(
     check("pending_edits_status_check", oneOf(t.status, PENDING_EDIT_STATUSES)),
     check("pending_edits_whatsapp_check", matches(t.whatsapp, PHONE_PATTERN)),
     check("pending_edits_zone_check", sql`${t.zoneId} IS NOT NULL OR ${t.zoneOther} IS NOT NULL`),
+    check("pending_edits_photo_change_check", oneOf(t.photoChange, PENDING_EDIT_PHOTO_CHANGES)),
+    // A new photo key only when the edit replaces the photo, always while it
+    // waits, and only one the server generates. A superseded edit gives its
+    // key up: its photo went to the newer edit, or was deleted.
+    check(
+      "pending_edits_new_photo_check",
+      sql`(${t.newPhotoKey} IS NULL OR ${t.photoChange} = 'replace') AND (${t.status} <> 'pending' OR ${t.photoChange} <> 'replace' OR ${t.newPhotoKey} IS NOT NULL) AND ${matches(t.newPhotoKey, SERVER_PHOTO_KEY_PATTERN)}`,
+    ),
     check(
       "pending_edits_resolution_check",
       sql`(${t.status} = 'pending') = (${t.resolvedAt} IS NULL) AND (${t.discardReason} IS NULL OR ${t.status} = 'discarded')`,

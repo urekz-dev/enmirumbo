@@ -32,6 +32,16 @@
 // photo, the field says it has to be chosen again, unless the photo itself
 // is what came back with an error.
 //
+// The edit mode of the management link (docs/specs/business-registration.md,
+// "The management link opens the card in edit mode with the same prefilled
+// form") is this same form with `mode="edit"`: the same fields, rules and
+// messages, prefilled by its page; in place of the consent block, the note
+// that the registration's consent stays in force (PrivacyNote.astro); its own
+// messages above the form (the quota, a failure to save, no JavaScript) and
+// for a photo Images could not process; by the photo field, while the edit
+// waiting carries a new photo, that it stays unless another is chosen;
+// Turnstile's action `edit`; and "Enviar cambios".
+//
 // While Turnstile is on (docs/specs/business-registration.md, "Without
 // JavaScript the registration says so and cannot be sent while Turnstile is
 // on (v2)"), the widget (TurnstileWidget.astro) goes before the submit
@@ -46,6 +56,13 @@
 // sent. Without it, the example is the generic one or the chosen category's,
 // and the button stays as it is.
 //
+import {
+  EDIT_GENERAL_ERROR_MESSAGES,
+  EDIT_NO_JAVASCRIPT_MESSAGE,
+  EDIT_PHOTO_KEPT_NOTE,
+  EDIT_SUBMIT,
+  editErrorMessage,
+} from "../core/edit/submission.ts";
 import type { RegistrationCatalogue } from "../core/registration/catalogue.ts";
 import {
   GENERIC_WHAT_YOU_OFFER_EXAMPLE,
@@ -72,6 +89,7 @@ import { PRIMARY_BUTTON } from "../lib/buttons.ts";
 import ConsentBlock from "./ConsentBlock.astro";
 import FieldError from "./FieldError.astro";
 import HoneypotField from "./HoneypotField.astro";
+import PrivacyNote from "./PrivacyNote.astro";
 import TurnstileWidget from "./TurnstileWidget.astro";
 
 interface Props {
@@ -89,9 +107,26 @@ interface Props {
   general: GeneralError | null;
   /** Turnstile, with the environment's site key, while its switch is on; null when it is off. */
   turnstile: { siteKey: string | null } | null;
+  /** The registration, or the edit of a published card from its management link. */
+  mode?: "registration" | "edit";
+  /** The edit only: whether the edit waiting carries a new photo, which stays unless another comes. */
+  keptPhoto?: boolean;
 }
 
-const { action, catalogue, municipality, draft, errors, general, turnstile } = Astro.props;
+const {
+  action,
+  catalogue,
+  municipality,
+  draft,
+  errors,
+  general,
+  turnstile,
+  mode = "registration",
+  keptPhoto = false,
+} = Astro.props;
+const editing = mode === "edit";
+const generalMessages = editing ? EDIT_GENERAL_ERROR_MESSAGES : GENERAL_ERROR_MESSAGES;
+const fieldMessage = editing ? editErrorMessage : errorMessage;
 
 /** The id of the control of each field. */
 const id = (field: string) => `registration-${field}`;
@@ -99,7 +134,7 @@ const errorId = (field: ErrorField) => `${id(field)}-error`;
 /** The message next to `field`, or null. */
 const message = (field: ErrorField): string | null => {
   const code = errors[field];
-  return code === undefined ? null : errorMessage(field, code);
+  return code === undefined ? null : fieldMessage(field, code);
 };
 /** The first field with an error, which takes the focus. */
 const first = ERROR_FIELDS.find((field) => errors[field] !== undefined);
@@ -123,6 +158,9 @@ const checkboxLabel =
 const chosen = catalogue.categories.find(({ slug }) => slug === draft.category);
 /** What the photo field says: its error, or that the photo sent has to be chosen again. */
 const photoMessage = message("photo") ?? (draft.photo ? PHOTO_NOT_KEPT_MESSAGE : null);
+/** The edit's note that the new photo of the edit waiting stays, when nothing else is said of the photo. */
+const keptPhotoNote =
+  editing && keptPhoto && photoMessage === null && !draft.removePhoto ? EDIT_PHOTO_KEPT_NOTE : null;
 ---
 
 <form
@@ -138,7 +176,7 @@ const photoMessage = message("photo") ?? (draft.photo ? PHOTO_NOT_KEPT_MESSAGE :
   {turnstile && (
     <noscript>
       <p class="rounded-lg border border-control px-4 py-3 text-sm font-semibold text-ink">
-        {NO_JAVASCRIPT_MESSAGE}
+        {editing ? EDIT_NO_JAVASCRIPT_MESSAGE : NO_JAVASCRIPT_MESSAGE}
       </p>
     </noscript>
   )}
@@ -146,7 +184,7 @@ const photoMessage = message("photo") ?? (draft.photo ? PHOTO_NOT_KEPT_MESSAGE :
   {general && (
     <p role="alert" class="text-sm font-semibold text-ink">
       <span aria-hidden="true">⚠ </span>
-      {GENERAL_ERROR_MESSAGES[general]}
+      {generalMessages[general]}
     </p>
   )}
 
@@ -377,12 +415,21 @@ const photoMessage = message("photo") ?? (draft.photo ? PHOTO_NOT_KEPT_MESSAGE :
       accept={PHOTO_ACCEPT}
       autofocus={first === "photo"}
       aria-invalid={invalid("photo")}
-      aria-describedby={[`${id(F.photo)}-help`, photoMessage && errorId("photo")]
+      aria-describedby={[
+        `${id(F.photo)}-help`,
+        photoMessage && errorId("photo"),
+        keptPhotoNote && `${id(F.photo)}-kept`,
+      ]
         .filter(Boolean)
         .join(" ")}
       class={`block min-h-11 w-full cursor-pointer rounded-lg bg-background px-3 py-2.5 text-sm text-ink file:mr-3 file:min-h-11 file:cursor-pointer file:rounded-lg file:border-0 file:bg-surface file:px-4 file:py-2.5 file:text-sm file:font-semibold file:text-ink focus:ring-2 focus:ring-action-strong focus:outline-none ${errors.photo === undefined ? "border border-control" : "border-2 border-ink"}`}
     />
     <FieldError id={errorId("photo")} message={photoMessage} />
+    {keptPhotoNote && (
+      <p id={`${id(F.photo)}-kept`} class="text-sm font-semibold text-ink">
+        {keptPhotoNote}
+      </p>
+    )}
     <label for={id(F.removePhoto)} class={checkboxLabel}>
       <input
         type="checkbox"
@@ -395,16 +442,24 @@ const photoMessage = message("photo") ?? (draft.photo ? PHOTO_NOT_KEPT_MESSAGE :
     </label>
   </div>
 
-  <ConsentBlock
-    municipality={municipality}
-    checkboxId={id(F.consent)}
-    autofocus={first === "consent"}
-    invalid={errors.consent !== undefined}
-    errorId={errorId("consent")}
-  />
-  <FieldError id={errorId("consent")} message={message("consent")} />
+  {editing ? (
+    <PrivacyNote />
+  ) : (
+    <>
+      <ConsentBlock
+        municipality={municipality}
+        checkboxId={id(F.consent)}
+        autofocus={first === "consent"}
+        invalid={errors.consent !== undefined}
+        errorId={errorId("consent")}
+      />
+      <FieldError id={errorId("consent")} message={message("consent")} />
+    </>
+  )}
 
-  {turnstile && <TurnstileWidget siteKey={turnstile.siteKey} action="registration" />}
+  {turnstile && (
+    <TurnstileWidget siteKey={turnstile.siteKey} action={editing ? "edit" : "registration"} />
+  )}
 
   <button
     type="submit"
@@ -412,7 +467,7 @@ const photoMessage = message("photo") ?? (draft.photo ? PHOTO_NOT_KEPT_MESSAGE :
     disabled={Boolean(turnstile)}
     data-sending-text={SENDING_TEXT}
   >
-    Registrar mi negocio
+    {editing ? EDIT_SUBMIT : "Registrar mi negocio"}
   </button>
 </form>
 

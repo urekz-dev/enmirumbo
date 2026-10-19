@@ -871,7 +871,7 @@ The system MUST keep an audit log with one entry for each destructive or irrever
 
 ### Requirement: Applied, discarded and superseded pending edits, and never-verified registrations, are purged after 30 days (v2)
 
-Added in v2 — source: PRD §4, PRD §7, ADR 0013.
+Added in v2 — source: PRD §4, PRD §7, ADR 0013. Amended on 2026-10-18 by EMR-43 and the decision of the product owner of that date: a pending edit may carry a new photo ("A pending edit may change the photo of its card (v2)"), which the purge deletes with the edit, photos first, unless a card names it, as the card does whose applied edit gave it that photo.
 
 The system MUST permanently delete, with the same real deletion as the ARCO operation (photos first, then rows and cascade), every pending edit that was applied, discarded or superseded by a newer one when 30 days or more have passed since it was resolved, and every registration that was never verified when 30 days or more have passed since it was registered. A registration was never verified when it is in `in_review` and was never published. The purge MUST NOT touch an edit still waiting for review, a registration younger than 30 days, or a business in any other state (rejected registrations keep their own 90-day purge). The purge MUST be idempotent, MUST continue when one card fails, MUST report counts (deleted and not purged) with no personal data, and MUST write the audit log entries of "The audit log records the destructive actions of the admin (v2)".
 
@@ -955,9 +955,9 @@ Each business MUST be identified by ten characters chosen at random by the serve
 
 ### Requirement: A pending edit replaced by a newer one is kept as superseded (v2)
 
-Added in v2 — source: `business-registration` "Sending changes when others are already waiting replaces the previous ones", and the 30-day purge of this file.
+Added in v2 — source: `business-registration` "Sending changes when others are already waiting replaces the previous ones", and the 30-day purge of this file. Amended on 2026-10-18 by EMR-43: the transaction locks the card first, and the new photo a superseded edit carried goes to the new edit when it keeps the photo, or is deleted (`business-registration`, "The edit of a card may change its photo, which reaches the card only when the edit is applied (v2)").
 
-The status of a pending edit MUST be one of `pending`, `applied`, `discarded` or `superseded`. When the owner sends new changes while an edit is waiting, the waiting one MUST become `superseded`, with its resolution date, in the same transaction that saves the new one. Every status other than `pending` MUST carry its resolution date, and only a `discarded` edit MAY carry a discard reason. A superseded edit no longer counts as waiting: it does not block the new one and is purged 30 days after its resolution.
+The status of a pending edit MUST be one of `pending`, `applied`, `discarded` or `superseded`. When the owner sends new changes while an edit is waiting, the waiting one MUST become `superseded`, with its resolution date, in the same transaction that saves the new one, and the new one arrives at that same moment, from which its wait counts. That transaction first locks the card, so two submissions of one card at once wait for each other: the second supersedes the first, and exactly one stays pending. Every status other than `pending` MUST carry its resolution date, and only a `discarded` edit MAY carry a discard reason. A superseded edit no longer counts as waiting: it does not block the new one and is purged 30 days after its resolution.
 
 #### Scenario: new changes supersede the waiting ones
 
@@ -1220,3 +1220,66 @@ The switches of the whole site MUST live in the database, so an admin changes th
 
 - **WHEN** the row is missing
 - **THEN** Turnstile counts as on
+
+### Requirement: The management link is issued by the panel alone and resolved by its fingerprint (v2)
+
+Added in v2 — source: ADR 0010; EMR-43 and the decisions of the product owner of 2026-10-18; `admin-review`, "Approving a registration generates its management link, unique and unrepeatable" and "The admin can generate a new link, and the previous one stops working". It settles how "The business stores its management link as a fingerprint, never in plain" is written and read.
+
+A token is 32 bytes from a cryptographic random source (256 bits), written in base64url without padding: 43 characters of `A-Za-z0-9_-`, which travel in an address as they are and derive from nothing about the business. The business stores the SHA-256 of the token's UTF-8 bytes, in lowercase hexadecimal, and the moment the link was generated, with no salt and no slow key derivation: those protect secrets of low entropy, and 256 random bits have none to guess.
+
+Issuing a link writes the fingerprint of a new token and its moment at once, replacing any earlier link, and gives back the token, the only time it exists in plain. It happens only to a published card: a card that is not published gets no link and nothing changes, so a card that was never approved has none. Only the panel issues a link (`admin-review`, on approving, in the same transaction that publishes the card, and on "Generar un enlace nuevo", epic F): no page, action, script, seed or SQL statement of the repository issues one, and the tests issue theirs the way the panel does. Issuing can join the transaction of an approval, so an approval that fails leaves no link.
+
+Resolving a token looks it up by its fingerprint, always, whatever arrived, in one query for a published card of the given locality with that fingerprint, and compares the fingerprint found with the one computed in constant time (`business-registration`, "The edit mode of a locality lives under it, and lands on its confirmation (v2)"). A token, whole or in part, and its fingerprint MUST NOT be written to the log or to any file, and the token to no column.
+
+#### Scenario: a token
+
+- **WHEN** the server generates tokens
+- **THEN** each is 43 characters of base64url that decode to 32 random bytes, no two are the same, and the business stores the SHA-256 of each in hexadecimal
+
+#### Scenario: issuing a link
+
+- **WHEN** a link is issued for a published card
+- **THEN** the card stores its fingerprint and the moment, the token appears in no column, and the token opens the card's edit mode
+
+#### Scenario: a card that is not published
+
+- **WHEN** a link is asked for a card in review, a rejected card or an identifier no card has
+- **THEN** no link is issued and nothing changes
+
+#### Scenario: regenerating
+
+- **WHEN** a second link is issued for the same card
+- **THEN** the card keeps only the new fingerprint, with its moment, and the first token opens nothing from then on
+
+#### Scenario: resolving
+
+- **WHEN** a token is resolved in a locality, whether it opens a card or not
+- **THEN** one query runs, by its fingerprint, and only a published card of that locality with exactly that fingerprint is found
+
+### Requirement: A pending edit may change the photo of its card (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-43); ADR 0011; `business-registration`, "The edit of a card may change its photo, which reaches the card only when the edit is applied (v2)". It amends "A pending edit stores the full content of what is to be published": the full content includes what the edit asks of the photo.
+
+A pending edit MUST record what it asks of the card's photo: `keep`, which leaves it and is what every edit saved before this asks; `replace`, which puts in its place the new photo the edit uploaded; or `remove`, which leaves the card without one; any other value is refused by a CHECK in the migration. Only an edit that asks `replace` MAY carry the key of a new photo, and one waiting for review always does: a key of the shape of "A photo key is 24 characters of the identifier alphabet, and names two objects under `photos/` (v2)", which the server generates, and that no other edit names, so one edit names a photo at a time. The edit never copies the card's own photo key. While the edit waits, its new photo lives in the public media bucket under that key, which no public page names. Superseding an edit takes its key off it, in the same transaction: the newer edit takes the photo over when it keeps the photo, and otherwise its objects are deleted once the newer edit is saved; the superseded edit still says it asked `replace`.
+
+A photo key that a waiting edit names is not an orphan: the orphan sweep MUST keep its objects. Whoever resolves an edit deals with its photo: applying a `replace` makes it the card's photo, so the photo of an applied edit is its card's; discarding an edit deletes its new photo (`admin-review`, "Applying or discarding a pending edit carries out what it asks of the photo (v2)"); superseding one gives it to the newer edit or deletes it (`business-registration`). The permanent deletion of a business deletes the new photos of its edits with the photo of the card, photos first, then the rows.
+
+#### Scenario: an edit with a new photo
+
+- **WHEN** an edit is saved with a new photo
+- **THEN** its row says `replace` and names the key of that photo, whose two objects are in the bucket, and the card's row does not change
+
+#### Scenario: what an edit asks of the photo
+
+- **WHEN** an edit is saved asking anything other than `keep`, `replace` or `remove`, a waiting `replace` without a key, a key without `replace`, a key of another shape, or the key another edit names
+- **THEN** the database rejects the write
+
+#### Scenario: a photo taken over
+
+- **WHEN** a newer edit that keeps the photo supersedes an edit that carried a new photo
+- **THEN** the newer edit names that key, the superseded one names none and still says `replace`, and the objects of the photo stay
+
+#### Scenario: the orphan sweep and a waiting edit
+
+- **WHEN** the orphan sweep finds the objects of a photo that only a waiting edit names
+- **THEN** it keeps them

@@ -21,6 +21,16 @@
   // (ADR 0012, amended on 2026-10-15; test/scripts/quota-guardrails.test.ts).
   "workers_dev": false,
   "preview_urls": false,
+  // Workers Logs and traces stay off, here and in every environment, each
+  // writing it (docs/specs/deployment.md, "Workers Logs and traces stay off in
+  // every environment (v2)"): an invocation log keeps the URL of each request,
+  // and the edit mode's URL carries the key to a card. Debugging uses
+  // `wrangler tail`, which is live and keeps nothing.
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false, "invocation_logs": false, "persist": false },
+    "traces": { "enabled": false, "persist": false },
+  },
   "assets": {
     "binding": "ASSETS",
     "directory": "./dist",
@@ -103,6 +113,12 @@
       "name": "dev-enmirumbo",
       "workers_dev": true,
       "preview_urls": false,
+      // Workers Logs and traces off, as at the top level.
+      "observability": {
+        "enabled": false,
+        "logs": { "enabled": false, "invocation_logs": false, "persist": false },
+        "traces": { "enabled": false, "persist": false },
+      },
       // No Cron Trigger on dev (ADR 0013). The empty list also removes any
       // trigger left on the Worker; omitting it would keep them.
       "triggers": { "crons": [] },
@@ -150,6 +166,12 @@
       "name": "stage-enmirumbo",
       "workers_dev": true,
       "preview_urls": false,
+      // Workers Logs and traces off, as at the top level.
+      "observability": {
+        "enabled": false,
+        "logs": { "enabled": false, "invocation_logs": false, "persist": false },
+        "traces": { "enabled": false, "persist": false },
+      },
       // The hourly job (ADR 0013).
       "triggers": { "crons": ["0 * * * *"] },
       // The Hyperdrive configs enmirumbo-stage (cached) and enmirumbo-stage-fresh
@@ -192,6 +214,12 @@
       "name": "enmirumbo",
       "workers_dev": true,
       "preview_urls": false,
+      // Workers Logs and traces off, as at the top level.
+      "observability": {
+        "enabled": false,
+        "logs": { "enabled": false, "invocation_logs": false, "persist": false },
+        "traces": { "enabled": false, "persist": false },
+      },
       // The hourly job (ADR 0013).
       "triggers": { "crons": ["0 * * * *"] },
       // The Hyperdrive configs enmirumbo-prod (cached) and enmirumbo-prod-fresh

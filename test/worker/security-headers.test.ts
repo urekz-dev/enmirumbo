@@ -1,5 +1,8 @@
 // Scenarios of docs/specs/deployment.md, requirements "Every response carries
-// the security headers and the content security policy (v2)", "The site
+// the security headers and the content security policy (v2)" (and, for the
+// edit mode of the management link, of docs/specs/business-registration.md,
+// "A token that is not exactly the current one opens nothing and gives
+// nothing away"), "The site
 // declares where JavaScript may come from and where data may go", "Every site
 // response carries the basic security headers" and "The content security
 // policy allows Turnstile as well as Umami (v2)". src/worker.ts applies
@@ -10,6 +13,12 @@
 // (test/e2e/security-headers.spec.ts).
 import { describe, expect, it } from "vite-plus/test";
 import { forbiddenResponse } from "../../src/lib/access/admin-gate.ts";
+import {
+  EDIT_MODE_HEADERS,
+  EDIT_MODE_REFERRER_POLICY,
+  isEditModeRequest,
+  withEditModeHeaders,
+} from "../../src/lib/edit-mode.ts";
 import {
   contentSecurityPolicy,
   PANEL_REFERRER_POLICY,
@@ -173,6 +182,72 @@ describe("Every site response carries the basic security headers", () => {
       expect(result.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
     },
   );
+
+  // business-registration, "A token that is not exactly the current one
+  // opens nothing and gives nothing away": scenarios the token does not leave
+  // in the Referer; the edit page is neither indexed nor linked
+  it.for([
+    "/hidalgo/tizayuca/editar/abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+    "/hidalgo/tizayuca/editar/gracias",
+    "/hidalgo/tizayuca/editar",
+    "/hidalgo/tizayuca/editar/x/y",
+    "/Hidalgo/Tizayuca/EDITAR/x",
+    "/hidalgo/tizayuca/%65ditar/x",
+    "//hidalgo//tizayuca//editar/x",
+  ])(
+    "every response of the edit mode (%s) gets the strict referrer policy, and asks not to be indexed nor stored",
+    (path) => {
+      for (const status of [200, 303, 404]) {
+        const result = withSecurityHeaders(
+          withEditModeHeaders(page({}, status), request(path)),
+          request(path),
+          PROD,
+        );
+        expect(result.headers.get("Referrer-Policy"), path).toBe(PANEL_REFERRER_POLICY);
+        expect(EDIT_MODE_REFERRER_POLICY).toBe(PANEL_REFERRER_POLICY);
+        expect(result.headers.get("X-Robots-Tag"), path).toBe("noindex, nofollow");
+        expect(result.headers.get("Cache-Control"), path).toBe("no-store");
+        // Its forms post to the site alone.
+        expect(
+          directives(result.headers.get("Content-Security-Policy") ?? "")["form-action"],
+        ).toEqual(["'self'"]);
+      }
+    },
+  );
+
+  it.for(["/hidalgo/tizayuca", "/hidalgo/tizayuca/registro", "/editar/x", "/hidalgo/editar/x"])(
+    "a page outside the edit mode (%s) keeps the site's policy and headers",
+    (path) => {
+      expect(isEditModeRequest(new URL(`https://enmirumbo.urekz.workers.dev${path}`))).toBe(false);
+      const result = withSecurityHeaders(
+        withEditModeHeaders(page({ "Cache-Control": "max-age=60" }), request(path)),
+        request(path),
+        PROD,
+      );
+      expect(result.headers.get("Referrer-Policy")).toBe(REFERRER_POLICY);
+      expect(result.headers.get("Cache-Control")).toBe("max-age=60");
+      expect(result.headers.get("X-Robots-Tag")).toBeNull();
+    },
+  );
+
+  it("the edit mode replaces whatever caching or robots a response of it declared", () => {
+    const path = "/hidalgo/tizayuca/editar/x";
+    const result = withEditModeHeaders(
+      page({ "Cache-Control": "max-age=3600", "X-Robots-Tag": "noindex" }),
+      request(path),
+    );
+    expect(result.headers.get("Cache-Control")).toBe("no-store");
+    expect(result.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
+    const redirect = Response.redirect("https://enmirumbo.urekz.workers.dev/hidalgo/tizayuca", 302);
+    expect(withEditModeHeaders(redirect, request(path)).headers.get("Cache-Control")).toBe(
+      "no-store",
+    );
+    expect(isEditModeRequest(new URL("https://x.example/a/b/%E0%A4%A"))).toBe(true);
+    expect(EDIT_MODE_HEADERS).toEqual({
+      "X-Robots-Tag": "noindex, nofollow",
+      "Cache-Control": "no-store",
+    });
+  });
 
   it("a public page never lets its forms reach the Access login", () => {
     const result = withSecurityHeaders(page(), request("/hidalgo/tizayuca"), PROD);

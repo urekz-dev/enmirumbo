@@ -844,7 +844,7 @@ The site MUST load the script of Umami Cloud (`https://cloud.umami.is/script.js`
 
 ### Requirement: The admin panel and the edit mode stay out of the measurement by where they live (v2)
 
-Added in v2 — source: ADR 0014, ADR 0007.
+Added in v2 — source: ADR 0014, ADR 0007. Amended on 2026-10-18 by EMR-43: the edit mode's referrer policy is also sent as the `Referrer-Policy: strict-origin` header of every response at `/{estado}/{municipio}/editar/` and below, with `X-Robots-Tag: noindex, nofollow` and `Cache-Control: no-store`, and its pages declare it in their markup by where they live (`business-registration`, "The edit mode of a locality lives under it, and lands on its confirmation (v2)").
 
 No page of the admin panel and no screen of the edit mode MUST load the measurement script or carry an event attribute, even in production with a Website ID. The exclusion MUST follow from where a page lives, not from a list of pages: everything at `/admin` and below (whatever its case or URL encoding, and also an address there that does not exist, which answers the site's 404), the admin actions, and everything at `/{estado}/{municipio}/editar/` and below. The reasons are written next to the rule: the panel is not resident traffic and its addresses point to a person's registration; in the edit mode the address is the card's credential. Every other page, a new public page included, is measured without being listed anywhere. The panel's referrer policy of "The measurement carries no personal data or text typed by people" is also sent as the `Referrer-Policy: strict-origin` header of every panel response, with the same value and for the same reason (deployment, "Every response carries the security headers and the content security policy (v2)").
 
