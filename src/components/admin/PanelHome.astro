@@ -1,0 +1,16 @@
+---
+import type { PanelLink } from "../../core/access/home.ts";
+import PanelNavigation from "./PanelNavigation.astro";
+interface Props {
+  links: readonly PanelLink[];
+}
+---
+
+<section class="flex flex-col gap-6">
+  <h1 class="text-2xl font-bold">Panel de enmirumbo</h1>
+  <p>Elige la sección que necesitas.</p>
+  <PanelNavigation links={Astro.props.links} />
+  {Astro.props.links.length === 0 && (
+    <p class="text-ink-muted">Tu rol todavía no tiene una sección disponible en el panel.</p>
+  )}
+</section>

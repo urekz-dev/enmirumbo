@@ -1,0 +1,65 @@
+---
+import { actions } from "astro:actions";
+import { env, waitUntil } from "cloudflare:workers";
+import { can } from "../../../core/access/queries.ts";
+import { panelHome } from "../../../core/access/home.ts";
+import { panelRoles } from "../../../core/access/manage.ts";
+import { rolePath } from "../../../core/access/paths.ts";
+import { withDb } from "../../../core/db/client.ts";
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import PanelNavigation from "../../../components/admin/PanelNavigation.astro";
+import RoleForm from "../../../components/admin/RoleForm.astro";
+import { forbiddenResponse } from "../../../lib/access/admin-gate.ts";
+import { notFound, seeOther } from "../../../lib/locality.ts";
+import {
+  managementFailure,
+  managementForm,
+  managementStatus,
+  roleInput,
+  roleFormValues,
+} from "../../../lib/panel-management.ts";
+const admin = Astro.locals.admin;
+if (!admin) return forbiddenResponse();
+if (!["GET", "HEAD", "POST"].includes(Astro.request.method))
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD, POST" } });
+const result = Astro.getActionResult(actions.admin.createRole);
+if (result?.error?.code === "FORBIDDEN") return forbiddenResponse();
+if (result?.error?.code === "NOT_FOUND") return notFound();
+const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  if (!(await can(db, admin.email, "roles.manage", null))) return null;
+  return { roles: await panelRoles(db), home: await panelHome(db, admin.email) };
+});
+if (!view) return forbiddenResponse();
+if (result?.data?.kind === "done") return seeOther(`${rolePath(Number(result.data.id))}?listo=1`);
+Astro.response.status = managementStatus(result);
+const input = roleInput(await managementForm(Astro.request));
+---
+
+<BaseLayout title="Roles">
+  <div class="flex flex-col gap-6">
+    <PanelNavigation links={view.home?.links ?? []} />
+    <h1 class="text-2xl font-bold">Roles</h1>
+    <h2 class="text-xl font-bold">Crear un rol</h2>
+    <RoleForm
+      action={actions.admin.createRole.queryString}
+      values={roleFormValues(input)}
+      failure={managementFailure(result)}
+    />
+    <ul class="flex flex-col gap-3">
+      {view.roles.map((role) => (
+        <li class="rounded-xl border border-line p-4">
+          <a
+            href={rolePath(role.id)}
+            class="block min-h-11 py-2 break-words font-semibold text-action-strong underline underline-offset-4"
+          >
+            {role.name}
+          </a>
+          <p>
+            {role.scope === "global" ? "Global" : "Por municipio"}
+            {role.system ? " · Rol del sistema" : ""}
+          </p>
+        </li>
+      ))}
+    </ul>
+  </div>
+</BaseLayout>

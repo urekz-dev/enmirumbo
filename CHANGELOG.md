@@ -6,6 +6,8 @@ All notable changes to this product are documented here. Format: [Keep a Changel
 
 ### Added
 
+- Panel users and role bundles at `/admin/usuarios` and `/admin/roles`, with global permission checks, activation and assignment management, a concurrent last-super-admin guard, and an accessible panel home for roles without queue permissions (EMR-72).
+
 - Architecture decision records 0001–0018 and the product requirements document.
 - Devlog template.
 - ADR 0019: backend structure and local development.

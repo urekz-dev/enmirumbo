@@ -1,0 +1,79 @@
+---
+import { actions } from "astro:actions";
+import { env, waitUntil } from "cloudflare:workers";
+import { can } from "../../../../core/access/queries.ts";
+import { panelHome } from "../../../../core/access/home.ts";
+import { assignedRoles, panelRoles, panelUser } from "../../../../core/access/manage.ts";
+import { userId, userPath } from "../../../../core/access/paths.ts";
+import { localities } from "../../../../core/db/schema/index.ts";
+import { panelLocalities } from "../../../../core/review/localities.ts";
+import { withDb } from "../../../../core/db/client.ts";
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import PanelNavigation from "../../../../components/admin/PanelNavigation.astro";
+import UserScreen from "../../../../components/admin/UserScreen.astro";
+import { forbiddenResponse } from "../../../../lib/access/admin-gate.ts";
+import { notFound, seeOther } from "../../../../lib/locality.ts";
+import {
+  managementFailure,
+  managementForm,
+  managementStatus,
+  typedManagementText,
+} from "../../../../lib/panel-management.ts";
+const admin = Astro.locals.admin;
+if (!admin) return forbiddenResponse();
+if (!["GET", "HEAD", "POST"].includes(Astro.request.method))
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD, POST" } });
+const result =
+  Astro.getActionResult(actions.admin.deactivateUser) ??
+  Astro.getActionResult(actions.admin.reactivateUser) ??
+  Astro.getActionResult(actions.admin.assignRole);
+if (result?.error?.code === "FORBIDDEN") return forbiddenResponse();
+if (result?.error?.code === "NOT_FOUND") return notFound();
+const id = userId(Astro.params.id);
+if (result?.data?.kind === "done" && id !== null) return seeOther(`${userPath(id)}?listo=1`);
+const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  if (!(await can(db, admin.email, "users.manage", null))) return { kind: "forbidden" as const };
+  const user = id === null ? null : await panelUser(db, id);
+  if (!user) return { kind: "not-found" as const };
+  return {
+    kind: "found" as const,
+    user,
+    roles: await panelRoles(db),
+    assignments: await assignedRoles(db, user.id),
+    localities: await panelLocalities(
+      db,
+      (await db.select({ code: localities.code }).from(localities)).map((l) => l.code),
+    ),
+    home: await panelHome(db, admin.email),
+  };
+});
+if (view.kind === "forbidden") return forbiddenResponse();
+if (view.kind === "not-found") return notFound();
+
+Astro.response.status = managementStatus(result);
+const form = await managementForm(Astro.request);
+---
+
+<BaseLayout title="Usuario del panel">
+  <div class="flex flex-col gap-6">
+    <PanelNavigation links={view.home?.links ?? []} />
+    <UserScreen
+      user={view.user}
+      roles={view.roles}
+      assignments={view.assignments}
+      localities={view.localities}
+      failure={managementFailure(result)}
+      done={Astro.url.searchParams.get("listo") === "1"}
+      statusAction={
+        view.user.active
+          ? actions.admin.deactivateUser.queryString
+          : actions.admin.reactivateUser.queryString
+      }
+      assignAction={actions.admin.assignRole.queryString}
+      values={{
+        role: typedManagementText(form, "role"),
+        locality: typedManagementText(form, "locality"),
+      }}
+    />
+  </div>
+</BaseLayout>

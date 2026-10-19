@@ -1,0 +1,117 @@
+---
+import type { PanelRole, PanelUser, assignedRoles } from "../../core/access/manage.ts";
+import { assignmentPath } from "../../core/access/paths.ts";
+import type { PanelLocality } from "../../core/review/localities.ts";
+import type { ManagementFailure } from "../../lib/panel-management.ts";
+interface Props {
+  user: PanelUser;
+  roles: readonly PanelRole[];
+  assignments: Awaited<ReturnType<typeof assignedRoles>>;
+  localities: readonly PanelLocality[];
+  failure: ManagementFailure;
+  done: boolean;
+  statusAction: string;
+  assignAction: string;
+  values: { role: string; locality: string };
+}
+const { user, roles, assignments, localities, failure, done, statusAction, assignAction, values } =
+  Astro.props;
+const selectClass = "min-h-11 w-full min-w-0 rounded-lg border border-line bg-background px-3 py-2";
+const localityName = (code: string | null) =>
+  code === null ? "Todos los municipios" : (localities.find((l) => l.code === code)?.name ?? code);
+---
+
+<section class="flex flex-col gap-6">
+  <h1 class="text-2xl font-bold break-words">{user.name}</h1>
+  <p class="break-words">{user.email}</p>
+  <p>{user.active ? "Activo" : "Inactivo"}</p>
+  {done && <p role="status">Listo. Se guardó el cambio.</p>}
+  {failure.message && <p role="alert">{failure.message}</p>}
+  <form method="post" action={statusAction}>
+    <p class="mb-3 text-ink-muted">
+      Al desactivarlo pierde el acceso al panel. Sus roles se conservan para cuando lo reactives.
+      También quita su correo de la política de Access si ya no debe entrar.
+    </p>
+    <button class="min-h-11 rounded-lg border border-line px-4 py-2 font-semibold">
+      {user.active ? "Desactivar usuario" : "Reactivar usuario"}
+    </button>
+  </form>
+  <section class="flex flex-col gap-4">
+    <h2 class="text-xl font-bold">Roles asignados</h2>
+    {assignments.length === 0 && <p>Sin roles. Este usuario todavía no puede entrar al panel.</p>}
+    <ul class="flex flex-col gap-3">
+      {assignments.map((assignment) => (
+        <li class="rounded-xl border border-line p-4">
+          <p class="font-semibold break-words">{assignment.name}</p>
+          <p>{localityName(assignment.localityCode)}</p>
+          <a
+            href={assignmentPath(user.id, assignment.id)}
+            class="inline-flex min-h-11 items-center font-semibold text-action-strong underline underline-offset-4"
+          >
+            Quitar rol
+            <span class="sr-only">
+              : {assignment.name}, {localityName(assignment.localityCode)}
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </section>
+  <form
+    method="post"
+    action={assignAction}
+    novalidate
+    class="flex flex-col gap-3 rounded-xl border border-line p-4"
+  >
+    <h2 class="text-xl font-bold">Asignar un rol</h2>
+    <label for="role" class="font-semibold">
+      Rol
+    </label>
+    <select
+      id="role"
+      name="role"
+      class={selectClass}
+      aria-invalid={failure.errors.role ? "true" : undefined}
+      aria-describedby={failure.errors.role ? "role-error" : undefined}
+    >
+      <option value="">Elige un rol</option>
+      {roles.map((role) => (
+        <option value={role.id} selected={values.role === String(role.id)}>
+          {role.name} ({role.scope === "global" ? "global" : "por municipio"})
+        </option>
+      ))}
+    </select>
+    {failure.errors.role && (
+      <p id="role-error" role="alert">
+        {failure.errors.role}
+      </p>
+    )}
+    <label for="locality" class="font-semibold">
+      Municipio
+    </label>
+    <select
+      id="locality"
+      name="locality"
+      class={selectClass}
+      aria-invalid={failure.errors.locality ? "true" : undefined}
+      aria-describedby="locality-help locality-error"
+    >
+      <option value="">Sin municipio (rol global)</option>
+      {localities.map((locality) => (
+        <option value={locality.code} selected={values.locality === locality.code}>
+          {locality.name}, {locality.stateName}
+          {locality.active ? "" : " (inactivo)"}
+        </option>
+      ))}
+    </select>
+    <p id="locality-help" class="text-sm text-ink-muted">
+      Para un rol global, déjalo sin municipio. Para uno por municipio, elige dónde podrá actuar.
+    </p>
+    <p id="locality-error" role={failure.errors.locality ? "alert" : undefined}>
+      {failure.errors.locality}
+    </p>
+    <button class="min-h-11 w-fit rounded-lg bg-action px-4 py-2 font-semibold text-ink">
+      Asignar rol
+    </button>
+  </form>
+</section>

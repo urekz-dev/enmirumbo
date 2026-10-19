@@ -1,0 +1,62 @@
+---
+import { actions } from "astro:actions";
+import { env, waitUntil } from "cloudflare:workers";
+import { can } from "../../../../../core/access/queries.ts";
+import { assignedRoles, panelUser } from "../../../../../core/access/manage.ts";
+import { managementId, userId, userPath } from "../../../../../core/access/paths.ts";
+import { panelLocalities } from "../../../../../core/review/localities.ts";
+import { withDb } from "../../../../../core/db/client.ts";
+import BaseLayout from "../../../../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../../../../lib/access/admin-gate.ts";
+import { notFound, seeOther } from "../../../../../lib/locality.ts";
+import { managementFailure, managementStatus } from "../../../../../lib/panel-management.ts";
+const admin = Astro.locals.admin;
+if (!admin) return forbiddenResponse();
+if (!["GET", "HEAD", "POST"].includes(Astro.request.method))
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD, POST" } });
+const result = Astro.getActionResult(actions.admin.removeRole);
+if (result?.error?.code === "FORBIDDEN") return forbiddenResponse();
+if (result?.error?.code === "NOT_FOUND") return notFound();
+const id = userId(Astro.params.id);
+const assignmentId = managementId(Astro.params.assignment);
+if (result?.data?.kind === "done" && id !== null) return seeOther(`${userPath(id)}?listo=1`);
+const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  if (!(await can(db, admin.email, "users.manage", null))) return { kind: "forbidden" as const };
+  if (id === null || assignmentId === null) return null;
+  const user = await panelUser(db, id);
+  const assignment = (await assignedRoles(db, id)).find((a) => a.id === assignmentId);
+  if (!user || !assignment) return null;
+  const locality =
+    assignment.localityCode === null
+      ? null
+      : (await panelLocalities(db, [assignment.localityCode]))[0];
+  return { kind: "found" as const, user, assignment, locality };
+});
+if (view?.kind === "forbidden") return forbiddenResponse();
+if (!view) return notFound();
+Astro.response.status = managementStatus(result);
+---
+
+<BaseLayout title="Quitar un rol">
+  <section class="flex flex-col gap-6">
+    <h1 class="text-2xl font-bold">Quitar un rol</h1>
+    <p class="break-words">
+      ¿Quitar {view.assignment.name} a {view.user.name} ({view.user.email})?
+    </p>
+    <p>
+      {view.locality ? `${view.locality.name}, ${view.locality.stateName}` : "Todos los municipios"}
+    </p>
+    {managementFailure(result).message && <p role="alert">{managementFailure(result).message}</p>}
+    <form method="post" action={actions.admin.removeRole.queryString}>
+      <button class="min-h-11 rounded-lg border border-line px-4 py-2 font-semibold">
+        Quitar rol
+      </button>
+    </form>
+    <a
+      href={userPath(view.user.id)}
+      class="inline-flex min-h-11 items-center font-semibold text-action-strong underline underline-offset-4"
+    >
+      Volver al usuario
+    </a>
+  </section>
+</BaseLayout>

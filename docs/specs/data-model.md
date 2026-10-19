@@ -1036,6 +1036,8 @@ The permission catalogue MUST be the same in the database and in the code that c
 
 A user MAY do an action in a locality only when an active assignment that applies there grants its permission; an action that is not about one locality (users, roles, localities) needs a global assignment. An inactive user, or one without assignments, MAY do nothing. The first super admin of each environment is inserted by hand in the database; nothing about people lives in the repository or in its configuration.
 
+Amended on 2026-10-19 (EMR-72) by decision of the product owner: panel deactivation and assignment removal MUST preserve at least one active user with the `super_admin` assignment. The two operations serialize on the system role in one transaction and make the count guard part of their conditional write, so concurrent requests cannot both remove the last access. An inactive super admin does not satisfy the guard. Creating, deactivating, reactivating and assigning users and creating or editing roles write no audit entry: the log records the card actions in "The audit log records the destructive actions of the admin (v2)" alone.
+
 #### Scenario: the catalogue matches the code
 
 - **WHEN** the permissions of the database are compared with the ones the code checks

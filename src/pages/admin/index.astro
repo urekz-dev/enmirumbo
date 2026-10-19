@@ -1,5 +1,5 @@
 ---
-// The review queue, the panel's main screen, at /admin
+// The panel entry at /admin: the queue, or a home for other assigned users.
 // (docs/specs/admin-review.md, "Review queue with the pending registrations,
 // oldest first", "Visible indicator for registrations waiting more than 48
 // hours", "The queue tells which businesses have unattended reports", "The
@@ -14,8 +14,8 @@
 // referrer policy, and no analytics, by where the page lives. Then the page:
 //
 // 1. Reads what the user may see (src/core/review/scope.ts), through
-//    HYPERDRIVE_FRESH: a user who may see nothing of the queue, or who is
-//    not a panel user, gets the panel's 403 before anything else is read.
+//    HYPERDRIVE_FRESH: unknown, inactive and unassigned users get 403; an
+//    assigned user without queue permissions gets the permitted sections.
 // 2. Narrows it with the locality filter, `?localidad=`, shown only while
 //    the user sees two or more active localities.
 // 3. Reads "Registros por revisar" and "Negocios reportados" of those
@@ -24,6 +24,10 @@
 // 4. Offers "Administrar colonias" to a user who manages the zones of a
 //    locality (src/core/zones/scope.ts).
 import { env, waitUntil } from "cloudflare:workers";
+import PanelHome from "../../components/admin/PanelHome.astro";
+import PanelNavigation from "../../components/admin/PanelNavigation.astro";
+import { rolesPath, usersPath } from "../../core/access/paths.ts";
+import { panelHome } from "../../core/access/home.ts";
 import ReviewQueue from "../../components/admin/ReviewQueue.astro";
 import { withDb } from "../../core/db/client.ts";
 import {
@@ -53,9 +57,11 @@ if (admin === undefined) return forbiddenResponse();
 
 const now = new Date();
 const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  const home = await panelHome(db, admin.email);
+  if (home === null) return null;
   const scope = await panelScope(db, admin.email);
   const seen = await panelLocalities(db, queueLocalities(scope));
-  if (seen.length === 0) return null;
+  if (seen.length === 0) return { kind: "home" as const, home };
   const options = localityFilterOptions(seen);
   const chosen = chosenLocality(Astro.url.searchParams.getAll("localidad"), options);
   const narrowed = narrowScope(scope, chosen);
@@ -67,11 +73,20 @@ const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => 
     zoneLocalities.length === 0
       ? null
       : zonesPath(chosen !== null && zoneLocalities.includes(chosen) ? chosen : null);
-  return { scope, seen, options, chosen, rows, reported, zonesHref };
+  return { kind: "queue" as const, home, scope, seen, options, chosen, rows, reported, zonesHref };
 });
 if (view === null) return forbiddenResponse();
 
-const { scope, seen, options, chosen, rows, reported, zonesHref } = view;
+const queueView = view.kind === "queue" ? view : null;
+const { scope, seen, options, chosen, rows, reported, zonesHref } = queueView ?? {
+  scope: { cards: [] },
+  seen: [],
+  options: [],
+  chosen: null,
+  rows: [],
+  reported: [],
+  zonesHref: null,
+};
 const localityFilter =
   options.length === 0
     ? []
@@ -89,15 +104,26 @@ const localityNames =
     : new Map(seen.map((locality) => [locality.code, localityText(locality)]));
 ---
 
-<BaseLayout title={QUEUE_HEADING}>
-  <ReviewQueue
-    rows={rows}
-    reported={reported}
-    now={now}
-    localityFilter={localityFilter}
-    localityFilterLabel={FILTER_BY_LOCALITY}
-    localityNames={localityNames}
-    listHref={scope.cards.length > 0 ? businessesPath({ locality: chosen }) : null}
-    zonesHref={zonesHref}
-  />
+<BaseLayout title={queueView ? QUEUE_HEADING : "Panel de enmirumbo"}>
+  {queueView ? (
+    <div class="flex flex-col gap-6">
+      <PanelNavigation
+        links={view.home.links.filter(
+          (link) => link.href === usersPath() || link.href === rolesPath(),
+        )}
+      />
+      <ReviewQueue
+        rows={rows}
+        reported={reported}
+        now={now}
+        localityFilter={localityFilter}
+        localityFilterLabel={FILTER_BY_LOCALITY}
+        localityNames={localityNames}
+        listHref={scope.cards.length > 0 ? businessesPath({ locality: chosen }) : null}
+        zonesHref={zonesHref}
+      />
+    </div>
+  ) : (
+    <PanelHome links={view.home.links} />
+  )}
 </BaseLayout>

@@ -1812,3 +1812,36 @@ Added in v2 — source: backlog of epic F, story F3 (EMR-48); ADR 0010, ADR 0021
 
 - **WHEN** the photo of a card is deleted and the transaction that deletes its rows then fails
 - **THEN** the card and everything of it are still there but its photo, no entry of the audit log is written, and the answer says "La ficha no se borró: no se pudo guardar. Vuelve a intentarlo." and "Su foto sí se borró."
+
+### Requirement: Users and role bundles are managed inside the panel (v2)
+
+Added in v2 — source: ADR 0021; decision of the product owner, 2026-10-19 (EMR-72).
+
+`/admin/usuarios` MUST require global `users.manage`, list panel users, active and inactive, and offer their creation by email and name. The email is trimmed, lowercased, unique and valid; the name is nonblank. The server refuses emails longer than 254 characters and names longer than 120, with Spanish errors next to the fields and the submitted values in that response. Adding a user MUST say "Además agrega su correo a la política de Access para que pueda entrar. Después de crearlo, asígnale un rol." Creating a database user does not change the Access policy or send an invitation.
+
+`/admin/usuarios/<uuid>` MUST require the same global permission and offer deactivation, reactivation and role assignment. Deactivation takes away every permission immediately and preserves assignments for reactivation. A global role takes no municipality; a locality role needs a municipality from the catalogue, active or inactive, and grants permissions there alone. An assignment already held in that place is refused. Each assigned role links to `/admin/usuarios/<uuid>/roles/<assignment>` to confirm its removal; the removal MUST touch only that user's addressed assignment. The last active user assigned `super_admin` MUST NOT be deactivated or lose that assignment: both writes serialize in one transaction and condition the mutation on another active super admin remaining, including when two requests compete. The refusal is status `409` and says "Debe quedar al menos un super admin activo. Activa a otra persona con ese rol antes de hacer este cambio."
+
+`/admin/roles` MUST require global `roles.manage`, list the roles and offer creation by name, optional description, scope (`global` or `locality`) and permissions chosen from the catalogue. `/admin/roles/<id>` MUST require the same permission and edit those fields and the permission bundle atomically. A name is nonblank and at most 120 characters, a description at most 500. The internal key is generated on creation and remains unchanged. A role may have no permissions. A role already assigned MUST NOT change scope; the response is `409`, "Este rol ya está asignado. Quita sus asignaciones antes de cambiar su alcance." The system role is read-only, grants all present and future permissions, and an otherwise valid submission to update it is refused with `409`, "El rol Super admin es del sistema y no se puede cambiar." The panel offers no role deletion.
+
+Every form works without client JavaScript. Every action lives under `admin`, verifies its own Access token first, accepts only a form from its own page under `/admin` (otherwise `404`, direct `/_actions/` calls included), takes the user, role or existing assignment from that page's address, and checks its own global permission with `can()` again before writing through the fresh connection. A screen or action without that global permission answers the panel's generic `403` before reading the target. An unknown target is `404`. These pages accept only `GET`, `HEAD` and form `POST`; other methods answer `405`. A saved change answers `303` to its screen, with `no-store`, so reloading never submits it again; the confirmation says "Listo. Se guardó el cambio." No email or name travels in a URL or cookie, and these changes neither affect public content nor write the card-only audit log (`data-model`).
+
+#### Scenario: a municipality reviewer added from the panel
+
+- **WHEN** a global user manager adds a person, gives them a locality role with only `businesses.review` in A, and their email is added to Access
+- **THEN** they can review registrations in A, cannot manage users or roles, and cannot see cards of B
+
+#### Scenario: competing changes to the last super admins
+
+- **WHEN** two requests try to deactivate or remove the roles of the last two active super admins
+- **THEN** exactly one changes, the other is refused with the clear Spanish message, and one active super admin remains
+
+### Requirement: The panel home opens the sections a user may use (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-19 (EMR-72). This amends the queue's `403` rule in "Each review screen checks its permission in the locality of what it shows (v2)" for `/admin` alone.
+
+An active panel user with at least one role assignment whose permissions reach no section of the queue MUST see a simple home at `/admin`, headed "Panel de enmirumbo", instead of `403`. It links only to implemented sections that user may open: "Todos los negocios" for any card permission, "Colonias" for `zones.manage` in any locality, "Usuarios" for global `users.manage`, and "Roles" for global `roles.manage`. Sections that are not implemented yet are not linked. A user whose role reaches a queue section still sees the queue. Both entries expose the permitted users and roles screens in the panel's navigation. An unknown or inactive user, or one without an assignment, still gets the generic `403` and no data. A role with no implemented section sees the home with "Tu rol todavía no tiene una sección disponible en el panel."
+
+#### Scenario: a user who only deletes cards
+
+- **WHEN** an active user assigned only `businesses.delete` in A opens `/admin`
+- **THEN** it answers `200` with the home and a link to "Todos los negocios", whose cards are only those of A, with no queue or users/roles links
