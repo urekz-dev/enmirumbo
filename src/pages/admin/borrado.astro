@@ -1,0 +1,52 @@
+---
+// What a permanent deletion did, at /admin/borrado (docs/specs/
+// admin-review.md, "Permanent deletion takes everything and leaves no trace
+// of personal data"; docs/specs/deployment.md, "A deleted photo is purged
+// from the cache of the media hostname, and a purge that fails is retried
+// every hour (v2)"), where a deletion answers with a 303. It lives under no
+// card's address and shows nothing of what was deleted: no name, number or
+// identifier, on the screen or in its address. "Ya se borró para siempre.",
+// the minute the site takes, and "Volver a la cola"; with `?foto=pendiente`,
+// when the cache of the media hostname could not drop the photo yet, it says
+// so instead, and that the hourly job keeps trying. It reads nothing but
+// whether the user may see any card and open the queue, behind the panel's
+// Access check, headers and layout rules, and answers any method but GET or
+// HEAD with a 405.
+import { env, waitUntil } from "cloudflare:workers";
+import DecisionScreen from "../../components/admin/DecisionScreen.astro";
+import { withDb } from "../../core/db/client.ts";
+import { PHOTO_CACHED_PARAM, queuePath } from "../../core/review/paths.ts";
+import { panelScope, queueLocalities } from "../../core/review/scope.ts";
+import {
+  DELETED,
+  DELETED_PHOTO_CACHED,
+  DELETED_PHOTO_CACHED_DETAIL,
+  PUBLIC_DELAY,
+} from "../../core/review/texts.ts";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../lib/access/admin-gate.ts";
+
+const admin = Astro.locals.admin;
+// Second line of defense: never render the panel without an identity.
+if (admin === undefined) return forbiddenResponse();
+if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+}
+
+const scope = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, (db) =>
+  panelScope(db, admin.email),
+);
+if (scope.cards.length === 0) return forbiddenResponse();
+const photoCached = Astro.url.searchParams.getAll("foto").join() === PHOTO_CACHED_PARAM;
+const heading = photoCached ? DELETED_PHOTO_CACHED : DELETED;
+---
+
+<BaseLayout title={heading}>
+  <DecisionScreen
+    heading={heading}
+    queueHref={queueLocalities(scope).length > 0 ? queuePath() : null}
+  >
+    {photoCached && <p class="max-w-sm text-ink">{DELETED_PHOTO_CACHED_DETAIL}</p>}
+    <p class="text-ink-muted">{PUBLIC_DELAY}</p>
+  </DecisionScreen>
+</BaseLayout>

@@ -30,7 +30,7 @@ import { permissionsOf } from "../access/queries.ts";
 import { isBusinessId } from "../business/id.ts";
 import type { Db } from "../db/client.ts";
 import { adminAuditLog, businesses } from "../db/schema/index.ts";
-import { cardToDecide, type DecisionTarget } from "./decision.ts";
+import { actorOf, cardToDecide, type DecisionTarget } from "./decision.ts";
 import { type ReasonError, readReason } from "./reason.ts";
 import { opensCard } from "./scope.ts";
 
@@ -47,11 +47,6 @@ export type RejectionOutcome =
 const REJECTED: RejectionOutcome = { kind: "rejected" };
 const RESOLVED: RejectionOutcome = { kind: "resolved" };
 const NOT_FOUND: RejectionOutcome = { kind: "not-found" };
-
-/** The Access email as the audit log keeps it, the way `users` keeps emails. */
-function actorOf(email: string): string {
-  return email.trim().toLowerCase();
-}
 
 /**
  * Rejects the card `businessId` with `reason`, if it is still in review, and

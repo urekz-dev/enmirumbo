@@ -1,0 +1,77 @@
+---
+// The confirmation of a permanent deletion, the first of its two steps
+// (docs/specs/admin-review.md, "Permanent deletion is confirmed in two steps,
+// by typing a word"), in this order: "¿Seguro que quieres borrar esta
+// ficha?", the warning with the business's name, the reminder of the ARCO
+// procedure, the field "Escribe BORRAR para confirmar", "Sí, borrar para
+// siempre" and "Mejor no, regresar", back to the detail. Opening it deletes
+// nothing: only its form, posted to its own address with the action
+// `admin.deleteCard`, does, and only with the word. After a wrong word the
+// field comes back empty, with "Para borrar, escribe BORRAR en el campo."
+// next to it. Every check is the server's, so the form is `novalidate`. No
+// client JavaScript.
+import { DELETE_WORD_FIELD } from "../../core/review/deletion.ts";
+import {
+  ARCO_REMINDER,
+  DELETE_CANCEL,
+  DELETE_CONFIRM_BUTTON,
+  DELETE_HEADING,
+  DELETE_WORD_LABEL,
+  DELETE_WORD_MISMATCH,
+  deleteWarningText,
+} from "../../core/review/texts.ts";
+import { SECONDARY_BUTTON } from "../../lib/buttons.ts";
+import FieldError from "../FieldError.astro";
+
+interface Props {
+  name: string;
+  /** The address the form posts to: this screen with the action `admin.deleteCard`. */
+  action: string;
+  /** "Mejor no, regresar": the detail of the card. */
+  detailHref: string;
+  /** Whether the last submission's word was not BORRAR. */
+  wrongWord: boolean;
+}
+
+const { name, action, detailHref, wrongWord } = Astro.props;
+const control =
+  "w-full rounded-lg bg-background px-4 py-3 text-base text-ink focus:ring-2 focus:ring-action-strong focus:outline-none";
+---
+
+<section class="flex flex-col gap-6 py-4" data-testid="delete-confirmation">
+  <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{DELETE_HEADING}</h1>
+
+  <p class="break-words text-ink">{deleteWarningText(name)}</p>
+
+  <p class="rounded-lg border border-ink bg-surface p-4 text-sm text-ink">{ARCO_REMINDER}</p>
+
+  <form method="post" action={action} novalidate class="flex flex-col gap-3">
+    <div class="flex flex-col gap-1.5">
+      <label for="delete-word" class="text-sm font-semibold text-ink">
+        {DELETE_WORD_LABEL}
+      </label>
+      <input
+        id="delete-word"
+        name={DELETE_WORD_FIELD}
+        type="text"
+        autocomplete="off"
+        autocapitalize="characters"
+        spellcheck="false"
+        aria-invalid={wrongWord ? "true" : undefined}
+        aria-describedby={wrongWord ? "delete-word-error" : undefined}
+        class={wrongWord ? `${control} border-2 border-ink` : `${control} border border-control`}
+      />
+      <FieldError id="delete-word-error" message={wrongWord ? DELETE_WORD_MISMATCH : null} />
+    </div>
+    <button type="submit" class={`${SECONDARY_BUTTON} w-full px-4 text-base`}>
+      {DELETE_CONFIRM_BUTTON}
+    </button>
+  </form>
+
+  <a
+    href={detailHref}
+    class="inline-flex min-h-11 items-center justify-center px-4 font-semibold text-action-strong underline underline-offset-4"
+  >
+    {DELETE_CANCEL}
+  </a>
+</section>

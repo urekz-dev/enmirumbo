@@ -229,7 +229,10 @@ describe("Scheduled work runs from one hourly Cron Trigger per environment (v2)"
   });
 
   it("the hourly job runs the threshold task at the time it was scheduled for, and logs the counts", async () => {
-    expect(SCHEDULED_TASKS.map(({ name }) => name)).toEqual(["registration-threshold"]);
+    expect(SCHEDULED_TASKS.map(({ name }) => name)).toEqual([
+      "registration-threshold",
+      "photo-cache-purge",
+    ]);
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await register(3, "2030-01-21T16:00:00Z");

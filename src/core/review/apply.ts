@@ -39,9 +39,10 @@
 //    changes: status, origin, trades, dates, consent record, management link
 //    and pin stay. The database derives the search columns again.
 // 6. Once the card is saved, the objects of the photo it no longer names are
-//    deleted (deletePhoto, src/core/photos/upload.ts); a deletion that fails
-//    is logged by its kind there and left to the orphan sweep. An edit that
-//    is not applied changes nothing of the photo either.
+//    deleted and purged from the cache of the media hostname (deletePhoto,
+//    src/core/photos/upload.ts); a deletion that fails is logged by its kind
+//    there and left to the orphan sweep, a purge that fails to the hourly
+//    retry. An edit that is not applied changes nothing of the photo either.
 //
 // An applied edit keeps the key of the photo it brought, which is now its
 // card's (data-model, "A pending edit may change the photo of its card
@@ -56,6 +57,7 @@ import { businesses, municipalities, pendingEdits, states } from "../db/schema/i
 import { formText } from "../forms/text.ts";
 import type { LocalityRef } from "../locality/paths.ts";
 import { isPhotoKey } from "../photos/photo.ts";
+import { deletePhoto, type MediaBucket } from "../photos/upload.ts";
 import { type ApprovalZone, localityZoneChoices } from "./approval.ts";
 import { editToResolve, type EditTarget, noLongerPending } from "./edit-decision.ts";
 
@@ -272,8 +274,11 @@ export async function applyEdit(
 export interface SubmitApplyDeps {
   /** Runs `run` on a fresh connection to the database (withDb, HYPERDRIVE_FRESH). */
   useDb: <T>(run: (db: Db) => Promise<T>) => Promise<T>;
-  /** Deletes both objects of a photo (deletePhoto on the media bucket); it never throws. */
-  deletePhoto: (photoKey: string) => Promise<unknown>;
+  /**
+   * The public media bucket with the cache of its media hostname (mediaBucket),
+   * where deletePhoto deletes a photo's objects and purges its addresses.
+   */
+  bucket: MediaBucket;
 }
 
 /** What the admin is told after an apply: the outcome, without the photo it dropped. */
@@ -303,7 +308,7 @@ export async function submitApplyEdit(
     return applyEdit(db, edit.id, validation.zoneId);
   });
   if (outcome.kind !== "applied") return outcome;
-  if (outcome.droppedPhotoKey !== null) await deps.deletePhoto(outcome.droppedPhotoKey);
+  if (outcome.droppedPhotoKey !== null) await deletePhoto(deps.bucket, outcome.droppedPhotoKey);
   return { kind: "applied" };
 }
 

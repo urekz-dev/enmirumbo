@@ -78,6 +78,7 @@ import {
 import { chooseZone, type ZoneOption } from "../../src/core/registration/zone.ts";
 import { TURNSTILE_DUMMY_TOKEN, TURNSTILE_RESPONSE_FIELD } from "../../src/core/turnstile/keys.ts";
 import { RESERVED_SEGMENTS } from "../../src/core/catalogue/root-urls.ts";
+import { mediaBucket } from "../../src/lib/media-bucket.ts";
 import { CLIENT_IP_HEADER, takeQuota } from "../../src/lib/quota/quota.ts";
 import {
   decodeErrors,
@@ -176,7 +177,7 @@ const newAddress = () => `198.51.100.${++lastAddress}`;
 const verifyTurnstile = turnstileVerifier(env);
 
 /** The local Images binding and media bucket, as the action passes them. */
-const PHOTOS = { images: env.IMAGES, bucket: env.MEDIA };
+const PHOTOS = { images: env.IMAGES, bucket: mediaBucket(env) };
 
 /**
  * What the action gives the core: a fresh connection, the registration quota

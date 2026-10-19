@@ -20,8 +20,11 @@
 #     production for prod and the one dev and stage share for them, and
 #     MEDIA_URL an https origin (ADR 0011);
 #   - TURNSTILE_SITE_KEY a real site key from Cloudflare's dashboard, never a
-#     placeholder or one of Cloudflare's test keys, and TURNSTILE_SECRET_KEY
-#     in secrets.required, so the deploy uploads it (ADR 0012, ADR 0020);
+#     placeholder or one of Cloudflare's test keys (ADR 0012);
+#   - secrets.required names every Worker secret the Worker reads, so the
+#     deploy uploads each and stops when one is missing (ADR 0020):
+#     TURNSTILE_SECRET_KEY, and MEDIA_ZONE_ID and MEDIA_CACHE_PURGE_TOKEN,
+#     which purge a deleted photo from the cache of the media hostname;
 #   - the _headers file of the static assets gives every one of them the
 #     security headers (a Content-Security-Policy that forbids framing,
 #     plugins and posting to other sites, nosniff, X-Frame-Options: DENY and a
@@ -143,8 +146,10 @@ if [[ "${site_key}" =~ ^[0-9]x0+[A-Z]{2}$ ]]; then
 elif [[ ! "${site_key}" =~ ^0x[0-9A-Za-z_-]{10,}$ ]]; then
   error "TURNSTILE_SITE_KEY is '${site_key}', not a Turnstile site key; put the site key of this environment's Turnstile widget in env.${env_name}.vars of wrangler.jsonc"
 fi
-jq -e '(.secrets.required // []) | index("TURNSTILE_SECRET_KEY") != null' "${config}" >/dev/null ||
-  error "secrets.required does not name TURNSTILE_SECRET_KEY; declare it in env.${env_name}.secrets of wrangler.jsonc"
+for secret in TURNSTILE_SECRET_KEY MEDIA_ZONE_ID MEDIA_CACHE_PURGE_TOKEN; do
+  jq -e --arg s "${secret}" '(.secrets.required // []) | index($s) != null' "${config}" >/dev/null ||
+    error "secrets.required does not name ${secret}; declare it in env.${env_name}.secrets of wrangler.jsonc"
+done
 
 # Whether a _headers file has a rule for /* with a header line that matches
 # the extended regular expression $2, which is matched in lowercase.

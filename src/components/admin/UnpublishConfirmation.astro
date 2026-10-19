@@ -1,0 +1,28 @@
+---
+// The confirmation of an unpublishing (docs/specs/admin-review.md, "On
+// unpublishing, an offer is made to notify the business by WhatsApp" and
+// "The panel says that a change takes up to a minute to reach the site
+// (v2)"): "Ya la despublicaste.", that the site takes up to a minute to show
+// it, and "Avisarle por WhatsApp" with the notice, whose reason is the one
+// stored, whole. A number that is not ten digits is shown as stored, with no
+// button. No client JavaScript.
+import { unpublishedMessage } from "../../core/review/notices.ts";
+import { PUBLIC_DELAY, UNPUBLISHED } from "../../core/review/texts.ts";
+import DecisionScreen from "./DecisionScreen.astro";
+import NoticeButton from "./NoticeButton.astro";
+
+interface Props {
+  name: string;
+  whatsapp: string;
+  reason: string;
+  /** "Volver a la cola", when the user may open the queue. */
+  queueHref: string | null;
+}
+
+const { name, whatsapp, reason, queueHref } = Astro.props;
+---
+
+<DecisionScreen heading={UNPUBLISHED} queueHref={queueHref}>
+  <p class="text-ink-muted">{PUBLIC_DELAY}</p>
+  <NoticeButton whatsapp={whatsapp} message={unpublishedMessage(name, reason)} />
+</DecisionScreen>

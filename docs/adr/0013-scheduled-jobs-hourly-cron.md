@@ -15,3 +15,5 @@ Each deployed environment has exactly one Cron Trigger that fires every hour. Th
 ## Consequences
 
 Two triggers in total for `stage` and production, well under the limit. Adding a locality in another time zone changes nothing. The `dev` environment does not need a trigger; tasks can be run from a test-only route there.
+
+Amended on 2026-10-18 (EMR-48): one more task, the retry of the purges of the media hostname's cache that failed (ADR 0011), which runs every hour whatever the local hour and fails the run while a purge keeps failing.

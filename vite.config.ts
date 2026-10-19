@@ -20,6 +20,10 @@ for (const binding of ["HYPERDRIVE", "HYPERDRIVE_FRESH"]) {
 // which the local Worker emulates without network (src/core/turnstile/).
 // Wrangler reads it from the environment when there is no .dev.vars.
 process.env["TURNSTILE_SECRET_KEY"] ??= TURNSTILE_TEST_SECRET_KEYS.alwaysPasses;
+// The secrets of the purge of the media hostname's cache are empty: the local
+// Worker has no such cache and purges nothing (src/lib/media-bucket.ts).
+process.env["MEDIA_ZONE_ID"] ??= "";
+process.env["MEDIA_CACHE_PURGE_TOKEN"] ??= "";
 
 const generated = ["dist/**", ".astro/**", "worker-configuration.d.ts"];
 

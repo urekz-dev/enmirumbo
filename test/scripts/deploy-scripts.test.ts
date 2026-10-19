@@ -181,6 +181,9 @@ const OBSERVABILITY_OFF = {
   traces: { enabled: false, persist: false },
 };
 
+/** The Worker secrets every deployed environment requires by name. */
+const WORKER_SECRETS = ["TURNSTILE_SECRET_KEY", "MEDIA_ZONE_ID", "MEDIA_CACHE_PURGE_TOKEN"];
+
 // What `CLOUDFLARE_ENV=<env> vp run build` writes to dist/server/wrangler.json,
 // with real-looking Hyperdrive ids.
 function build(environment: Environment, overrides: Record<string, unknown> = {}) {
@@ -204,7 +207,7 @@ function build(environment: Environment, overrides: Record<string, unknown> = {}
       MEDIA_URL: MEDIA[environment].url,
       TURNSTILE_SITE_KEY: SITE_KEYS[environment],
     },
-    secrets: { required: ["TURNSTILE_SECRET_KEY"] },
+    secrets: { required: WORKER_SECRETS },
     assets: { binding: "ASSETS", directory: "../client" },
     durable_objects: { bindings: [{ name: "QUOTA_COUNTER", class_name: "QuotaCounter" }] },
     exports: { QuotaCounter: { type: "durable-object", storage: "sqlite" } },
@@ -457,16 +460,29 @@ describe("Each environment is built and deployed by its own workflow (v2): the b
     expect(errors(result)[0]).toContain("in env.prod.vars of wrangler.jsonc");
   });
 
-  it("a build that does not require the Turnstile secret is refused", () => {
+  it("a build that does not require its Worker secrets is refused, naming each one", () => {
     for (const secrets of [undefined, { required: [] }, { required: ["OTHER_SECRET"] }]) {
       const result = checkBuild("stage", build("stage", { secrets }));
       expect(result.status, JSON.stringify(secrets)).toBe(1);
-      expect(errors(result)).toEqual([
-        expect.stringContaining(
-          "secrets.required does not name TURNSTILE_SECRET_KEY; declare it in env.stage.secrets",
+      expect(errors(result)).toEqual(
+        WORKER_SECRETS.map((secret) =>
+          expect.stringContaining(
+            `secrets.required does not name ${secret}; declare it in env.stage.secrets`,
+          ),
         ),
-      ]);
+      );
     }
+  });
+
+  it.for(WORKER_SECRETS)("a build that does not require %s is refused", (secret) => {
+    const required = WORKER_SECRETS.filter((name) => name !== secret);
+    const result = checkBuild("prod", build("prod", { secrets: { required } }));
+    expect(result.status).toBe(1);
+    expect(errors(result)).toEqual([
+      expect.stringContaining(
+        `secrets.required does not name ${secret}; declare it in env.prod.secrets`,
+      ),
+    ]);
   });
 
   it("an empty ACCESS_AUD is only a warning: the panel stays closed", () => {
@@ -595,7 +611,7 @@ function deployWorker(
       "set -euo pipefail",
       `log=${JSON.stringify(log)}`,
       'printf "args:%s\\n" "$*" >>"$log"',
-      'printf "env:%s\\n" "${TURNSTILE_SECRET_KEY:-}" >>"$log"',
+      'printf "env:%s\\n" "${TURNSTILE_SECRET_KEY:-}${MEDIA_ZONE_ID:-}${MEDIA_CACHE_PURGE_TOKEN:-}" >>"$log"',
       "while [ $# -gt 0 ]; do",
       '  if [ "$1" = "--secrets-file" ]; then',
       '    printf "mode:%s\\n" "$(stat -c %a "$2" 2>/dev/null || stat -f %Lp "$2")" >>"$log"',
@@ -625,32 +641,36 @@ function deployWorker(
 }
 
 const TURNSTILE_SECRET = "0x4AAAAAAAfictitious-turnstile-secret";
+/** Every Worker secret of a build, with fictitious values. */
+const SECRETS = {
+  TURNSTILE_SECRET_KEY: TURNSTILE_SECRET,
+  MEDIA_ZONE_ID: "fictitious-media-zone-id",
+  MEDIA_CACHE_PURGE_TOKEN: "fictitious-media-cache-purge-token",
+};
 
 describe("Each environment is built and deployed by its own workflow (v2): the Worker secrets", () => {
   it.for(["dev", "stage", "prod"] as const)(
     "%s deploys with its secrets in a file only its owner reads, removed afterwards, and never in the arguments",
     (environment) => {
-      const result = deployWorker(environment, build(environment), {
-        TURNSTILE_SECRET_KEY: TURNSTILE_SECRET,
-      });
+      const result = deployWorker(environment, build(environment), SECRETS);
       expect(result.stderr).toBe("");
       expect(result.status).toBe(0);
       const [args = "", env = "", mode = "", file = ""] = result.lines;
       expect(args).toMatch(/^args:deploy --secrets-file \S+\/runner-temp\/worker-secrets\.\w+$/);
-      expect(args).not.toContain(TURNSTILE_SECRET);
-      // Wrangler reads the secret from the file, not from its environment.
+      for (const value of Object.values(SECRETS)) {
+        expect(args).not.toContain(value);
+        expect(result.stdout + result.stderr).not.toContain(value);
+      }
+      // Wrangler reads the secrets from the file, not from its environment.
       expect(env).toBe("env:");
       expect(mode).toBe("mode:600");
-      expect(JSON.parse(file.replace(/^file:/, ""))).toEqual({
-        TURNSTILE_SECRET_KEY: TURNSTILE_SECRET,
-      });
+      expect(JSON.parse(file.replace(/^file:/, ""))).toEqual(SECRETS);
       expect(result.left).toEqual([]);
-      expect(result.stdout + result.stderr).not.toContain(TURNSTILE_SECRET);
     },
   );
 
   it("dev passes its own arguments on to Wrangler", () => {
-    const result = deployWorker("dev", build("dev"), { TURNSTILE_SECRET_KEY: TURNSTILE_SECRET }, [
+    const result = deployWorker("dev", build("dev"), SECRETS, [
       "--var",
       "DEPLOY_BRANCH:EMR-42-turnstile",
       "--var",
@@ -664,7 +684,7 @@ describe("Each environment is built and deployed by its own workflow (v2): the W
 
   it("a failed deploy fails the step and still removes the file", () => {
     const result = deployWorker("stage", build("stage"), {
-      TURNSTILE_SECRET_KEY: TURNSTILE_SECRET,
+      ...SECRETS,
       FAKE_WRANGLER_STATUS: "1",
     });
     expect(result.status).toBe(1);
@@ -672,17 +692,29 @@ describe("Each environment is built and deployed by its own workflow (v2): the W
   });
 
   it("a missing or empty secret, or a build of another environment, deploys nothing", () => {
-    for (const env of [{}, { TURNSTILE_SECRET_KEY: "" }]) {
+    for (const env of [
+      {},
+      { TURNSTILE_SECRET_KEY: "", MEDIA_ZONE_ID: "", MEDIA_CACHE_PURGE_TOKEN: "" },
+    ]) {
       const result = deployWorker("prod", build("prod"), env);
       expect(result.status).toBe(1);
       expect(result.lines).toEqual([]);
       expect(errors(result)).toEqual([
         expect.stringContaining(
-          "missing Worker secret(s) TURNSTILE_SECRET_KEY: add each to the GitHub Environment prod",
+          "missing Worker secret(s) TURNSTILE_SECRET_KEY MEDIA_ZONE_ID MEDIA_CACHE_PURGE_TOKEN: add each to the GitHub Environment prod",
         ),
       ]);
     }
-    const other = deployWorker("prod", build("stage"), { TURNSTILE_SECRET_KEY: TURNSTILE_SECRET });
+    const partial = deployWorker("stage", build("stage"), {
+      ...SECRETS,
+      MEDIA_CACHE_PURGE_TOKEN: "",
+    });
+    expect(partial.status).toBe(1);
+    expect(partial.lines).toEqual([]);
+    expect(errors(partial)).toEqual([
+      expect.stringContaining("missing Worker secret(s) MEDIA_CACHE_PURGE_TOKEN"),
+    ]);
+    const other = deployWorker("prod", build("stage"), SECRETS);
     expect(other.status).toBe(1);
     expect(other.lines).toEqual([]);
     expect(errors(other)).toEqual([

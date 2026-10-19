@@ -26,6 +26,11 @@ export interface DecisionTarget {
   businessId: string;
 }
 
+/** The Access email as the audit log keeps it, the way `users` keeps emails. */
+export function actorOf(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 /** What an action needs to know of its card before deciding. */
 export interface CardToDecide {
   id: string;

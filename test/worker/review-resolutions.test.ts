@@ -40,6 +40,7 @@ import { savePendingEdit } from "../../src/core/edit/save.ts";
 import { resolveManagementLink } from "../../src/core/management-link/link.ts";
 import { newManagementToken, tokenFingerprint } from "../../src/core/management-link/token.ts";
 import { newPhotoKey, photoObjectKeys } from "../../src/core/photos/photo.ts";
+import type { MediaBucket } from "../../src/core/photos/upload.ts";
 import {
   APPLY_FIELDS,
   applyEdit,
@@ -301,17 +302,28 @@ async function objectsOf(key: string): Promise<number> {
   return found.filter((object) => object !== null).length;
 }
 
-/** The photos deleted through the dependency, in order. */
+/**
+ * The local media bucket, noting the photos deleted from it and the photos
+ * purged from the cache of its media hostname, in order.
+ */
 function photoDeleter() {
   const deleted: string[] = [];
-  return {
-    deleted,
-    deletePhoto: async (key: string) => {
-      deleted.push(key);
-      await env.MEDIA.delete(photoObjectKeys(key));
-      return true;
+  const purged: string[] = [];
+  const bucket: MediaBucket = {
+    put: env.MEDIA.put.bind(env.MEDIA) as R2Bucket["put"],
+    delete: async (keys) => {
+      const photoKey = [keys].flat()[0]?.split("/")[1];
+      if (photoKey !== undefined) deleted.push(photoKey);
+      await env.MEDIA.delete(keys);
+    },
+    cache: {
+      purge: async (photoKey) => {
+        purged.push(photoKey);
+        return "purged";
+      },
     },
   };
+  return { deleted, purged, bucket };
 }
 
 function applyFormData(zone?: string): FormData {
@@ -332,7 +344,7 @@ function apply(
   return submitApplyEdit(
     applyFormData(options.zone),
     { email: options.email ?? editor, editId: String(editId) },
-    { useDb: db, deletePhoto: deleter.deletePhoto },
+    { useDb: db, bucket: deleter.bucket },
   );
 }
 
@@ -347,7 +359,7 @@ function discard(
   return submitDiscardEdit(
     form,
     { email: options.email ?? editor, editId: String(editId) },
-    { useDb: db, deletePhoto: deleter.deletePhoto },
+    { useDb: db, bucket: deleter.bucket },
   );
 }
 
@@ -653,6 +665,8 @@ describe("Applying or discarding a pending edit carries out what it asks of the 
 
     expect((await row(id)).photoKey).toBe(fresh);
     expect(deleter.deleted).toEqual([old]);
+    // Deleted, then purged from the cache of the media hostname (deployment).
+    expect(deleter.purged).toEqual([old]);
     expect(await objectsOf(old)).toBe(0);
     expect(await objectsOf(fresh)).toBe(2);
     expect(await editRow(editId)).toMatchObject({ photoChange: "replace", newPhotoKey: fresh });
@@ -668,6 +682,7 @@ describe("Applying or discarding a pending edit carries out what it asks of the 
 
     expect((await row(id)).photoKey).toBeNull();
     expect(deleter.deleted).toEqual([old]);
+    expect(deleter.purged).toEqual([old]);
     expect(await objectsOf(old)).toBe(0);
   });
 
@@ -680,6 +695,7 @@ describe("Applying or discarding a pending edit carries out what it asks of the 
     });
     expect((await row(id)).photoKey).toBe(old);
     expect(keeper.deleted).toEqual([]);
+    expect(keeper.purged).toEqual([]);
     expect(await objectsOf(old)).toBe(2);
 
     const fresh = await storedPhoto();
@@ -725,6 +741,7 @@ describe("Applying or discarding a pending edit carries out what it asks of the 
 
     expect((await row(id)).photoKey).toBe(old);
     expect(deleter.deleted).toEqual([fresh]);
+    expect(deleter.purged).toEqual([fresh]);
     expect(await objectsOf(fresh)).toBe(0);
     expect(await objectsOf(old)).toBe(2);
     expect(await editRow(editId)).toMatchObject({
@@ -817,6 +834,51 @@ describe("Discarding the pending edit requires a reason, does not touch the card
     expect(await db((tx) => discardedNotice(tx, { email: editor, editId: "nada" }))).toBeNull();
     // An applied edit has no discard to confirm, nor a discarded one an apply.
     expect(await db((tx) => appliedNotice(tx, target))).toBeNull();
+  });
+
+  // Decision of 2026-10-18 (EMR-48): the notice says "Tu ficha sigue
+  // publicada como estaba", which a card no longer published makes false.
+  it("the changes of a card no longer published are not discarded: the edit keeps waiting, with its photo", async () => {
+    const fresh = await storedPhoto();
+    const id = await card();
+    const editId = await edit(id, { photoChange: "replace", newPhotoKey: fresh });
+    await db((tx) =>
+      tx
+        .update(businesses)
+        .set({ status: "in_review", unpublishedAt: new Date(), unpublishReason: "De mentiras" })
+        .where(eq(businesses.id, id)),
+    );
+    const deleter = photoDeleter();
+
+    expect(await discard(editId, "Ya no aplica", { deleter })).toEqual({ kind: "unpublished" });
+    // The core refuses it too, whatever the action read before.
+    expect(await db((tx) => discardEdit(tx, editId, "Ya no aplica"))).toEqual({
+      kind: "unpublished",
+    });
+    expect(await editRow(editId)).toMatchObject({
+      status: "pending",
+      discardReason: null,
+      newPhotoKey: fresh,
+    });
+    expect(deleter.deleted).toEqual([]);
+    expect(await objectsOf(fresh)).toBe(2);
+
+    // Published again, it is discarded with a notice that is true.
+    await db((tx) =>
+      tx.update(businesses).set({ status: "published" }).where(eq(businesses.id, id)),
+    );
+    expect(await discard(editId, "Ya no aplica", { deleter })).toEqual({ kind: "discarded" });
+    expect(deleter.deleted).toEqual([fresh]);
+    const target = { email: editor, editId: String(editId) };
+    expect(await db((tx) => discardedNotice(tx, target))).toMatchObject({ reason: "Ya no aplica" });
+    // Unpublished afterwards, its confirmation no longer opens.
+    await db((tx) =>
+      tx
+        .update(businesses)
+        .set({ status: "in_review", unpublishedAt: new Date(), unpublishReason: "Otra vez" })
+        .where(eq(businesses.id, id)),
+    );
+    expect(await db((tx) => discardedNotice(tx, target))).toBeNull();
   });
 });
 
@@ -1076,6 +1138,7 @@ describe("The resolutions between Astro and the core (src/lib/edit-review.ts, sr
         400,
       ],
       [discardActionError({ kind: "superseded" }), "discard", { kind: "superseded" }, 409],
+      [discardActionError({ kind: "unpublished" }), "discard", { kind: "unpublished" }, 409],
     ];
     for (const [error, form, failure, status] of cases) {
       expect(error).toBeInstanceOf(ActionError);

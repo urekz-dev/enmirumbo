@@ -14,6 +14,11 @@
 //    (./edit-decision.ts): forbidden, or not found.
 // 2. An edit no longer pending: superseded, or already resolved. Nothing is
 //    written.
+// 2b. A card that is no longer published: nothing is discarded, and the edit
+//    keeps waiting, as an apply does (decision of 2026-10-18, EMR-48). The
+//    notice of a discard tells the owner "Tu ficha sigue publicada como
+//    estaba", which would be false; once the card is published again, the
+//    edit can be resolved with a notice that is true.
 // 3. The reason (./reason.ts), the rules of the rejection's: required, at
 //    most 500 characters counted as a person sees them, never trimmed to
 //    fit, since it travels whole in the WhatsApp to the business. Errors,
@@ -23,9 +28,11 @@
 //    at once exactly one wins; and it gives up the key of the new photo it
 //    carried, as a superseded edit does, while still saying it asked
 //    `replace`.
-// 5. Once it is saved, the objects of that photo are deleted (deletePhoto,
+// 5. Once it is saved, the objects of that photo are deleted and its
+//    addresses purged from the cache of the media hostname (deletePhoto,
 //    src/core/photos/upload.ts); a deletion that fails is logged by its kind
-//    there, and the orphan sweep removes what no row names.
+//    there, and the orphan sweep removes what no row names; a purge that
+//    fails waits for the hourly retry.
 //
 // Discarding touches nothing of the card: its data, its photo, its status and
 // its management link stay, so the owner can send changes again with the same
@@ -40,6 +47,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.ts";
 import { businesses, pendingEdits } from "../db/schema/index.ts";
 import { isPhotoKey } from "../photos/photo.ts";
+import { deletePhoto, type MediaBucket } from "../photos/upload.ts";
 import { editToResolve, type EditTarget, noLongerPending } from "./edit-decision.ts";
 import { type ReasonError, readReason } from "./reason.ts";
 
@@ -51,12 +59,15 @@ export type DiscardOutcome =
   | { kind: "discarded"; droppedPhotoKey: string | null }
   | { kind: "resolved" }
   | { kind: "superseded" }
+  /** Its card is no longer published: nothing is discarded, and the edit keeps waiting. */
+  | { kind: "unpublished" }
   | { kind: "invalid"; error: ReasonError }
   | { kind: "not-found" }
   | { kind: "forbidden" };
 
 const RESOLVED: DiscardOutcome = { kind: "resolved" };
 const SUPERSEDED: DiscardOutcome = { kind: "superseded" };
+const UNPUBLISHED: DiscardOutcome = { kind: "unpublished" };
 const NOT_FOUND: DiscardOutcome = { kind: "not-found" };
 
 /** Discards the edit `editId` with `reason`, if it is still pending (step 4 above). */
@@ -74,6 +85,13 @@ export function discardEdit(db: Db, editId: number, reason: string): Promise<Dis
     if (edit.status !== "pending") {
       return noLongerPending(edit.status) === "superseded" ? SUPERSEDED : RESOLVED;
     }
+    // Read after the edit's lock, so an unpublishing that came first is seen.
+    const [card] = await tx
+      .select({ status: businesses.status })
+      .from(businesses)
+      .innerJoin(pendingEdits, eq(pendingEdits.businessId, businesses.id))
+      .where(eq(pendingEdits.id, editId));
+    if (card?.status !== "published") return UNPUBLISHED;
     const [discarded] = await tx
       .update(pendingEdits)
       .set({
@@ -96,8 +114,11 @@ export function discardEdit(db: Db, editId: number, reason: string): Promise<Dis
 export interface SubmitDiscardDeps {
   /** Runs `run` on a fresh connection to the database (withDb, HYPERDRIVE_FRESH). */
   useDb: <T>(run: (db: Db) => Promise<T>) => Promise<T>;
-  /** Deletes both objects of a photo (deletePhoto on the media bucket); it never throws. */
-  deletePhoto: (photoKey: string) => Promise<unknown>;
+  /**
+   * The public media bucket with the cache of its media hostname (mediaBucket),
+   * where deletePhoto deletes a photo's objects and purges its addresses.
+   */
+  bucket: MediaBucket;
 }
 
 /** What the admin is told after a discard: the outcome, without the photo it dropped. */
@@ -118,12 +139,13 @@ export async function submitDiscardEdit(
     if (edit.status !== "pending") {
       return noLongerPending(edit.status) === "superseded" ? SUPERSEDED : RESOLVED;
     }
+    if (edit.cardStatus !== "published") return UNPUBLISHED;
     const reading = readReason(form, DISCARD_FIELD);
     if (reading.kind === "invalid") return reading;
     return discardEdit(db, edit.id, reading.reason);
   });
   if (outcome.kind !== "discarded") return outcome;
-  if (outcome.droppedPhotoKey !== null) await deps.deletePhoto(outcome.droppedPhotoKey);
+  if (outcome.droppedPhotoKey !== null) await deletePhoto(deps.bucket, outcome.droppedPhotoKey);
   return { kind: "discarded" };
 }
 
@@ -139,13 +161,15 @@ export interface DiscardedNotice {
  * The notice of the discarded edit `target` names, for its confirmation; or
  * null when there is nothing to confirm, so the page goes back to the detail
  * of the edit: no edit, one the user may not resolve, one that is not
- * discarded, or one with no reason (a message with a blank reason is a wrong
- * WhatsApp to a third party). The reason is the one stored, never one an
+ * discarded, one with no reason (a message with a blank reason is a wrong
+ * WhatsApp to a third party), or one whose card is no longer published (the
+ * notice says it still is). The reason is the one stored, never one an
  * address carries.
  */
 export async function discardedNotice(db: Db, target: EditTarget): Promise<DiscardedNotice | null> {
   const access = await editToResolve(db, target);
   if (access.kind !== "edit" || access.edit.status !== "discarded") return null;
+  if (access.edit.cardStatus !== "published") return null;
   const [row] = await db
     .select({
       name: businesses.name,

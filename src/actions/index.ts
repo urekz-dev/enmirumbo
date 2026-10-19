@@ -9,14 +9,16 @@ import { env, waitUntil } from "cloudflare:workers";
 import { can } from "../core/access/queries.ts";
 import { type Db, withDb } from "../core/db/client.ts";
 import { submitEdit } from "../core/edit/submit.ts";
-import { deletePhoto } from "../core/photos/upload.ts";
 import { submitRegistration } from "../core/registration/submit.ts";
 import { submitReport } from "../core/report/submit.ts";
 import { submitApplyEdit } from "../core/review/apply.ts";
 import { submitApproval } from "../core/review/approval.ts";
 import { submitAttendReport } from "../core/review/attend.ts";
 import { submitDiscardEdit } from "../core/review/discard.ts";
+import { submitDeletion } from "../core/review/deletion.ts";
+import { submitNewLink } from "../core/review/new-link.ts";
 import { submitRejection } from "../core/review/rejection.ts";
+import { submitUnpublish } from "../core/review/unpublish.ts";
 import {
   addZone,
   renameZone,
@@ -26,6 +28,7 @@ import {
 import { requireAdmin } from "../lib/access/require-admin.ts";
 import { editActionError, editTarget } from "../lib/edit.ts";
 import { applyActionError, discardActionError, editReviewTarget } from "../lib/edit-review.ts";
+import { mediaBucket } from "../lib/media-bucket.ts";
 import { takeQuota } from "../lib/quota/quota.ts";
 import { registrationActionError, registrationLocality } from "../lib/registration.ts";
 import { reportActionError, reportTarget } from "../lib/report.ts";
@@ -33,9 +36,15 @@ import { attendActionError } from "../lib/report-review.ts";
 import {
   approvalActionError,
   approvalNotice,
+  deletionActionError,
+  deletionTarget,
+  newLinkActionError,
+  newLinkNotice,
   rejectionActionError,
   reviewTarget,
+  unpublishActionError,
 } from "../lib/review.ts";
+import { siteOrigin } from "../lib/site-url.ts";
 import { turnstileVerifier } from "../lib/turnstile.ts";
 import {
   submittedName,
@@ -92,7 +101,8 @@ export const server = {
   // turning it off lets submissions through at once; the token is checked
   // with siteverify (src/lib/turnstile.ts), and the quota is the
   // `registration` purpose. A photo goes through the Images binding (IMAGES)
-  // to the public media bucket (MEDIA), only after every other check.
+  // to the public media bucket (MEDIA, with the cache of its media hostname:
+  // src/lib/media-bucket.ts), only after every other check.
   // Nothing about the sender is read but the address the quota counts in
   // memory, which siteverify is never sent.
   register: defineAction({
@@ -104,7 +114,7 @@ export const server = {
         useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
         takeQuota: () => takeQuota(env, context.request.headers, "registration"),
         verifyTurnstile: turnstileVerifier(env),
-        photos: { images: env.IMAGES, bucket: env.MEDIA },
+        photos: { images: env.IMAGES, bucket: mediaBucket(env) },
       });
       const error = registrationActionError(outcome);
       if (error !== null) throw error;
@@ -119,7 +129,8 @@ export const server = {
   // The core decides (src/core/edit/submit.ts) in the registration's order,
   // with Turnstile's action `edit` and the `edit` quota, and saves a pending
   // edit through HYPERDRIVE_FRESH, which touches nothing of the card. A
-  // photo goes through IMAGES to MEDIA under a key no public page names.
+  // photo goes through IMAGES to MEDIA (mediaBucket) under a key no public
+  // page names.
   // The token is never logged.
   edit: defineAction({
     accept: "form",
@@ -130,7 +141,7 @@ export const server = {
         useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
         takeQuota: () => takeQuota(env, context.request.headers, "edit"),
         verifyTurnstile: turnstileVerifier(env),
-        photos: { images: env.IMAGES, bucket: env.MEDIA },
+        photos: { images: env.IMAGES, bucket: mediaBucket(env) },
       });
       const error = editActionError(outcome);
       if (error !== null) throw error;
@@ -221,7 +232,8 @@ export const server = {
     // the WhatsApp checked again (src/core/review/apply.ts), with
     // `edits.review` in its locality. The edit is the one of the page's
     // address (editReviewTarget). The photo the card no longer names is
-    // deleted once it is saved. The page then answers a 303 to its
+    // deleted once it is saved, and purged from the cache of the media
+    // hostname (mediaBucket). The page then answers a 303 to its
     // confirmation.
     applyEdit: defineAction({
       accept: "form",
@@ -234,7 +246,7 @@ export const server = {
           { email: admin.email, editId },
           {
             useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
-            deletePhoto: (photoKey) => deletePhoto(env.MEDIA, photoKey),
+            bucket: mediaBucket(env),
           },
         );
         const error = applyActionError(outcome);
@@ -246,7 +258,8 @@ export const server = {
     // characters that is never trimmed, only while the edit is still pending
     // (src/core/review/discard.ts), with `edits.review` in its locality. The
     // card does not change; the new photo the edit carried is deleted once
-    // it is discarded. The page then answers a 303 to its confirmation.
+    // it is discarded, and purged from the cache of the media hostname
+    // (mediaBucket). The page then answers a 303 to its confirmation.
     discardEdit: defineAction({
       accept: "form",
       handler: async (form, context) => {
@@ -258,11 +271,89 @@ export const server = {
           { email: admin.email, editId },
           {
             useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
-            deletePhoto: (photoKey) => deletePhoto(env.MEDIA, photoKey),
+            bucket: mediaBucket(env),
           },
         );
         const error = discardActionError(outcome);
         if (error !== null) throw error;
+      },
+    }),
+
+    // Unpublishing a published card from its detail, with a reason of up to
+    // 500 characters that travels to the business and is never trimmed,
+    // only while the card is published, writing its entry of the audit log
+    // with the Access email in the same transaction
+    // (src/core/review/unpublish.ts), with `businesses.unpublish` in its
+    // locality. The page then answers a 303 to its confirmation.
+    unpublish: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        const businessId = reviewTarget(context);
+        if (businessId === null) throw new ActionError({ code: "NOT_FOUND" });
+        const outcome = await submitUnpublish(
+          form,
+          { email: admin.email, businessId },
+          { useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run) },
+        );
+        const error = unpublishActionError(outcome);
+        if (error !== null) throw error;
+      },
+    }),
+
+    // "Generar un enlace nuevo" from the detail of a published card
+    // (src/core/review/new-link.ts), with `links.manage` in its locality: the
+    // previous link stops opening the card at once. It answers the page with
+    // the notice of its confirmation, which carries the new link, absolute
+    // from SITE_URL: the page shows it in that one answer, and it is never
+    // logged or stored. Without a public origin nothing is issued, so the
+    // owner keeps the link they have.
+    newLink: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        const businessId = reviewTarget(context);
+        if (businessId === null) throw new ActionError({ code: "NOT_FOUND" });
+        const outcome = await submitNewLink(
+          form,
+          { email: admin.email, businessId },
+          {
+            useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
+            hasPublicOrigin: siteOrigin(env) !== null,
+          },
+        );
+        if (outcome.kind === "issued") {
+          const notice = newLinkNotice(env, outcome);
+          if (notice !== null) return notice;
+        }
+        throw newLinkActionError(outcome) ?? new ActionError({ code: "INTERNAL_SERVER_ERROR" });
+      },
+    }),
+
+    // The permanent deletion of a card, posted by its confirmation,
+    // /admin/registros/<id>/borrar, with BORRAR typed
+    // (src/core/review/deletion.ts), with `businesses.delete` in its
+    // locality: its photos first, from the bucket and from the cache of the
+    // media hostname (mediaBucket), then its rows and the entry of the audit
+    // log in one transaction. The card is the one of that page's address
+    // (deletionTarget). It answers whether the photo may still be cached;
+    // the page then answers a 303 to a screen under no card's address.
+    deleteCard: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        const businessId = deletionTarget(context);
+        if (businessId === null) throw new ActionError({ code: "NOT_FOUND" });
+        const outcome = await submitDeletion(
+          form,
+          { email: admin.email, businessId },
+          {
+            useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
+            bucket: mediaBucket(env),
+          },
+        );
+        if (outcome.kind === "deleted") return { photoCached: outcome.photoCached };
+        throw deletionActionError(outcome) ?? new ActionError({ code: "INTERNAL_SERVER_ERROR" });
       },
     }),
 

@@ -56,6 +56,7 @@ import {
   type VerifyTurnstileOptions,
   verifyTurnstileToken,
 } from "../../src/core/turnstile/verify.ts";
+import { mediaBucket } from "../../src/lib/media-bucket.ts";
 import { CLIENT_IP_HEADER, takeQuota } from "../../src/lib/quota/quota.ts";
 import { registrationActionError, registrationPageFailure } from "../../src/lib/registration.ts";
 import {
@@ -467,7 +468,7 @@ function counted(
       return verify(token, action);
     },
     // The local Images binding and media bucket; these submissions carry no photo.
-    photos: { images: env.IMAGES, bucket: env.MEDIA },
+    photos: { images: env.IMAGES, bucket: mediaBucket(env) },
   };
   return { calls, deps };
 }

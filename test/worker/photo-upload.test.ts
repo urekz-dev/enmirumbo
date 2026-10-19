@@ -28,6 +28,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vite-p
 import { businesses } from "../../src/core/db/schema/index.ts";
 import { HONEYPOT_FIELD } from "../../src/core/forms/honeypot.ts";
 import { NOTICE_VERSION } from "../../src/core/legal/version.ts";
+import { NO_PHOTO_CACHE } from "../../src/core/photos/cache.ts";
 import {
   ACTION_BODY_LIMIT,
   MAX_PHOTO_BYTES,
@@ -162,6 +163,7 @@ function recordedBucket(options: { failOn?: string } = {}) {
       calls.deletes.push(...[keys].flat());
       return env.MEDIA.delete(keys);
     },
+    cache: NO_PHOTO_CACHE,
   };
   return { calls, bucket };
 }
@@ -674,12 +676,13 @@ describe("The photo is stored compressed, without metadata and with a server-gen
   });
 
   it("deleting a photo deletes both objects; one that is not there is no failure", async () => {
-    const key = keyOf(await storePhoto(photoFile(jpeg), services().using));
-    expect(await deletePhoto(env.MEDIA, key)).toBe(true);
+    const s = services();
+    const key = keyOf(await storePhoto(photoFile(jpeg), s.using));
+    expect(await deletePhoto(s.using.bucket, key)).toBe(true);
     expect(await objectsOf(key)).toEqual([]);
-    expect(await deletePhoto(env.MEDIA, key)).toBe(true);
+    expect(await deletePhoto(s.using.bucket, key)).toBe(true);
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    const failing = { delete: () => Promise.reject(new TypeError("R2 down")) };
+    const failing = { ...s.using.bucket, delete: () => Promise.reject(new TypeError("R2 down")) };
     expect(await deletePhoto(failing, key)).toBe(false);
     expect(log).toHaveBeenCalledWith("photos: a photo could not be deleted (TypeError)");
   });

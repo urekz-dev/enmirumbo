@@ -65,6 +65,7 @@ import {
   newPhotoKey as generatePhotoKey,
   photoObjectKeys,
 } from "../../src/core/photos/photo.ts";
+import { NO_PHOTO_CACHE } from "../../src/core/photos/cache.ts";
 import { type PhotoServices, PhotoSlots, storePhoto } from "../../src/core/photos/upload.ts";
 import { QUOTAS } from "../../src/core/quota/quotas.ts";
 import {
@@ -200,6 +201,7 @@ const bucket: PhotoServices["bucket"] = {
     return env.MEDIA.put(key, value, options);
   }) as R2Bucket["put"],
   delete: (keys) => env.MEDIA.delete(keys),
+  cache: NO_PHOTO_CACHE,
 };
 
 /**
@@ -1105,6 +1107,7 @@ describe("The edit of a card may change its photo, which reaches the card only w
         return bucket.put(key, value, options);
       }) as R2Bucket["put"],
       delete: bucket.delete,
+      cache: NO_PHOTO_CACHE,
     };
     expect(
       await submit(
