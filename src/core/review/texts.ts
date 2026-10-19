@@ -120,6 +120,7 @@ export const FIELD_LABELS = {
   name: "Nombre",
   category: "Categoría",
   whatsapp: "WhatsApp",
+  postalCode: "Código postal",
   zone: "Colonia",
   whatYouOffer: "¿Qué ofreces?",
   homeDelivery: "¿Hace entregas o va a domicilio?",

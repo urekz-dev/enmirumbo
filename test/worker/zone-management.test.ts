@@ -43,16 +43,31 @@ import { parseZoneId, zoneAnchor, zonesFormAction, zonesPath } from "../../src/c
 import { cleanZoneName, MAX_ZONE_NAME_LENGTH, nameProblem } from "../../src/core/zones/rules.ts";
 import { chosenZonesLocality, zonesLocalities } from "../../src/core/zones/scope.ts";
 import { PUBLIC_DELAY } from "../../src/core/review/texts.ts";
-import { nameProblemText, zonesCountText, zonesHeading } from "../../src/core/zones/texts.ts";
+import {
+  nameProblemText,
+  POSTAL_CODE_INVALID,
+  POSTAL_CODE_REQUIRED,
+  postalCodeText,
+  zonesCountText,
+  zonesHeading,
+} from "../../src/core/zones/texts.ts";
 import {
   submittedName,
+  submittedPostalCode,
   submittedType,
   submittedVisibility,
   submittedZone,
   zonesActionLocality,
   ZONES_ROUTE,
 } from "../../src/lib/zones.ts";
-import { cleanup, createFixture, db, type Fixture, insertBusiness } from "./fixtures.ts";
+import {
+  cleanup,
+  createFixture,
+  db,
+  type Fixture,
+  fakePostalCode,
+  insertBusiness,
+} from "./fixtures.ts";
 
 const STATE = "78";
 const DOMAIN = "@zones.enmirumbo.test";
@@ -61,6 +76,8 @@ const LOCALITY_NAME = "Pueblo Uno";
 let f: Fixture;
 /** The zones of locality A this file adds, by name, with their ids. */
 const zone: Record<string, number> = {};
+/** The postal code of the zones this file adds from the panel. */
+const POSTAL_CODE = fakePostalCode(STATE, 7);
 /** The first trade of the fixture, "Giro de prueba 78 uno". */
 const TRADE = `giro-prueba-${STATE}-uno`;
 
@@ -164,9 +181,12 @@ describe("The admin can hide and rename the zones of a locality (v2)", () => {
     });
     expect((await stored(zone["huertas"]!)).visible).toBe(false);
     expect(await offered()).not.toContain("Huertas");
-    // Typed by hand, it is kept as the free text of "Otra".
+    // Sent by hand, it is no zone the form offers.
     const catalogue = await db((tx) => registrationCatalogue(tx, localityA()));
-    expect(chooseZone("Huertas", catalogue.zones)).toEqual({ zoneId: null, zoneOther: "Huertas" });
+    expect(chooseZone("huertas", "", null, catalogue.zones, 80)).toEqual({
+      field: "zone",
+      code: "required",
+    });
 
     // Hiding is idempotent, and showing undoes it.
     await db((tx) => setZoneVisibility(tx, f.localityA, zone["huertas"]!, false));
@@ -321,7 +341,9 @@ describe("The admin can add a zone to a locality (v2)", () => {
 
   it("a new zone takes its slug from its name, is offered at once and can be a card's zone", async () => {
     try {
-      const outcome = await db((tx) => addZone(tx, f.localityA, "Real Toledo", "Fraccionamiento"));
+      const outcome = await db((tx) =>
+        addZone(tx, f.localityA, "Real Toledo", "Fraccionamiento", POSTAL_CODE),
+      );
       expect(outcome).toMatchObject({ kind: "done" });
       const id = outcome.kind === "done" ? outcome.zoneId : 0;
       expect(await stored(id)).toMatchObject({
@@ -330,10 +352,15 @@ describe("The admin can add a zone to a locality (v2)", () => {
         type: "Fraccionamiento",
         slug: "real-toledo",
         visible: true,
+        postalCode: POSTAL_CODE,
       });
       expect(await offered()).toContain("Real Toledo");
       const catalogue = await db((tx) => registrationCatalogue(tx, localityA()));
-      expect(chooseZone("real toledo", catalogue.zones)).toEqual({ zoneId: id, zoneOther: null });
+      expect(catalogue.zones.find(({ id: zoneId }) => zoneId === id)?.postalCode).toBe(POSTAL_CODE);
+      expect(chooseZone("real-toledo", "", POSTAL_CODE, catalogue.zones, 80)).toEqual({
+        zoneId: id,
+        zoneOther: null,
+      });
       // Usable on approving: a published card can have it, with its pages.
       await insertBusiness(f, { zoneId: id, status: "published", publishedAt: new Date() });
       expect(
@@ -342,7 +369,7 @@ describe("The admin can add a zone to a locality (v2)", () => {
 
       // Accents, the ñ and punctuation, as the slug rule of the catalogues says.
       const accented = await db((tx) =>
-        addZone(tx, f.localityA, "Privada Ñandú (2a. sección)", "Fraccionamiento"),
+        addZone(tx, f.localityA, "Privada Ñandú (2a. sección)", "Fraccionamiento", POSTAL_CODE),
       );
       expect(accented).toMatchObject({ kind: "done" });
       const accentedId = accented.kind === "done" ? accented.zoneId : 0;
@@ -354,30 +381,34 @@ describe("The admin can add a zone to a locality (v2)", () => {
   });
 
   it("a slug that another zone of the locality has is refused, hidden or renamed ones included", async () => {
-    expect(await db((tx) => addZone(tx, f.localityA, "Centro", "Fraccionamiento"))).toEqual({
+    expect(
+      await db((tx) => addZone(tx, f.localityA, "Centro", "Fraccionamiento", POSTAL_CODE)),
+    ).toEqual({
       kind: "invalid",
       errors: { name: { kind: "slug-taken", slug: "centro", zone: "Centro" } },
     });
     await db((tx) => renameZone(tx, f.localityA, zone["huertas"]!, "Las Huertas"));
     await db((tx) => setZoneVisibility(tx, f.localityA, zone["huertas"]!, false));
     try {
-      expect(await db((tx) => addZone(tx, f.localityA, "Huertas", "Colonia"))).toEqual({
-        kind: "invalid",
-        errors: { name: { kind: "slug-taken", slug: "huertas", zone: "Las Huertas" } },
-      });
+      expect(await db((tx) => addZone(tx, f.localityA, "Huertas", "Colonia", POSTAL_CODE))).toEqual(
+        {
+          kind: "invalid",
+          errors: { name: { kind: "slug-taken", slug: "huertas", zone: "Las Huertas" } },
+        },
+      );
     } finally {
       await db((tx) => renameZone(tx, f.localityA, zone["huertas"]!, "Huertas"));
       await db((tx) => setZoneVisibility(tx, f.localityA, zone["huertas"]!, true));
     }
     // The same slug in another locality is another zone.
-    const elsewhere = await db((tx) => addZone(tx, f.localityB, "Huertas", "Colonia"));
+    const elsewhere = await db((tx) => addZone(tx, f.localityB, "Huertas", "Colonia", POSTAL_CODE));
     expect(elsewhere).toMatchObject({ kind: "done" });
   });
 
   it("a name whose slug is a reserved segment is refused", async () => {
     for (const segment of RESERVED_SEGMENTS) {
       const name = segment.replaceAll("-", " ");
-      const outcome = await db((tx) => addZone(tx, f.localityA, name, "Colonia"));
+      const outcome = await db((tx) => addZone(tx, f.localityA, name, "Colonia", POSTAL_CODE));
       expect({ segment, outcome }).toEqual({
         segment,
         outcome: {
@@ -393,7 +424,9 @@ describe("The admin can add a zone to a locality (v2)", () => {
   it("a name that would make a URL of the locality read in two ways is refused", async () => {
     // Its slug is a category's.
     expect(
-      await db((tx) => addZone(tx, f.localityA, `Categoría prueba ${STATE}`, "Colonia")),
+      await db((tx) =>
+        addZone(tx, f.localityA, `Categoría prueba ${STATE}`, "Colonia", POSTAL_CODE),
+      ),
     ).toEqual({
       kind: "invalid",
       errors: {
@@ -406,7 +439,7 @@ describe("The admin can add a zone to a locality (v2)", () => {
       },
     });
     // A trade and the zone would compose another trade's slug.
-    expect(await db((tx) => addZone(tx, f.localityA, "Y", "Colonia"))).toEqual({
+    expect(await db((tx) => addZone(tx, f.localityA, "Y", "Colonia", POSTAL_CODE))).toEqual({
       kind: "invalid",
       errors: {
         name: {
@@ -418,7 +451,7 @@ describe("The admin can add a zone to a locality (v2)", () => {
       },
     });
     // Two trade and zone pairs would compose the same segment.
-    expect(await db((tx) => addZone(tx, f.localityA, "Y Z", "Colonia"))).toEqual({
+    expect(await db((tx) => addZone(tx, f.localityA, "Y Z", "Colonia", POSTAL_CODE))).toEqual({
       kind: "invalid",
       errors: {
         name: {
@@ -435,7 +468,9 @@ describe("The admin can add a zone to a locality (v2)", () => {
   it("a zone named like a trade is no conflict: a zone alone is no page", async () => {
     try {
       expect(
-        await db((tx) => addZone(tx, f.localityA, `Giro prueba ${STATE} dos`, "Colonia")),
+        await db((tx) =>
+          addZone(tx, f.localityA, `Giro prueba ${STATE} dos`, "Colonia", POSTAL_CODE),
+        ),
       ).toMatchObject({ kind: "done" });
     } finally {
       await removeAdded(`giro-prueba-${STATE}-dos`);
@@ -443,16 +478,22 @@ describe("The admin can add a zone to a locality (v2)", () => {
   });
 
   it("a new zone keeps the display names unambiguous", async () => {
-    expect(await db((tx) => addZone(tx, f.localityA, "El Carmen", "Colonia"))).toEqual({
-      kind: "invalid",
-      errors: { name: { kind: "display-clash", displayName: "El Carmen (Colonia)" } },
-    });
+    expect(await db((tx) => addZone(tx, f.localityA, "El Carmen", "Colonia", POSTAL_CODE))).toEqual(
+      {
+        kind: "invalid",
+        errors: { name: { kind: "display-clash", displayName: "El Carmen (Colonia)" } },
+      },
+    );
     try {
       // Another type tells it apart; and a zone named like the locality shows its type.
-      expect(await db((tx) => addZone(tx, f.localityA, "El Carmen", "Barrio"))).toMatchObject({
+      expect(
+        await db((tx) => addZone(tx, f.localityA, "El Carmen", "Barrio", POSTAL_CODE)),
+      ).toMatchObject({
         kind: "done",
       });
-      expect(await db((tx) => addZone(tx, f.localityA, LOCALITY_NAME, "Colonia"))).toMatchObject({
+      expect(
+        await db((tx) => addZone(tx, f.localityA, LOCALITY_NAME, "Colonia", POSTAL_CODE)),
+      ).toMatchObject({
         kind: "done",
       });
       expect(await offered()).toEqual(
@@ -467,16 +508,48 @@ describe("The admin can add a zone to a locality (v2)", () => {
     const types = (await db((tx) => panelZones(tx, f.localityA, LOCALITY_NAME))).types;
     expect(types).toEqual(["Barrio", "Colonia", "Fraccionamiento", "Pueblo"]);
     for (const type of ["", "Galaxia", "colonia "]) {
-      expect(await db((tx) => addZone(tx, f.localityA, "Real Toledo", type))).toEqual({
+      expect(await db((tx) => addZone(tx, f.localityA, "Real Toledo", type, POSTAL_CODE))).toEqual({
         kind: "invalid",
         errors: { type: { kind: "required" } },
       });
     }
-    // Both fields come back with their errors at once.
-    expect(await db((tx) => addZone(tx, f.localityA, "", ""))).toEqual({
+    // Every field comes back with its error at once.
+    expect(await db((tx) => addZone(tx, f.localityA, "", "", ""))).toEqual({
       kind: "invalid",
-      errors: { name: { kind: "required" }, type: { kind: "required" } },
+      errors: {
+        name: { kind: "required" },
+        type: { kind: "required" },
+        postalCode: { kind: "required" },
+      },
     });
+  });
+
+  it("a new zone needs a postal code of five digits, any five", async () => {
+    for (const postalCode of ["4381", "438155", "43 815", "C.P. 43815", "٤٣٨١٥"]) {
+      expect(
+        await db((tx) => addZone(tx, f.localityA, "Real Toledo", "Fraccionamiento", postalCode)),
+        postalCode,
+      ).toEqual({ kind: "invalid", errors: { postalCode: { kind: "invalid" } } });
+    }
+    expect(
+      await db((tx) => addZone(tx, f.localityA, "Real Toledo", "Fraccionamiento", "")),
+    ).toEqual({ kind: "invalid", errors: { postalCode: { kind: "required" } } });
+    try {
+      // One that no zone has yet, as a new housing development may.
+      const outcome = await db((tx) =>
+        addZone(tx, f.localityA, "Real Toledo", "Fraccionamiento", "43899"),
+      );
+      expect(outcome).toMatchObject({ kind: "done" });
+      const id = outcome.kind === "done" ? outcome.zoneId : 0;
+      expect((await stored(id)).postalCode).toBe("43899");
+      expect(
+        (await db((tx) => panelZones(tx, f.localityA, LOCALITY_NAME))).zones.find(
+          (row) => row.id === id,
+        )?.postalCode,
+      ).toBe("43899");
+    } finally {
+      await removeAdded("real-toledo");
+    }
   });
 
   it("a new zone checks the name on its own, and that it has a slug", async () => {
@@ -489,13 +562,13 @@ describe("The admin can add a zone to a locality (v2)", () => {
     for (const [name, kind] of cases) {
       expect({
         name,
-        outcome: await db((tx) => addZone(tx, f.localityA, name, "Colonia")),
+        outcome: await db((tx) => addZone(tx, f.localityA, name, "Colonia", POSTAL_CODE)),
       }).toEqual({
         name,
         outcome: { kind: "invalid", errors: { name: { kind } } },
       });
     }
-    expect(await db((tx) => addZone(tx, "77001", "Real Toledo", "Colonia"))).toEqual({
+    expect(await db((tx) => addZone(tx, "77001", "Real Toledo", "Colonia", POSTAL_CODE))).toEqual({
       kind: "not-found",
     });
   });
@@ -592,16 +665,19 @@ describe("The zones screen: its locality, its address and its forms", () => {
     form.set("visible", "false");
     form.set("name", "  Real‮   Toledo\n ");
     form.set("type", " Fraccionamiento ");
+    form.set("postalCode", " 43815 ");
     expect(submittedZone(form)).toBe(42);
     expect(submittedVisibility(form)).toBe(false);
     expect(submittedName(form)).toBe("Real Toledo");
     expect(submittedType(form)).toBe("Fraccionamiento");
+    expect(submittedPostalCode(form)).toBe("43815");
     const empty = new FormData();
     empty.set("visible", "si");
     empty.set("zone", new File(["x"], "x.txt"));
     expect(submittedZone(empty)).toBeNull();
     expect(submittedVisibility(empty)).toBeNull();
     expect(submittedName(empty)).toBe("");
+    expect(submittedPostalCode(empty)).toBe("");
   });
 
   it("names and slugs follow the rules of the catalogues", () => {
@@ -621,6 +697,10 @@ describe("The zones screen: its locality, its address and its forms", () => {
       "Listo. El cambio puede tardar hasta un minuto en verse en el sitio.",
     );
     expect(zonesHeading("Tizayuca")).toBe("Colonias de Tizayuca");
+    expect(postalCodeText("43808")).toBe("Código postal: 43808");
+    expect(postalCodeText(null)).toBe("Código postal: sin registrar");
+    expect(POSTAL_CODE_REQUIRED).toBe("Escribe el código postal de la colonia.");
+    expect(POSTAL_CODE_INVALID).toBe("El código postal son 5 números, sin espacios.");
     expect(zonesCountText(105, 0)).toBe("105 colonias");
     expect(zonesCountText(105, 2)).toBe("105 colonias, 2 ocultas");
     expect(zonesCountText(1, 1)).toBe("1 colonia, 1 oculta");

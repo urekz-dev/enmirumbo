@@ -13,7 +13,13 @@ import {
   text,
   unique,
 } from "drizzle-orm/pg-core";
-import { coordinates, matches, PHONE_PATTERN, SLUG_PATTERN } from "./checks.ts";
+import {
+  coordinates,
+  matches,
+  PHONE_PATTERN,
+  POSTAL_CODE_PATTERN,
+  SLUG_PATTERN,
+} from "./checks.ts";
 
 /** INEGI states, keyed by their two-digit code (Hidalgo is `13`). */
 export const states = pgTable(
@@ -101,9 +107,11 @@ export const localities = pgTable(
 
 /**
  * A settlement of a locality (colonia, fraccionamiento, pueblo, …) with its
- * SEPOMEX type. The slug is unique within the locality and never changes,
- * even when the admin renames the zone; a hidden zone is no longer offered to
- * new registrations.
+ * SEPOMEX type and postal code. The slug is unique within the locality and
+ * never changes, even when the admin renames the zone; a hidden zone is no
+ * longer offered to new registrations. The registration form narrows its
+ * zones by the postal code a business types. The postal code is null only on
+ * a zone the admin added before zones had one.
  */
 export const zones = pgTable(
   "zones",
@@ -116,6 +124,7 @@ export const zones = pgTable(
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     visible: boolean("visible").notNull().default(true),
+    postalCode: text("postal_code"),
   },
   (t) => [
     unique("zones_locality_slug_unique").on(t.localityCode, t.slug),
@@ -125,5 +134,6 @@ export const zones = pgTable(
     check("zones_type_check", sql`btrim(${t.type}) <> ''`),
     check("zones_name_check", sql`btrim(${t.name}) <> ''`),
     check("zones_slug_check", matches(t.slug, SLUG_PATTERN)),
+    check("zones_postal_code_check", matches(t.postalCode, POSTAL_CODE_PATTERN)),
   ],
 );

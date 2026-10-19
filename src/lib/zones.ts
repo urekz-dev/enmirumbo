@@ -32,6 +32,7 @@ export const ZONE_FIELDS = {
   visible: "visible",
   name: "name",
   type: "type",
+  postalCode: "postalCode",
 } as const;
 
 /** What an action needs of its context. */
@@ -72,6 +73,11 @@ export function submittedName(form: FormData): string {
 /** The settlement type a submission chose. */
 export function submittedType(form: FormData): string {
   return formText(form, ZONE_FIELDS.type).trim();
+}
+
+/** The postal code a submission typed, trimmed. */
+export function submittedPostalCode(form: FormData): string {
+  return formText(form, ZONE_FIELDS.postalCode).trim();
 }
 
 /** What an action answers the page with, when it does not throw. */

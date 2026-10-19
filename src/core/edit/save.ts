@@ -40,7 +40,7 @@ import type { Db } from "../db/client.ts";
 import { businesses, pendingEdits } from "../db/schema/index.ts";
 import { type OpenLink, openLinkCondition } from "../management-link/link.ts";
 import { isPhotoKey } from "../photos/photo.ts";
-import type { EditableFields } from "./submission.ts";
+import type { NewRegistration } from "../registration/submission.ts";
 
 /**
  * What an edit asks of the card's photo once applied: leave it as it is,
@@ -71,7 +71,7 @@ export function savePendingEdit(
   db: Db,
   localityCode: string,
   link: OpenLink,
-  edit: EditableFields,
+  edit: NewRegistration,
   photo: EditPhotoChange,
 ): Promise<SaveEditOutcome> {
   return db.transaction(async (tx) => {

@@ -33,7 +33,8 @@
 //    los cambios."), leaving the edit pending; marks the edit `applied`, with
 //    its date, only while it is still pending (a conditional update, so of
 //    two resolutions at once exactly one wins); and copies to the card
-//    exactly the fields of the form and what the edit asks of the photo:
+//    exactly the fields of the form, its postal code included (unless the
+//    edit predates it), and what the edit asks of the photo:
 //    `replace` gives the card the edit's new photo, `remove` leaves it
 //    without one, `keep` leaves it as it is. Nothing else of the card
 //    changes: status, origin, trades, dates, consent record, management link
@@ -245,6 +246,9 @@ export async function applyEdit(
           // text the owner wrote is kept, as the approval keeps it.
           zoneId,
           zoneOther: edit.zoneOther,
+          // The postal code the owner typed; an edit saved before the form
+          // asked for it has none, and leaves the card's as it is.
+          postalCode: edit.postalCode ?? sql`${businesses.postalCode}`,
           whatYouOffer: edit.whatYouOffer,
           homeDelivery: edit.homeDelivery,
           landline: edit.landline,

@@ -9,8 +9,8 @@
 // text pending normalization", "A successful submission queues the business
 // and shows the thank-you screen", "Form states and registration
 // accessibility", "The zone options come from the active locality (v2)",
-// "The zone is typed with the locality's zones as suggestions, and a name
-// that is none of them is kept as "Otra" (v2)", "The registration's honeypot
+// "The zone is chosen from the zones of the postal code the business types,
+// or written when it does not appear (v2)", "The registration's honeypot
 // and per-IP quota are those of the public forms (v2)", "The registration
 // page of a locality lives under it, and lands on its thank-you page (v2)",
 // "The registration and edit forms are protected by quotas, honeypot and
@@ -101,7 +101,10 @@ interface Fields {
   name?: string;
   category?: string;
   whatsapp?: string;
+  postalCode?: string;
+  /** The option of the zone select, by what it says. */
   zone?: string;
+  zoneOther?: string;
   whatYouOffer?: string;
   homeDelivery?: boolean;
   landline?: string;
@@ -115,7 +118,9 @@ const LABELS = {
   name: "¿Cómo se llama tu negocio?",
   category: "¿A qué se dedica?",
   whatsapp: "Tu WhatsApp (10 dígitos)",
+  postalCode: "Código postal",
   zone: "¿En qué colonia estás?",
+  zoneOther: "Si tu colonia no aparece, escribe cómo se llama",
   whatYouOffer: "¿Qué ofreces? (opcional)",
   homeDelivery: "¿Haces entregas o vas a domicilio? (opcional)",
   landline: "Teléfono fijo (opcional)",
@@ -129,12 +134,19 @@ const LABELS = {
 const field = (page: Page, key: keyof typeof LABELS) =>
   page.getByLabel(LABELS[key], { exact: true });
 
-/** Fills the form of the page as a person would. */
+/**
+ * Fills the form of the page as a person would: the postal code before the
+ * zone, which its script narrows, and the name of a zone that does not
+ * appear after choosing "Mi colonia no aparece", which shows its field.
+ */
 async function fill(page: Page, fields: Fields): Promise<void> {
+  for (const key of ["name", "whatsapp", "postalCode"] as const) {
+    const value = fields[key];
+    if (value !== undefined) await field(page, key).fill(value);
+  }
+  if (fields.zone !== undefined) await field(page, "zone").selectOption({ label: fields.zone });
   for (const key of [
-    "name",
-    "whatsapp",
-    "zone",
+    "zoneOther",
     "whatYouOffer",
     "landline",
     "address",
@@ -164,11 +176,12 @@ async function send(page: Page) {
   return response;
 }
 
-/** The five required fields of a valid registration. */
+/** The required fields of a valid registration. */
 const REQUIRED = (whatsapp: string): Fields => ({
   name: "Taller de Prueba Inventado",
   category: "Talleres",
   whatsapp,
+  postalCode: "43808",
   zone: "Huicalco",
   consent: true,
 });
@@ -185,7 +198,8 @@ const posted = (whatsapp: string, extra: Record<string, string> = {}) => ({
   name: "Taller Posteado de Mentiras",
   category: "talleres",
   whatsapp,
-  zone: "Huicalco",
+  postalCode: "43808",
+  zone: "huicalco",
   noticeVersion: NOTICE_VERSION,
   consent: "on",
   ...extra,
@@ -235,7 +249,8 @@ test.describe("Registering without JavaScript while Turnstile's switch is off, f
     expect(await errorOf(page, "whatsapp")).toBe(
       "Revisa tu número de WhatsApp: deben ser 10 dígitos",
     );
-    expect(await errorOf(page, "zone")).toBe("Escribe el nombre de tu colonia");
+    expect(await errorOf(page, "postalCode")).toBe("Escribe tu código postal");
+    expect(await errorOf(page, "zone")).toBe("Elige tu colonia");
     expect(await errorOf(page, "consent")).toBe("Marca la casilla para poder registrar tu negocio");
     await expect(field(page, "name")).toBeFocused();
 
@@ -244,7 +259,8 @@ test.describe("Registering without JavaScript while Turnstile's switch is off, f
       name: "Taller Mecánico Güicho de Mentiras",
       category: "Talleres",
       whatsapp: "771 999 40",
-      zone: "haciendas de tizayuca",
+      postalCode: "43815",
+      zone: "Haciendas de Tizayuca",
       whatYouOffer: "afinación y frenos",
       homeDelivery: true,
       landline: "no tengo",
@@ -266,7 +282,8 @@ test.describe("Registering without JavaScript while Turnstile's switch is off, f
     await expect(field(page, "whatsapp")).toBeFocused();
     await expect(field(page, "name")).toHaveValue("Taller Mecánico Güicho de Mentiras");
     await expect(field(page, "category")).toHaveValue("talleres");
-    await expect(field(page, "zone")).toHaveValue("haciendas de tizayuca");
+    await expect(field(page, "postalCode")).toHaveValue("43815");
+    await expect(field(page, "zone")).toHaveValue("haciendas-de-tizayuca");
     await expect(field(page, "whatYouOffer")).toHaveValue("afinación y frenos");
     await expect(field(page, "homeDelivery")).toBeChecked();
     await expect(field(page, "openingHours")).toHaveValue("Lunes a sábado de 9 a 7");
@@ -277,7 +294,7 @@ test.describe("Registering without JavaScript while Turnstile's switch is off, f
     // action, which the measurement leaves out (business-registration, "No
     // form data travels to the measurement"; the script's tag is tested in
     // test/astro/registration.test.ts).
-    expect(decodeURIComponent(page.url())).not.toMatch(/Güicho|tallerguicho|haciendas/);
+    expect(decodeURIComponent(page.url())).not.toMatch(/Güicho|tallerguicho|haciendas|43815/);
     const answered = new URL(page.url());
     expect(answered.pathname).toBe(FORM);
     expect([...answered.searchParams]).toEqual([["_action", "register"]]);
@@ -297,6 +314,7 @@ test.describe("Registering without JavaScript while Turnstile's switch is off, f
     expect(more).toEqual([]);
     expect(saved).toMatchObject({
       name: "Taller Mecánico Güicho de Mentiras",
+      postalCode: "43815",
       zoneId: await zoneIdOf("Haciendas de Tizayuca"),
       zoneOther: null,
       whatYouOffer: "afinación y frenos",
@@ -325,28 +343,91 @@ test.describe("Registering without JavaScript while Turnstile's switch is off, f
     expect(await search.text()).not.toContain("Güicho");
   });
 
-  // Scenarios: registration with zone "Otra"; options (v2); registration with
-  // required fields only
-  test("a colonia that is none of the suggestions is saved as written, for the admin to normalize", async ({
+  // Scenarios: options (v2); the select without JavaScript; a zone of another
+  // postal code
+  test("the select lists every zone of Tizayuca grouped by postal code, and a zone of another postal code is its error", async ({
     page,
   }) => {
     await page.goto(FORM);
     const zone = field(page, "zone");
-    const list = await zone.getAttribute("list");
-    const suggestions = await page
-      .locator(`datalist[id="${list}"] option`)
-      .evaluateAll((options) => options.map((option) => option.getAttribute("value")));
-    expect(suggestions).toHaveLength(105);
-    expect(suggestions).toEqual(
-      expect.arrayContaining(["Haciendas de Tizayuca", "El Carmen (Colonia)", "Huicalco"]),
+    const groups = await zone.locator("optgroup").evaluateAll((all) =>
+      all.map((group) => ({
+        label: group.getAttribute("label"),
+        options: [...group.querySelectorAll("option")].map((option) => option.textContent),
+      })),
     );
-    expect(suggestions).not.toContain("Otra");
+    expect(groups).toHaveLength(15);
+    expect(groups.map(({ label }) => label)).toEqual(
+      [
+        "43800",
+        "43802",
+        "43803",
+        "43804",
+        "43806",
+        "43807",
+        "43808",
+        "43810",
+        "43815",
+        "43816",
+        "43817",
+        "43820",
+        "43823",
+        "43824",
+        "43825",
+      ].map((code) => `C.P. ${code}`),
+    );
+    expect(groups.flatMap(({ options }) => options)).toHaveLength(105);
+    expect(groups.find(({ label }) => label === "C.P. 43815")?.options).toEqual(
+      expect.arrayContaining([
+        "Haciendas de Tizayuca",
+        "El Carmen (Colonia)",
+        "El Carmen (Fraccionamiento)",
+      ]),
+    );
+    await expect(zone.locator("option").first()).toHaveText("Elige tu colonia");
+    await expect(zone.locator("option").last()).toHaveText("Mi colonia no aparece");
+    // Without JavaScript the field for a zone that does not appear is always there.
+    await expect(field(page, "zoneOther")).toBeVisible();
 
-    await fill(page, { ...REQUIRED("7719994002"), zone: "Rinconada del Venado de Mentiras" });
+    await fill(page, { ...REQUIRED("7719994003"), zone: "Haciendas de Tizayuca" });
+    const wrong = await send(page);
+    expect(wrong.status()).toBe(400);
+    expect(await errorOf(page, "zone")).toBe(
+      "Esa colonia no es de ese código postal. Revisa el código o elige otra colonia.",
+    );
+    expect(await businessesOf("7719994003")).toEqual([]);
+    await fill(page, { postalCode: "43815", consent: true });
+    await submitButton(page).click();
+    await expect(page).toHaveURL(THANKS);
+    expect(await businessesOf("7719994003")).toEqual([
+      expect.objectContaining({
+        postalCode: "43815",
+        zoneId: await zoneIdOf("Haciendas de Tizayuca"),
+      }),
+    ]);
+  });
+
+  // Scenarios: registration with zone "Otra"; any postal code with "Mi colonia
+  // no aparece"; registration with required fields only
+  test("Mi colonia no aparece keeps the name as written, for the admin to normalize, with any postal code", async ({
+    page,
+  }) => {
+    await page.goto(FORM);
+    await fill(page, {
+      ...REQUIRED("7719994002"),
+      postalCode: "43899",
+      zone: "Mi colonia no aparece",
+    });
+    const empty = await send(page);
+    expect(empty.status()).toBe(400);
+    expect(await errorOf(page, "zoneOther")).toBe("Escribe el nombre de tu colonia");
+
+    await fill(page, { zoneOther: "Rinconada del Venado de Mentiras", consent: true });
     await submitButton(page).click();
     await expect(page).toHaveURL(THANKS);
     expect(await businessesOf("7719994002")).toEqual([
       expect.objectContaining({
+        postalCode: "43899",
         zoneId: null,
         zoneOther: "Rinconada del Venado de Mentiras",
         whatYouOffer: null,
@@ -566,6 +647,85 @@ test.describe("The registration's honeypot and per-IP quota are those of the pub
 });
 
 test.describe("Registering with JavaScript", () => {
+  /** The groups of the zone select as a person sees them, and its options. */
+  const zoneSelect = async (page: Page) =>
+    field(page, "zone").evaluate((element) => {
+      const select = element as unknown as HTMLSelectElement;
+      return {
+        groups: [...select.querySelectorAll("optgroup")].map((group) => group.label),
+        options: [...select.options].map((option) => option.text),
+        value: select.value,
+      };
+    });
+
+  // Scenarios: the postal code narrows the zones; a postal code no zone has;
+  // registration with zone "Otra"
+  test("typing a postal code narrows the select to its zones, and Mi colonia no aparece shows the field for its name", async ({
+    page,
+  }) => {
+    await page.goto(FORM);
+    const hint = page.getByRole("status").filter({ hasText: "No tenemos colonias" });
+    await expect(field(page, "zoneOther")).toBeHidden();
+    expect((await zoneSelect(page)).groups).toHaveLength(15);
+
+    await field(page, "postalCode").fill("43808");
+    const huicalco = await zoneSelect(page);
+    expect(huicalco.groups).toEqual(["C.P. 43808"]);
+    expect(huicalco.options).toEqual([
+      "Elige tu colonia",
+      "Arboledas",
+      "Atempa",
+      "Campestre",
+      "Huicalco",
+      "Quinta Esperanza",
+      "Quintas de Tizayuca",
+      "Real de San Jerónimo",
+      "Mi colonia no aparece",
+    ]);
+    await field(page, "zone").selectOption({ label: "Huicalco" });
+    await expect(field(page, "zoneOther")).toBeHidden();
+
+    // Another postal code: the zone chosen is no longer there, so none is.
+    await field(page, "postalCode").fill("43815");
+    const carmen = await zoneSelect(page);
+    expect(carmen.groups).toEqual(["C.P. 43815"]);
+    expect(carmen.options).toHaveLength(22);
+    expect(carmen.options).toEqual(
+      expect.arrayContaining(["El Carmen (Colonia)", "El Carmen (Fraccionamiento)"]),
+    );
+    expect(carmen.value).toBe("");
+    // Fewer digits: every group again.
+    await field(page, "postalCode").fill("438");
+    expect((await zoneSelect(page)).groups).toHaveLength(15);
+    await expect(hint).toHaveCount(0);
+
+    // A postal code no zone has: the form says so, and leaves only Mi colonia no aparece.
+    await field(page, "postalCode").fill("43899");
+    await expect(page.getByRole("status").filter({ hasText: "No tenemos colonias" })).toHaveText(
+      "No tenemos colonias con ese código postal. Revisa que esté bien o elige “Mi colonia no aparece”.",
+    );
+    expect((await zoneSelect(page)).options).toEqual(["Elige tu colonia", "Mi colonia no aparece"]);
+    await field(page, "zone").selectOption({ label: "Mi colonia no aparece" });
+    await expect(field(page, "zoneOther")).toBeVisible();
+
+    await fill(page, {
+      name: "Taller de Prueba Inventado",
+      category: "Talleres",
+      whatsapp: "7719994042",
+      zoneOther: "Privada de Mentiras",
+      consent: true,
+    });
+    await submitButton(page).click();
+    await expect(page).toHaveURL(THANKS);
+    expect(await businessesOf("7719994042")).toEqual([
+      expect.objectContaining({
+        postalCode: "43899",
+        zoneId: null,
+        zoneOther: "Privada de Mentiras",
+      }),
+    ]);
+  });
+
   // Scenarios: home services example; sports example; the example changes
   // when the category changes
   test("the example of ¿Qué ofreces? follows the category, without erasing what was written", async ({
@@ -641,10 +801,12 @@ test.describe("Registering with JavaScript", () => {
     expect(response?.headers()["content-security-policy"]).toMatch(/script-src 'self'/);
     const main = page.getByRole("main");
 
+    // The field for a zone that does not appear waits hidden until it is asked for.
     for (const control of await main
       .locator(
         "input:not([type=hidden]):not([type=checkbox]):not([tabindex='-1']), select, textarea, button, form a",
       )
+      .filter({ visible: true })
       .all()) {
       const box = await control.boundingBox();
       expect(

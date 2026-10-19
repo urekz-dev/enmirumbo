@@ -80,6 +80,7 @@ const zone = (overrides: Partial<PanelZone>): PanelZone => ({
   type: "Barrio",
   visible: true,
   displayName: "Huicalco",
+  postalCode: "43808",
   ...overrides,
 });
 
@@ -91,6 +92,7 @@ const ZONES: PanelZone[] = [
     name: "El Carmen",
     type: "Colonia",
     displayName: "El Carmen (Colonia)",
+    postalCode: "43815",
   }),
   zone({
     id: 3,
@@ -99,6 +101,8 @@ const ZONES: PanelZone[] = [
     type: "Barrio",
     visible: false,
     displayName: "Nacozari",
+    // Added before zones had a postal code.
+    postalCode: null,
   }),
 ];
 const TYPES = ["Barrio", "Colonia", "Fraccionamiento"];
@@ -136,18 +140,20 @@ function renderScreen(props: ScreenProps = {}) {
 }
 
 describe("The admin can hide and rename the zones of a locality (v2): the screen", () => {
-  it("lists every zone of the locality, hidden ones included, with its type, its URL and Oculta", async () => {
+  it("lists every zone of the locality, hidden ones included, with its type, its postal code, its URL and Oculta", async () => {
     const html = await renderScreen();
     const text = visibleText(html);
 
     expect(html).toMatch(/<h1\b[^>]*>\s*Colonias de Tizayuca\s*<\/h1>/);
     expect(text).toContain("3 colonias, 1 oculta");
-    expect(visibleText(rowOf(html, 1))).toMatch(/^Huicalco\nTipo: Barrio\nEn la URL: huicalco\n/);
+    expect(visibleText(rowOf(html, 1))).toMatch(
+      /^Huicalco\nTipo: Barrio\nCódigo postal: 43808\nEn la URL: huicalco\n/,
+    );
     expect(visibleText(rowOf(html, 2))).toMatch(
-      /^El Carmen \(Colonia\)\nTipo: Colonia\nEn la URL: colonia-el-carmen\n/,
+      /^El Carmen \(Colonia\)\nTipo: Colonia\nCódigo postal: 43815\nEn la URL: colonia-el-carmen\n/,
     );
     expect(visibleText(rowOf(html, 3))).toMatch(
-      /^Nacozari\nTipo: Barrio\nEn la URL: nacozari\nOculta\n/,
+      /^Nacozari\nTipo: Barrio\nCódigo postal: sin registrar\nEn la URL: nacozari\nOculta\n/,
     );
     expect(visibleText(rowOf(html, 1))).not.toMatch(/^Oculta$/m);
     expect(text).toContain(
@@ -258,7 +264,13 @@ describe("The admin can hide and rename the zones of a locality (v2): the screen
 
   it("is operated from the phone, without client JavaScript", async () => {
     const html = await renderScreen({
-      failure: { form: "add", name: "", type: "", errors: { name: { kind: "required" } } },
+      failure: {
+        form: "add",
+        name: "",
+        type: "",
+        postalCode: "",
+        errors: { name: { kind: "required" } },
+      },
     });
 
     expectPhoneReady(html);
@@ -268,7 +280,7 @@ describe("The admin can hide and rename the zones of a locality (v2): the screen
 });
 
 describe("The admin can add a zone to a locality (v2): the form", () => {
-  it("asks for the name and one of the locality's settlement types, and posts to the screen of its locality", async () => {
+  it("asks for the name, one of the locality's settlement types and the postal code, and posts to the screen of its locality", async () => {
     const html = await renderScreen();
     const add = forms(html)[0] ?? "";
 
@@ -285,8 +297,41 @@ describe("The admin can add a zone to a locality (v2): the form", () => {
       ...TYPES,
     ]);
     expect(visibleText(add)).toContain("Elige el tipo");
+    expect(add).toMatch(/<label for="add-zone-postal-code"[^>]*>Código postal<\/label>/);
+    const postalCode = /<input[^>]*id="add-zone-postal-code"[^>]*>/.exec(add)?.[0] ?? "";
+    expect(attribute(postalCode, "name")).toBe("postalCode");
+    expect(attribute(postalCode, "maxlength")).toBe("5");
+    expect(attribute(postalCode, "inputmode")).toBe("numeric");
+    expect(visibleText(add)).toContain(
+      "El del catálogo de SEPOMEX, si ya la tiene; si no, el que usan sus vecinos. El formulario de registro ofrece cada colonia con su código postal.",
+    );
     expect(visibleText(add)).toContain("Agregar colonia");
   });
+
+  it.each([
+    [{ kind: "required" }, "", "Escribe el código postal de la colonia."],
+    [{ kind: "invalid" }, "4381", "El código postal son 5 números, sin espacios."],
+  ] as const)(
+    "a postal code %j says it in Spanish, with what was typed",
+    async (problem, typed, message) => {
+      const html = await renderScreen({
+        failure: {
+          form: "add",
+          name: "Real Toledo",
+          type: "Fraccionamiento",
+          postalCode: typed,
+          errors: { postalCode: problem },
+        },
+      });
+      const add = forms(html)[0] ?? "";
+      const postalCode = /<input[^>]*id="add-zone-postal-code"[^>]*>/.exec(add)?.[0] ?? "";
+
+      expect(attribute(postalCode, "value")).toBe(typed);
+      expect(attribute(postalCode, "aria-invalid")).toBe("true");
+      expect(add).toMatch(/<p id="add-zone-postal-code-error" role="alert"/);
+      expect(visibleText(add)).toContain(message);
+    },
+  );
 
   it("a new zone that fails comes back with what was typed and each error next to its field", async () => {
     const html = await renderScreen({
@@ -294,6 +339,7 @@ describe("The admin can add a zone to a locality (v2): the form", () => {
         form: "add",
         name: "Registro",
         type: "Colonia",
+        postalCode: "",
         errors: {
           name: {
             kind: "url-conflict",
@@ -338,7 +384,7 @@ describe("The admin can add a zone to a locality (v2): the form", () => {
     ],
   ] as const)("the name error %j says it in Spanish", async (problem, message) => {
     const html = await renderScreen({
-      failure: { form: "add", name: "Fina", type: "", errors: { name: problem } },
+      failure: { form: "add", name: "Fina", type: "", postalCode: "", errors: { name: problem } },
     });
 
     expect(visibleText(forms(html)[0] ?? "")).toContain(message);
@@ -350,6 +396,7 @@ describe("The admin can add a zone to a locality (v2): the form", () => {
         form: "add",
         name: "Real Toledo",
         type: "",
+        postalCode: "",
         errors: { type: { kind: "required" } },
       },
     });

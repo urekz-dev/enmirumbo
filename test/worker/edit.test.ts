@@ -13,8 +13,9 @@
 // (v2)" and "The edit mode of a locality lives under it, and lands on its
 // confirmation (v2)"; of docs/specs/data-model.md, "A pending edit stores the
 // full content of what is to be published", "A pending edit replaced by a
-// newer one is kept as superseded (v2)" and "A pending edit may change the
-// photo of its card (v2)"; and of docs/specs/public-directory.md, "An edit
+// newer one is kept as superseded (v2)", "A pending edit may change the
+// photo of its card (v2)" and "A business and its pending edit store the
+// postal code the owner typed (v2)"; and of docs/specs/public-directory.md, "An edit
 // awaiting review does not show through on any public surface" (the search).
 // The core is src/core/edit/, the action's side src/lib/edit.ts. The form
 // is rendered in test/astro/edit.test.ts and run end to end in
@@ -77,6 +78,7 @@ import {
   errorMessage,
   REGISTRATION_FIELDS as F,
 } from "../../src/core/registration/submission.ts";
+import { OTHER_ZONE } from "../../src/core/registration/zone.ts";
 import { searchPublishedBusinesses } from "../../src/core/search/query.ts";
 import type { VerifyTurnstile } from "../../src/core/turnstile/check.ts";
 import {
@@ -89,7 +91,14 @@ import { CLIENT_IP_HEADER, takeQuota } from "../../src/lib/quota/quota.ts";
 import { registrationPageFailure } from "../../src/lib/registration.ts";
 import { LOCALITY_DISALLOW } from "../../src/lib/robots.ts";
 import { turnstileVerifier } from "../../src/lib/turnstile.ts";
-import { cleanup, createFixture, db, type Fixture, insertBusiness } from "./fixtures.ts";
+import {
+  cleanup,
+  createFixture,
+  db,
+  type Fixture,
+  fakePostalCode,
+  insertBusiness,
+} from "./fixtures.ts";
 import { BLUE, convert, drawWebp, GREEN, photoFile } from "./images.ts";
 
 const STATE = "82";
@@ -100,8 +109,9 @@ let localityA: { code: string; name: string };
 let category: { id: number; slug: string };
 /** The hidden zone "Oculta" of locality A. */
 let hiddenZone: number;
-/** The visible zone "Ángeles" of locality A. */
+/** The visible zone "Ángeles" of locality A, of another postal code than "Centro". */
 let angeles: number;
+const ANGELES_POSTAL_CODE = fakePostalCode(STATE, 3);
 
 beforeAll(async () => {
   f = await createFixture(STATE);
@@ -116,8 +126,15 @@ beforeAll(async () => {
           name: "Oculta",
           slug: "oculta",
           visible: false,
+          postalCode: fakePostalCode(STATE, 1),
         },
-        { localityCode: f.localityA, type: "Colonia", name: "Ángeles", slug: "angeles" },
+        {
+          localityCode: f.localityA,
+          type: "Colonia",
+          name: "Ángeles",
+          slug: "angeles",
+          postalCode: ANGELES_POSTAL_CODE,
+        },
       ])
       .returning({ id: zones.id }),
   );
@@ -185,7 +202,8 @@ function edited(
     [F.name]: "Plomería de Prueba Renovada",
     [F.category]: category.slug,
     [F.whatsapp]: newPhone(),
-    [F.zone]: "Centro",
+    [F.postalCode]: f.postalCodeA,
+    [F.zone]: "centro",
     ...overrides,
   };
 }
@@ -393,6 +411,7 @@ describe("The management link opens the card in edit mode with the same prefille
   it("the form is prefilled with the card as it is published, and reads nothing else of it", async () => {
     const { id } = await cardWithLink({
       name: "Estética Lupita",
+      postalCode: "43815",
       zoneId: angeles,
       whatYouOffer: "cortes y tintes",
       homeDelivery: true,
@@ -407,6 +426,7 @@ describe("The management link opens the card in edit mode with the same prefille
         "name",
         "categoryId",
         "whatsapp",
+        "postalCode",
         "zoneId",
         "zoneOther",
         "whatYouOffer",
@@ -426,7 +446,8 @@ describe("The management link opens the card in edit mode with the same prefille
       name: "Estética Lupita",
       category: category.slug,
       whatsapp: card?.whatsapp,
-      zone: "Ángeles",
+      postalCode: "43815",
+      zone: "angeles",
       whatYouOffer: "cortes y tintes",
       homeDelivery: true,
       landline: "(775) 123-45-67",
@@ -437,16 +458,64 @@ describe("The management link opens the card in edit mode with the same prefille
   });
 
   // Scenario: business with an unnormalized zone "Otra"
-  it('a zone "Otra" is prefilled with its free text, and sent as it is keeps it, inventing no zone', async () => {
-    const { id, token } = await cardWithLink({ zoneId: null, zoneOther: "Rinconada del Venado" });
+  it('a zone "Otra" is prefilled as "Mi colonia no aparece" with its free text, and sent as it is keeps it, inventing no zone', async () => {
+    const { id, token } = await cardWithLink({
+      postalCode: "43899",
+      zoneId: null,
+      zoneOther: "Rinconada del Venado",
+    });
     const view = await db((tx) => editForm(tx, localityA, id));
     const draft = cardDraft(view?.card as never, view?.catalogue as RegistrationCatalogue);
-    expect(draft.zone).toBe("Rinconada del Venado");
-    expect(await submit(form(edited({ [F.zone]: draft.zone })), token, deps().using)).toEqual({
-      kind: "received",
+    expect(draft).toMatchObject({
+      postalCode: "43899",
+      zone: OTHER_ZONE,
+      zoneOther: "Rinconada del Venado",
     });
+    expect(
+      await submit(
+        form(
+          edited({
+            [F.postalCode]: draft.postalCode,
+            [F.zone]: draft.zone,
+            [F.zoneOther]: draft.zoneOther,
+          }),
+        ),
+        token,
+        deps().using,
+      ),
+    ).toEqual({ kind: "received" });
     const [edit] = await editsOf(id);
-    expect(edit).toMatchObject({ zoneId: null, zoneOther: "Rinconada del Venado" });
+    expect(edit).toMatchObject({
+      postalCode: "43899",
+      zoneId: null,
+      zoneOther: "Rinconada del Venado",
+    });
+  });
+
+  it("a card from before the postal code is prefilled with its zone's, and one with no zone with none", async () => {
+    const zoned = await cardWithLink({ zoneId: angeles });
+    const zonedView = await db((tx) => editForm(tx, localityA, zoned.id));
+    expect(zonedView?.card.postalCode).toBeNull();
+    expect(
+      cardDraft(zonedView?.card as never, zonedView?.catalogue as RegistrationCatalogue),
+    ).toMatchObject({ postalCode: ANGELES_POSTAL_CODE, zone: "angeles" });
+
+    const other = await cardWithLink({ zoneId: null, zoneOther: "Rinconada" });
+    const otherView = await db((tx) => editForm(tx, localityA, other.id));
+    const draft = cardDraft(
+      otherView?.card as never,
+      otherView?.catalogue as RegistrationCatalogue,
+    );
+    expect(draft).toMatchObject({ postalCode: "", zone: OTHER_ZONE, zoneOther: "Rinconada" });
+    // Sent without one, it is the registration's error.
+    expect(
+      await submit(
+        form(edited({ [F.postalCode]: "", [F.zone]: OTHER_ZONE, [F.zoneOther]: "Rinconada" })),
+        other.token,
+        deps().using,
+      ),
+    ).toEqual({ kind: "invalid", errors: { postalCode: "required" } });
+    expect(errorMessage("postalCode", "required")).toBe("Escribe tu código postal");
   });
 
   it("a zone hidden since the card took it is offered to the card, so a field left as it was keeps it", async () => {
@@ -454,8 +523,8 @@ describe("The management link opens the card in edit mode with the same prefille
     const view = await db((tx) => editForm(tx, localityA, id));
     expect(view?.catalogue.zones.map(({ id: zone }) => zone)).toContain(hiddenZone);
     const draft = cardDraft(view?.card as never, view?.catalogue as RegistrationCatalogue);
-    expect(draft.zone).toBe("Oculta");
-    expect(await submit(form(edited({ [F.zone]: "Oculta" })), token, deps().using)).toEqual({
+    expect(draft).toMatchObject({ zone: "oculta", postalCode: f.postalCodeA });
+    expect(await submit(form(edited({ [F.zone]: "oculta" })), token, deps().using)).toEqual({
       kind: "received",
     });
     expect((await editsOf(id))[0]).toMatchObject({ zoneId: hiddenZone, zoneOther: null });
@@ -488,6 +557,7 @@ describe("Sending the edit does not touch the public card: it creates a pending 
       edited({
         [F.name]: "Estética Lupita",
         [F.whatsapp]: whatsapp,
+        [F.postalCode]: ANGELES_POSTAL_CODE,
         [F.zone]: "angeles",
         [F.whatYouOffer]: "cortes, tintes y peinados",
         [F.homeDelivery]: "on",
@@ -509,6 +579,7 @@ describe("Sending the edit does not touch the public card: it creates a pending 
       name: "Estética Lupita",
       categoryId: f.categoryId,
       whatsapp,
+      postalCode: ANGELES_POSTAL_CODE,
       zoneId: angeles,
       zoneOther: null,
       whatYouOffer: "cortes, tintes y peinados",
@@ -791,7 +862,9 @@ describe("Sending changes when others are already waiting replaces the previous 
         form(
           edited({
             [F.name]: "Tacos del Güero Grande",
-            [F.zone]: "Rinconada del Venado",
+            [F.postalCode]: "43899",
+            [F.zone]: OTHER_ZONE,
+            [F.zoneOther]: "Rinconada del Venado",
             [F.removePhoto]: "on",
           }),
         ),
@@ -807,7 +880,9 @@ describe("Sending changes when others are already waiting replaces the previous 
     );
     expect(draft).toMatchObject({
       name: "Tacos del Güero Grande",
-      zone: "Rinconada del Venado",
+      postalCode: "43899",
+      zone: OTHER_ZONE,
+      zoneOther: "Rinconada del Venado",
       openingHours: "",
       removePhoto: true,
       photo: false,

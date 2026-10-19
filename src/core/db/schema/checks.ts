@@ -10,6 +10,9 @@ export const SLUG_PATTERN = "^[a-z0-9]+(-[a-z0-9]+)*$";
 /** A Mexican phone number as the server stores it: exactly ten digits. */
 export const PHONE_PATTERN = "^[0-9]{10}$";
 
+/** A Mexican postal code (SEPOMEX's `d_codigo`): exactly five digits. */
+export const POSTAL_CODE_PATTERN = "^[0-9]{5}$";
+
 /** `column IN ('a', 'b', …)` over a closed set of literals. */
 export function oneOf(column: AnyPgColumn, values: readonly string[]): SQL {
   const list = values.map((value) => `'${value.replaceAll("'", "''")}'`).join(", ");

@@ -13,14 +13,15 @@
 // of them", "Zone "Otra" with free text pending normalization", "A
 // successful submission queues the business and shows the thank-you
 // screen", "The registration leaves the card ready for the search", "The
-// zone options come from the active locality (v2)", "The zone is typed with
-// the locality's zones as suggestions, and a name that is none of them is
-// kept as "Otra" (v2)", "The registration's honeypot and per-IP quota are
+// zone options come from the active locality (v2)", "The zone is chosen from
+// the zones of the postal code the business types, or written when it does
+// not appear (v2)", "The registration's honeypot and per-IP quota are
 // those of the public forms (v2)" and "The registration page of a locality
 // lives under it, and lands on its thank-you page (v2)"; and of
 // docs/specs/data-model.md, "The consent record stores which notice version
 // it was given against" and "One card per WhatsApp number within a locality
-// (v2)". The form and its pages are rendered in
+// (v2)" and "A business and its pending edit store the postal code the owner
+// typed (v2)". The form and its pages are rendered in
 // test/astro/registration.test.ts and run end to end in
 // test/e2e/registration.spec.ts.
 //
@@ -75,7 +76,14 @@ import {
   type SubmitRegistrationDeps,
   type SubmitRegistrationOutcome,
 } from "../../src/core/registration/submit.ts";
-import { chooseZone, type ZoneOption } from "../../src/core/registration/zone.ts";
+import {
+  chooseZone,
+  OTHER_ZONE,
+  postalCodeGroups,
+  type ZoneOption,
+  zoneHasPostalCode,
+} from "../../src/core/registration/zone.ts";
+import { isPostalCode } from "../../src/core/catalogue/postal-code.ts";
 import { TURNSTILE_DUMMY_TOKEN, TURNSTILE_RESPONSE_FIELD } from "../../src/core/turnstile/keys.ts";
 import { RESERVED_SEGMENTS } from "../../src/core/catalogue/root-urls.ts";
 import { mediaBucket } from "../../src/lib/media-bucket.ts";
@@ -90,7 +98,14 @@ import {
 } from "../../src/lib/registration.ts";
 import { LOCALITY_DISALLOW } from "../../src/lib/robots.ts";
 import { turnstileVerifier } from "../../src/lib/turnstile.ts";
-import { cleanup, createFixture, db, type Fixture, insertBusiness } from "./fixtures.ts";
+import {
+  cleanup,
+  createFixture,
+  db,
+  type Fixture,
+  fakePostalCode,
+  insertBusiness,
+} from "./fixtures.ts";
 
 const STATE = "83";
 let f: Fixture;
@@ -101,15 +116,49 @@ let catalogue: RegistrationCatalogue;
 /** A category of the fixtures, by slug, and its id. */
 let category: { id: number; slug: string };
 
+/** The fixture's "Centro" has the postal code 1; the zones this file adds, 1, 3, 4, 5 or none. */
+const POSTAL_CODE = {
+  centro: fakePostalCode(STATE, 1),
+  carmen: fakePostalCode(STATE, 3),
+  haciendas: fakePostalCode(STATE, 4),
+  chopo: fakePostalCode(STATE, 5),
+  /** A postal code no zone of the fixtures has. */
+  none: fakePostalCode(STATE, 9),
+};
+
 /** Zones of locality A this file adds, beside the fixture's "Centro". */
 const EXTRA_ZONES = [
-  { type: "Colonia", name: "El Carmen", slug: "colonia-el-carmen" },
-  { type: "Fraccionamiento", name: "El Carmen", slug: "fraccionamiento-el-carmen" },
-  { type: "Fraccionamiento", name: "Haciendas de Pueblo Uno", slug: "haciendas-de-pueblo-uno" },
-  { type: "Colonia", name: "Ángeles", slug: "angeles" },
-  { type: "Rancho", name: "El Chopo", slug: "rancho-el-chopo", visible: false },
-  { type: "Pueblo", name: "El Chopo", slug: "pueblo-el-chopo" },
-  { type: "Colonia", name: "Oculta", slug: "oculta", visible: false },
+  { type: "Colonia", name: "El Carmen", slug: "colonia-el-carmen", postalCode: POSTAL_CODE.carmen },
+  {
+    type: "Fraccionamiento",
+    name: "El Carmen",
+    slug: "fraccionamiento-el-carmen",
+    postalCode: POSTAL_CODE.carmen,
+  },
+  {
+    type: "Fraccionamiento",
+    name: "Haciendas de Pueblo Uno",
+    slug: "haciendas-de-pueblo-uno",
+    postalCode: POSTAL_CODE.haciendas,
+  },
+  { type: "Colonia", name: "Ángeles", slug: "angeles", postalCode: POSTAL_CODE.centro },
+  {
+    type: "Rancho",
+    name: "El Chopo",
+    slug: "rancho-el-chopo",
+    visible: false,
+    postalCode: POSTAL_CODE.chopo,
+  },
+  { type: "Pueblo", name: "El Chopo", slug: "pueblo-el-chopo", postalCode: POSTAL_CODE.chopo },
+  {
+    type: "Colonia",
+    name: "Oculta",
+    slug: "oculta",
+    visible: false,
+    postalCode: POSTAL_CODE.centro,
+  },
+  // Added by the admin before zones had a postal code.
+  { type: "Colonia", name: "Sin Código", slug: "sin-codigo", postalCode: null },
 ];
 
 beforeAll(async () => {
@@ -146,7 +195,7 @@ let phone = 0;
 const newPhone = () => `771999${5000 + ++phone}`;
 
 /**
- * The five required fields of a valid submission, with the trap field empty
+ * The required fields of a valid submission, with the trap field empty
  * and the token the local Worker's Turnstile accepts (test/worker/
  * turnstile.test.ts tests the check itself).
  */
@@ -159,7 +208,8 @@ function required(
     [F.name]: "Plomería de Mentiras",
     [F.category]: category.slug,
     [F.whatsapp]: newPhone(),
-    [F.zone]: "Centro",
+    [F.postalCode]: POSTAL_CODE.centro,
+    [F.zone]: "centro",
     [F.noticeVersion]: NOTICE_VERSION,
     [F.consent]: "on",
     ...overrides,
@@ -270,12 +320,13 @@ function registrationOf(data: FormData): NewRegistration {
 
 describe("Required and optional form fields", () => {
   // Scenario: registration with required fields only
-  it("the five required fields alone are a registration whose optional fields are empty", () => {
+  it("the required fields alone are a registration whose optional fields are empty", () => {
     const whatsapp = newPhone();
     expect(registrationOf(valid({ [F.whatsapp]: whatsapp }))).toEqual({
       name: "Plomería de Mentiras",
       categoryId: category.id,
       whatsapp,
+      postalCode: POSTAL_CODE.centro,
       zoneId: catalogue.zones.find(({ name }) => name === "Centro")?.id,
       zoneOther: null,
       whatYouOffer: null,
@@ -327,7 +378,9 @@ describe("Required and optional form fields", () => {
       name: "name",
       category: "category",
       whatsapp: "whatsapp",
+      postalCode: "postalCode",
       zone: "zone",
+      zoneOther: "zoneOther",
       whatYouOffer: "whatYouOffer",
       homeDelivery: "homeDelivery",
       landline: "landline",
@@ -340,6 +393,8 @@ describe("Required and optional form fields", () => {
       consent: "consent",
     });
     expect(MAX_LENGTHS.whatYouOffer).toBe(200);
+    expect(MAX_LENGTHS.postalCode).toBe(5);
+    expect(MAX_LENGTHS.zoneOther).toBe(80);
   });
 });
 
@@ -431,6 +486,7 @@ describe("The server validates every field and returns per-field errors in Spani
       name: "required",
       category: "required",
       whatsapp: "invalid",
+      postalCode: "required",
       zone: "required",
       consent: "notice-changed",
     });
@@ -438,12 +494,14 @@ describe("The server validates every field and returns per-field errors in Spani
       name: "required",
       category: "required",
       whatsapp: "invalid",
+      postalCode: "required",
       zone: "required",
       consent: "required",
     });
-    // Spaces are no name and no zone.
-    expect(errorsOf(valid({ [F.name]: "   ", [F.zone]: " \n " }))).toEqual({
+    // Spaces are no name, no postal code and no zone.
+    expect(errorsOf(valid({ [F.name]: "   ", [F.postalCode]: "  ", [F.zone]: " \n " }))).toEqual({
       name: "required",
+      postalCode: "required",
       zone: "required",
     });
   });
@@ -464,8 +522,13 @@ describe("The server validates every field and returns per-field errors in Spani
       // The edit's (business-registration, "The edit goes through the same
       // validations as the registration and cannot set what is not its to set").
       "whatsapp.taken": "Ese número ya está en otra ficha del directorio.",
-      "zone.required": "Escribe el nombre de tu colonia",
-      "zone.length": "Deja esto en 80 caracteres o menos",
+      "postalCode.required": "Escribe tu código postal",
+      "postalCode.invalid": "Revisa tu código postal: deben ser 5 dígitos",
+      "zone.required": "Elige tu colonia",
+      "zone.postal-code":
+        "Esa colonia no es de ese código postal. Revisa el código o elige otra colonia.",
+      "zoneOther.required": "Escribe el nombre de tu colonia",
+      "zoneOther.length": "Deja esto en 80 caracteres o menos",
       "whatYouOffer.length": "Deja esto en 200 caracteres o menos",
       "landline.invalid":
         "Revisa el teléfono fijo: escribe solo números (puedes usar espacios, guiones o paréntesis)",
@@ -511,7 +574,8 @@ describe("The server validates every field and returns per-field errors in Spani
       errorsOf(
         valid({
           [F.name]: over(MAX_LENGTHS.name),
-          [F.zone]: over(MAX_LENGTHS.zone),
+          [F.zone]: OTHER_ZONE,
+          [F.zoneOther]: over(MAX_LENGTHS.zoneOther),
           [F.landline]: "1".repeat(MAX_LENGTHS.landline + 1),
           [F.address]: over(MAX_LENGTHS.address),
           [F.openingHours]: over(MAX_LENGTHS.openingHours),
@@ -520,7 +584,7 @@ describe("The server validates every field and returns per-field errors in Spani
       ),
     ).toEqual({
       name: "length",
-      zone: "length",
+      zoneOther: "length",
       landline: "length",
       address: "length",
       openingHours: "length",
@@ -592,6 +656,7 @@ describe("The server validates every field and returns per-field errors in Spani
         "name",
         "categoryId",
         "whatsapp",
+        "postalCode",
         "zoneId",
         "zoneOther",
         "whatYouOffer",
@@ -612,7 +677,9 @@ describe("The server validates every field and returns per-field errors in Spani
         valid({
           [F.name]: "  Tacos <b>Doña</b>  ",
           [F.whatsapp]: "771 999 45",
-          [F.zone]: "Rinconada",
+          [F.postalCode]: " 438150000 ",
+          [F.zone]: OTHER_ZONE,
+          [F.zoneOther]: `  Rinconada ${"b".repeat(200)}`,
           [F.whatYouOffer]: "a".repeat(5000),
           [F.homeDelivery]: "on",
           [F.landline]: "no tengo",
@@ -625,7 +692,9 @@ describe("The server validates every field and returns per-field errors in Spani
       name: "Tacos <b>Doña</b>",
       category: category.slug,
       whatsapp: "771 999 45",
-      zone: "Rinconada",
+      postalCode: "43815",
+      zone: OTHER_ZONE,
+      zoneOther: `Rinconada ${"b".repeat(70)}`,
       whatYouOffer: "a".repeat(200),
       homeDelivery: true,
       landline: "no tengo",
@@ -760,74 +829,113 @@ describe("Nobody consents to a notice version they did not have in front of them
   });
 });
 
-describe('The zone is typed with the locality\'s zones as suggestions, and a name that is none of them is kept as "Otra" (v2)', () => {
+describe("The zone is chosen from the zones of the postal code the business types, or written when it does not appear (v2)", () => {
+  const zone = (id: number, slug: string, displayName: string, postalCode: string | null) => ({
+    id,
+    slug,
+    name: displayName.replace(/ \(.*\)$/, ""),
+    displayName,
+    postalCode,
+  });
   const options: ZoneOption[] = [
-    { id: 1, name: "Haciendas de Tizayuca", displayName: "Haciendas de Tizayuca" },
-    { id: 2, name: "El Carmen", displayName: "El Carmen (Colonia)" },
-    { id: 3, name: "El Carmen", displayName: "El Carmen (Fraccionamiento)" },
-    { id: 4, name: "El Chopo", displayName: "El Chopo (Pueblo)" },
-    { id: 5, name: "C.T.M.", displayName: "C.T.M." },
+    zone(1, "haciendas-de-tizayuca", "Haciendas de Tizayuca", "43815"),
+    zone(2, "colonia-el-carmen", "El Carmen (Colonia)", "43815"),
+    zone(3, "huicalco", "Huicalco", "43808"),
+    zone(4, "tizayuca-centro", "Tizayuca Centro", "43800"),
+    zone(5, "nueva", "Nueva", null),
   ];
+  const choose = (value: string, other = "", postalCode: string | null = "43815") =>
+    chooseZone(value, other, postalCode, options, 80);
 
-  it("a text that names a zone, ignoring case, accents and punctuation, selects it", () => {
-    for (const [typed, id] of [
-      ["Haciendas de Tizayuca", 1],
-      ["haciendas de tizayuca", 1],
-      ["  HACIENDAS   DE TIZAYUCA. ", 1],
-      ["El Carmen (Fraccionamiento)", 3],
-      ["el carmen fraccionamiento", 3],
-      ["c.t.m", 5],
-      ["C T M", 5],
-      // The one visible zone of that name, when the other is hidden.
-      ["El Chopo", 4],
-    ] as const) {
-      expect(chooseZone(typed, options), typed).toEqual({ zoneId: id, zoneOther: null });
+  it("a postal code is exactly five digits", () => {
+    expect(isPostalCode("43815")).toBe(true);
+    expect(isPostalCode("01000")).toBe(true);
+    for (const text of ["", "4381", "438155", "43 815", " 43815", "4381a", "٤٣٨١٥", "43815\n"]) {
+      expect(isPostalCode(text), text).toBe(false);
+    }
+    // The server trims what arrives, and nothing else.
+    expect(registrationOf(valid({ [F.postalCode]: ` ${POSTAL_CODE.centro} ` })).postalCode).toBe(
+      POSTAL_CODE.centro,
+    );
+    for (const text of ["4381", "438155", "43 815", "C.P. 43815", "cuatro", "٤٣٨١٥"]) {
+      expect(errorsOf(valid({ [F.postalCode]: text })), text).toEqual({ postalCode: "invalid" });
+    }
+    expect(errorsOf(valid({ [F.postalCode]: "" }))).toEqual({ postalCode: "required" });
+  });
+
+  it("a zone the form offers, by its slug, when it is of the postal code typed", () => {
+    expect(choose("haciendas-de-tizayuca")).toEqual({ zoneId: 1, zoneOther: null });
+    expect(choose("huicalco", "", "43808")).toEqual({ zoneId: 3, zoneOther: null });
+    expect(choose("huicalco")).toEqual({ field: "zone", code: "postal-code" });
+    // Without a postal code to compare with, the postal code's error is the caller's.
+    expect(choose("huicalco", "", null)).toEqual({ zoneId: 3, zoneOther: null });
+    // A zone without a postal code cannot be checked, so it belongs to any.
+    expect(choose("nueva", "", "99999")).toEqual({ zoneId: 5, zoneOther: null });
+    expect(zoneHasPostalCode(options[4]!, "43815")).toBe(true);
+    expect(zoneHasPostalCode(options[2]!, "43815")).toBe(false);
+    // By slug only: a name, an identifier or anything else is no zone.
+    for (const value of ["", "Huicalco", "3", "inventada", "constructor", "_OTRA"]) {
+      expect(choose(value), value).toEqual({ field: "zone", code: "required" });
     }
   });
 
-  // Scenario: registration with zone "Otra"
-  it('a text that names no zone, or two, is "Otra" with that text, trimmed', () => {
-    for (const typed of [
-      "Rinconada del Venado",
-      "  Rinconada del Venado ",
-      "El Carmen",
-      "hacien",
-    ]) {
-      expect(chooseZone(typed, options), typed).toEqual({
-        zoneId: null,
-        zoneOther: typed.trim(),
-      });
-    }
-    expect(chooseZone("🎉", options)).toEqual({ zoneId: null, zoneOther: "🎉" });
+  it('"Mi colonia no aparece" keeps the name written, and asks for it', () => {
+    expect(choose(OTHER_ZONE, "Rinconada del Venado")).toEqual({
+      zoneId: null,
+      zoneOther: "Rinconada del Venado",
+    });
+    expect(choose(OTHER_ZONE, "")).toEqual({ field: "zoneOther", code: "required" });
+    expect(choose(OTHER_ZONE, "a".repeat(81))).toEqual({ field: "zoneOther", code: "length" });
+    // A catalogue zone with leftover free text keeps only the zone.
+    expect(choose("colonia-el-carmen", "Rinconada")).toEqual({ zoneId: 2, zoneOther: null });
+    expect(OTHER_ZONE).not.toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
   });
 
-  it("the options are the visible zones with their display names, in alphabetical order", () => {
-    expect(catalogue.zones.map(({ displayName }) => displayName)).toEqual([
-      "Ángeles",
-      "Centro",
-      "El Carmen (Colonia)",
-      "El Carmen (Fraccionamiento)",
+  it("the select groups the zones by postal code, in order, those without one last", () => {
+    expect(
+      postalCodeGroups(options).map(({ postalCode, zones }) => [
+        postalCode,
+        zones.map(({ id }) => id),
+      ]),
+    ).toEqual([
+      ["43800", [4]],
+      ["43808", [3]],
+      ["43815", [1, 2]],
+      [null, [5]],
+    ]);
+    expect(postalCodeGroups([])).toEqual([]);
+  });
+
+  it("the options are the visible zones with their display names, slugs and postal codes, in alphabetical order", () => {
+    expect(
+      catalogue.zones.map(({ displayName, slug, postalCode }) => [displayName, slug, postalCode]),
+    ).toEqual([
+      ["Ángeles", "angeles", POSTAL_CODE.centro],
+      ["Centro", "centro", POSTAL_CODE.centro],
+      ["El Carmen (Colonia)", "colonia-el-carmen", POSTAL_CODE.carmen],
+      ["El Carmen (Fraccionamiento)", "fraccionamiento-el-carmen", POSTAL_CODE.carmen],
       // Its namesake is hidden, but still counts for its display name.
-      "El Chopo (Pueblo)",
-      "Haciendas de Pueblo Uno",
+      ["El Chopo (Pueblo)", "pueblo-el-chopo", POSTAL_CODE.chopo],
+      ["Haciendas de Pueblo Uno", "haciendas-de-pueblo-uno", POSTAL_CODE.haciendas],
+      ["Sin Código", "sin-codigo", null],
     ]);
     expect(
       zoneOptions(
         [
-          { id: 1, slug: "b", name: "Beta", type: "Colonia", visible: true },
-          { id: 2, slug: "a", name: " Alfa ", type: "Colonia", visible: true },
-          { id: 3, slug: "c", name: "Cero", type: "Colonia", visible: false },
+          { id: 1, slug: "b", name: "Beta", type: "Colonia", visible: true, postalCode: "43800" },
+          { id: 2, slug: "a", name: " Alfa ", type: "Colonia", visible: true, postalCode: null },
+          { id: 3, slug: "c", name: "Cero", type: "Colonia", visible: false, postalCode: "43800" },
         ],
         "Pueblo",
       ),
     ).toEqual([
-      { id: 2, name: "Alfa", displayName: "Alfa" },
-      { id: 1, name: "Beta", displayName: "Beta" },
+      { id: 2, slug: "a", name: "Alfa", displayName: "Alfa", postalCode: null },
+      { id: 1, slug: "b", name: "Beta", displayName: "Beta", postalCode: "43800" },
     ]);
   });
 
   // Scenario: options (v2)
-  it("the options of Tizayuca are its visible zones, and no zone of another locality", async () => {
+  it("the options of Tizayuca are its visible zones, each with its postal code, and no zone of another locality", async () => {
     const tizayuca = await db((tx) =>
       registrationCatalogue(tx, { code: "13069", name: "Tizayuca" }),
     );
@@ -842,49 +950,108 @@ describe('The zone is typed with the locality\'s zones as suggestions, and a nam
       ]),
     );
     expect(names).not.toContain("Centro");
-    // Typing "haciendas de tizayuca" selects that zone of Tizayuca.
+    expect(
+      tizayuca.zones.filter(({ postalCode }) => !/^438[0-9]{2}$/.test(postalCode ?? "")),
+    ).toEqual([]);
+    expect(postalCodeGroups(tizayuca.zones)).toHaveLength(15);
     const haciendas = tizayuca.zones.find(({ name }) => name === "Haciendas de Tizayuca");
-    expect(chooseZone("haciendas de tizayuca", tizayuca.zones)).toEqual({
+    expect(chooseZone("haciendas-de-tizayuca", "", "43815", tizayuca.zones, 80)).toEqual({
       zoneId: haciendas?.id,
       zoneOther: null,
     });
   });
 
-  it("a registration saves the zone it names, or the free text, never both", async () => {
+  it("a registration saves the postal code and the zone it chose, or the free text, never both", async () => {
     const carmen = newPhone();
-    expect(await submit(valid({ [F.whatsapp]: carmen, [F.zone]: "el carmen (colonia)" }))).toEqual(
-      RECEIVED,
-    );
+    expect(
+      await submit(
+        valid({
+          [F.whatsapp]: carmen,
+          [F.postalCode]: POSTAL_CODE.carmen,
+          [F.zone]: "colonia-el-carmen",
+          [F.zoneOther]: "Sobra",
+        }),
+      ),
+    ).toEqual(RECEIVED);
     expect(await businessOf(carmen)).toMatchObject({
+      postalCode: POSTAL_CODE.carmen,
       zoneId: await zoneId("colonia-el-carmen"),
       zoneOther: null,
     });
 
     const other = newPhone();
-    expect(await submit(valid({ [F.whatsapp]: other, [F.zone]: "Rinconada del Venado" }))).toEqual(
-      RECEIVED,
-    );
+    expect(
+      await submit(
+        valid({
+          [F.whatsapp]: other,
+          [F.postalCode]: POSTAL_CODE.none,
+          [F.zone]: OTHER_ZONE,
+          [F.zoneOther]: "  Rinconada del Venado ",
+        }),
+      ),
+    ).toEqual(RECEIVED);
     expect(await businessOf(other)).toMatchObject({
+      postalCode: POSTAL_CODE.none,
       zoneId: null,
       zoneOther: "Rinconada del Venado",
     });
   });
 
-  // Scenarios: a zone of another locality (v2); a hidden zone
-  it('the name of a zone of another locality, or of a hidden zone, is kept as "Otra"', async () => {
-    for (const name of ["Haciendas de Tizayuca", "Oculta"]) {
-      const whatsapp = newPhone();
-      expect(await submit(valid({ [F.whatsapp]: whatsapp, [F.zone]: name })), name).toEqual(
-        RECEIVED,
-      );
-      expect(await businessOf(whatsapp), name).toMatchObject({ zoneId: null, zoneOther: name });
+  // Scenario: any postal code with "Mi colonia no aparece"
+  it('with "Mi colonia no aparece", any five digits are its postal code', () => {
+    for (const postalCode of ["43899", "01000", "99999", POSTAL_CODE.centro]) {
+      expect(
+        registrationOf(
+          valid({ [F.postalCode]: postalCode, [F.zone]: OTHER_ZONE, [F.zoneOther]: "Nueva" }),
+        ),
+        postalCode,
+      ).toMatchObject({ postalCode, zoneId: null, zoneOther: "Nueva" });
     }
   });
 
-  // Scenario: "Otra" without text
-  it("an empty zone is its error", () => {
+  // Scenario: a zone of another postal code
+  it("a zone of another postal code than the one typed is its error, and nothing is saved", async () => {
+    expect(errorsOf(valid({ [F.postalCode]: POSTAL_CODE.carmen }))).toEqual({
+      zone: "postal-code",
+    });
+    expect(errorMessage("zone", "postal-code")).toBe(
+      "Esa colonia no es de ese código postal. Revisa el código o elige otra colonia.",
+    );
+    // A postal code that is not one is its own error, and the zone waits for it.
+    expect(errorsOf(valid({ [F.postalCode]: "0083" }))).toEqual({ postalCode: "invalid" });
+    // A zone without a postal code goes with any.
+    expect(
+      registrationOf(valid({ [F.postalCode]: POSTAL_CODE.none, [F.zone]: "sin-codigo" })),
+    ).toMatchObject({ zoneId: await zoneId("sin-codigo"), postalCode: POSTAL_CODE.none });
+
+    const whatsapp = newPhone();
+    expect(
+      await submit(valid({ [F.whatsapp]: whatsapp, [F.postalCode]: POSTAL_CODE.haciendas })),
+    ).toEqual({ kind: "invalid", errors: { zone: "postal-code" } });
+    expect(await businessOf(whatsapp)).toBeUndefined();
+  });
+
+  // Scenarios: a zone of another locality (v2); category or zone outside the catalogue
+  it("a zone of another locality, a hidden zone or an identifier is no zone the form offers: nothing is saved", async () => {
+    for (const value of ["haciendas-de-tizayuca", "oculta", "rancho-el-chopo", String(f.zoneA)]) {
+      expect(errorsOf(valid({ [F.zone]: value })), value).toEqual({ zone: "required" });
+      const whatsapp = newPhone();
+      expect(await submit(valid({ [F.whatsapp]: whatsapp, [F.zone]: value })), value).toEqual({
+        kind: "invalid",
+        errors: { zone: "required" },
+      });
+      expect(await businessOf(whatsapp), value).toBeUndefined();
+    }
+  });
+
+  // Scenarios: no zone; "Otra" without text
+  it('no zone chosen, or "Mi colonia no aparece" without its name, is its error', () => {
     expect(errorsOf(valid({ [F.zone]: "" }))).toEqual({ zone: "required" });
-    expect(errorMessage("zone", "required")).toBe("Escribe el nombre de tu colonia");
+    expect(errorMessage("zone", "required")).toBe("Elige tu colonia");
+    expect(errorsOf(valid({ [F.zone]: OTHER_ZONE, [F.zoneOther]: "   " }))).toEqual({
+      zoneOther: "required",
+    });
+    expect(errorMessage("zoneOther", "required")).toBe("Escribe el nombre de tu colonia");
   });
 });
 
@@ -1065,7 +1232,9 @@ describe("One card per WhatsApp number", () => {
       valid({
         [F.whatsapp]: whatsapp,
         [F.name]: "Nombre corregido",
-        [F.zone]: "Rinconada",
+        [F.postalCode]: POSTAL_CODE.none,
+        [F.zone]: OTHER_ZONE,
+        [F.zoneOther]: "Rinconada",
         [F.openingHours]: "Lunes a viernes",
         status: "published",
         origin: "organic",
@@ -1080,6 +1249,7 @@ describe("One card per WhatsApp number", () => {
       id,
       name: "Nombre corregido",
       nameNormalized: "nombre corregido",
+      postalCode: POSTAL_CODE.none,
       zoneId: null,
       zoneOther: "Rinconada",
       openingHours: "Lunes a viernes",

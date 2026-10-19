@@ -718,6 +718,7 @@ describe("Registration detail with all the captured data, only inside the panel"
     const id = await published({
       name: "Plomería Completa",
       whatsapp: "7719998201",
+      postalCode: f.postalCodeA,
       whatYouOffer: "Destapes",
       homeDelivery: true,
       landline: "7719998202",
@@ -745,6 +746,7 @@ describe("Registration detail with all the captured data, only inside the panel"
       zoneSlug: "centro",
       zoneName: "Centro",
       zoneOther: null,
+      postalCode: f.postalCodeA,
       whatYouOffer: "Destapes",
       homeDelivery: true,
       landline: "7719998202",
@@ -776,6 +778,8 @@ describe("Registration detail with all the captured data, only inside the panel"
     expect(detail).toMatchObject({
       zoneSlug: null,
       zoneOther: "Rinconada del Venado",
+      // Registered before the form asked for it.
+      postalCode: null,
       whatYouOffer: null,
       landline: null,
       address: null,
@@ -886,6 +890,7 @@ describe("The pending edit detail compares what is published with what is propos
       "Nombre",
       "Categoría",
       "WhatsApp",
+      "Código postal",
       "Colonia",
       "¿Qué ofreces?",
       "¿Hace entregas o va a domicilio?",
@@ -910,10 +915,11 @@ describe("The pending edit detail compares what is published with what is propos
     expect(changesWhatsapp(detail!)).toBe(false);
   });
 
-  it("a new WhatsApp and a zone written as Otra are compared as the admin reads them", async () => {
+  it("a new WhatsApp, a new postal code and a zone written as Otra are compared as the admin reads them", async () => {
     const id = await published({ whatsapp: "7719998401" });
     const editId = await edit(id, {
       whatsapp: "7719998402",
+      postalCode: "43899",
       zoneId: null,
       zoneOther: "Colonia Nueva",
     });
@@ -925,6 +931,11 @@ describe("The pending edit detail compares what is published with what is propos
     expect(fields.find((field) => field.key === "whatsapp")).toMatchObject({
       published: "7719998401",
       proposed: "7719998402",
+      changed: true,
+    });
+    expect(fields.find((field) => field.key === "postalCode")).toMatchObject({
+      published: "No capturado",
+      proposed: "43899",
       changed: true,
     });
     expect(fields.find((field) => field.key === "zone")).toMatchObject({

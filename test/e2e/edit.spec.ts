@@ -114,6 +114,8 @@ interface CardValues {
   localityCode?: string;
   zone?: string | null;
   zoneOther?: string | null;
+  /** None by default, as a card registered before the form asked for it. */
+  postalCode?: string | null;
   openingHours?: string | null;
   address?: string | null;
   whatsapp?: string;
@@ -149,6 +151,7 @@ async function cardWithLink(values: CardValues = {}) {
       whatsapp,
       zoneId,
       zoneOther: zoneId === null ? (values.zoneOther ?? "Colonia de mentiras") : null,
+      postalCode: values.postalCode ?? null,
       openingHours: values.openingHours ?? "Lunes a viernes de 9 a 6",
       address: values.address ?? "Calle Inventada 123",
       consentedToNoticeAt: new Date(),
@@ -266,7 +269,10 @@ test.describe("Opening a management link and sending changes, with JavaScript", 
     await expect(byLabel(page, "¿Cómo se llama tu negocio?")).toHaveValue(card.name);
     await expect(byLabel(page, "¿A qué se dedica?")).toHaveValue("belleza");
     await expect(byLabel(page, "Tu WhatsApp (10 dígitos)")).toHaveValue(card.whatsapp);
-    await expect(byLabel(page, "¿En qué colonia estás?")).toHaveValue("Huicalco");
+    // A card from before the postal code is prefilled with its zone's.
+    await expect(byLabel(page, "Código postal")).toHaveValue("43808");
+    await expect(byLabel(page, "¿En qué colonia estás?")).toHaveValue("huicalco");
+    await expect(byLabel(page, "Si tu colonia no aparece, escribe cómo se llama")).toBeHidden();
     await expect(byLabel(page, "Horario (opcional)")).toHaveValue("Lunes a viernes de 9 a 6");
     await expect(page.getByText(NOTE, { exact: true })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: /Acepto el aviso/ })).toHaveCount(0);
@@ -309,6 +315,7 @@ test.describe("Opening a management link and sending changes, with JavaScript", 
       address: "Calle Nueva de Mentiras 7",
       name: card.name,
       whatsapp: card.whatsapp,
+      postalCode: "43808",
     });
 
     // Reloading the confirmation sends nothing again.
@@ -382,10 +389,13 @@ test.describe("Opening a management link and sending changes, with JavaScript", 
     });
     await page.goto(card.path);
     const main = page.getByRole("main");
+    // The field for a zone that does not appear waits hidden until it is asked for.
+    await expect(byLabel(page, "Si tu colonia no aparece, escribe cómo se llama")).toBeHidden();
     for (const control of await main
       .locator(
         "input:not([type=hidden]):not([type=checkbox]):not([tabindex='-1']), select, textarea, button, form a",
       )
+      .filter({ visible: true })
       .all()) {
       const box = await control.boundingBox();
       expect(
@@ -534,7 +544,8 @@ test.describe("A token that is not exactly the current one opens nothing and giv
         name: "Nada",
         category: "belleza",
         whatsapp: newPhone(),
-        zone: "Huicalco",
+        postalCode: "43808",
+        zone: "huicalco",
       },
       maxRedirects: 0,
     });
@@ -569,7 +580,8 @@ test.describe("A token that is not exactly the current one opens nothing and giv
       name: "Cambio de Mentiras",
       category: "belleza",
       whatsapp: card.whatsapp,
-      zone: "Huicalco",
+      postalCode: "43808",
+      zone: "huicalco",
       token: card.token,
     };
     for (const path of [
@@ -593,7 +605,8 @@ test.describe("The edit's honeypot and per-IP quota are those of the public form
     name: "Estética Posteada de Mentiras",
     category: "belleza",
     whatsapp,
-    zone: "Huicalco",
+    postalCode: "43808",
+    zone: "huicalco",
     ...extra,
   });
 
@@ -688,12 +701,18 @@ test.describe("Without JavaScript the edit says so and cannot be sent while Turn
       const card = await cardWithLink({
         zone: null,
         zoneOther: "Rinconada del Venado de Mentiras",
+        postalCode: "43899",
       });
       await page.goto(card.path);
       await expect(page.getByText(/activa JavaScript/)).toHaveCount(0);
-      await expect(byLabel(page, "¿En qué colonia estás?")).toHaveValue(
+      // Scenario: business with an unnormalized zone "Otra"
+      await expect(byLabel(page, "Código postal")).toHaveValue("43899");
+      await expect(byLabel(page, "¿En qué colonia estás?")).toHaveValue("_otra");
+      await expect(byLabel(page, "Si tu colonia no aparece, escribe cómo se llama")).toHaveValue(
         "Rinconada del Venado de Mentiras",
       );
+      // Without JavaScript, every zone of the locality, grouped by postal code.
+      await expect(byLabel(page, "¿En qué colonia estás?").locator("optgroup")).toHaveCount(15);
 
       await byLabel(page, "Tu WhatsApp (10 dígitos)").fill("771 999 7");
       await byLabel(page, "Horario (opcional)").fill("Sábados de mentiras");
@@ -724,6 +743,7 @@ test.describe("Without JavaScript the edit says so and cannot be sent while Turn
       const [edit] = await editsOf(card.id);
       expect(edit).toMatchObject({
         status: "pending",
+        postalCode: "43899",
         zoneId: null,
         zoneOther: "Rinconada del Venado de Mentiras",
         openingHours: "Sábados de mentiras",

@@ -8,9 +8,10 @@
 // front of them" (the version the form carries), "A successful submission
 // queues the business and shows the thank-you screen", "Form states and
 // registration accessibility", "The registration leaves the card ready for
-// the search" (no field of its own), "The zone is typed with the locality's
-// zones as suggestions, and a name that is none of them is kept as "Otra"
-// (v2)", "The registration's honeypot and per-IP quota are those of the
+// the search" (no field of its own), "The zone is chosen from the zones of
+// the postal code the business types, or written when it does not appear
+// (v2)" (the markup; the script runs in test/e2e/registration.spec.ts), "The
+// registration's honeypot and per-IP quota are those of the
 // public forms (v2)" (the trap field), "The registration page of a
 // locality lives under it, and lands on its thank-you page (v2)", "Turnstile
 // is checked on the server, fails closed and has a switch in the database
@@ -40,6 +41,7 @@ import {
   type RegistrationDraft,
   type RegistrationErrors,
 } from "../../src/core/registration/submission.ts";
+import { OTHER_ZONE } from "../../src/core/registration/zone.ts";
 import ThanksPage from "../../src/pages/[state]/[municipality]/registro/gracias.astro";
 import { collapseProblems } from "../responsive-rules.ts";
 import { env } from "./cloudflare-workers.ts";
@@ -63,7 +65,7 @@ const OTHER: ServedLocality = {
   state: { code: "91", name: "Estado de prueba 91", slug: "estado-de-prueba-91" },
 };
 
-/** The 8 categories, in catalogue order, and three zones. */
+/** The 8 categories, in catalogue order, and three zones of two postal codes. */
 const CATALOGUE: RegistrationCatalogue = {
   categories: [
     { id: 1, name: "Restaurantes y fondas", slug: "restaurantes-y-fondas" },
@@ -76,9 +78,21 @@ const CATALOGUE: RegistrationCatalogue = {
     { id: 8, name: "Otro", slug: "otro" },
   ],
   zones: [
-    { id: 11, name: "El Carmen", displayName: "El Carmen (Colonia)" },
-    { id: 12, name: "Haciendas de Tizayuca", displayName: "Haciendas de Tizayuca" },
-    { id: 13, name: "Huicalco", displayName: "Huicalco" },
+    {
+      id: 11,
+      slug: "colonia-el-carmen",
+      name: "El Carmen",
+      displayName: "El Carmen (Colonia)",
+      postalCode: "43815",
+    },
+    {
+      id: 12,
+      slug: "haciendas-de-tizayuca",
+      name: "Haciendas de Tizayuca",
+      displayName: "Haciendas de Tizayuca",
+      postalCode: "43815",
+    },
+    { id: 13, slug: "huicalco", name: "Huicalco", displayName: "Huicalco", postalCode: "43808" },
   ],
 };
 
@@ -97,6 +111,7 @@ afterEach(() => {
 });
 
 interface State {
+  catalogue?: RegistrationCatalogue;
   draft?: RegistrationDraft;
   errors?: RegistrationErrors;
   general?: GeneralError | null;
@@ -109,6 +124,7 @@ interface State {
 
 /** The registration page in one of its states. */
 function render({
+  catalogue = CATALOGUE,
   draft = EMPTY_REGISTRATION_DRAFT,
   errors = {},
   general = null,
@@ -118,7 +134,7 @@ function render({
 }: State = {}): Promise<string> {
   return container.renderToString(RegistrationPage, {
     partial: false,
-    props: { catalogue: CATALOGUE, action: ACTION, draft, errors, general, turnstile },
+    props: { catalogue, action: ACTION, draft, errors, general, turnstile },
     request: new Request(`https://enmirumbo.urekz.workers.dev${address}`),
     locals: { locality } as App.Locals,
   });
@@ -182,6 +198,13 @@ function control(html: string, name: string): string {
   return found;
 }
 
+/** The select named `name`, whole. */
+function selectOf(html: string, name: string): string {
+  return (
+    new RegExp(`<select\\b[^>]*name="${name}"[\\s\\S]*?</select>`).exec(formOf(html))?.[0] ?? ""
+  );
+}
+
 /** The visible labels of the form, in order, as a person reads them. */
 function labels(html: string): string[] {
   return [...formOf(html).matchAll(/<label\b[^>]*>([\s\S]*?)<\/label>/g)]
@@ -205,7 +228,9 @@ const LABELS = [
   "¿Cómo se llama tu negocio?",
   "¿A qué se dedica?",
   "Tu WhatsApp (10 dígitos)",
+  "Código postal",
   "¿En qué colonia estás?",
+  "Si tu colonia no aparece, escribe cómo se llama",
   "¿Qué ofreces? (opcional)",
   "¿Haces entregas o vas a domicilio? (opcional)",
   "Teléfono fijo (opcional)",
@@ -225,7 +250,9 @@ const FULL_DRAFT: RegistrationDraft = {
   name: "Plomería Güicho",
   category: "servicios-del-hogar",
   whatsapp: "771 999 45",
-  zone: "Rinconada del Venado",
+  postalCode: "43899",
+  zone: OTHER_ZONE,
+  zoneOther: "Rinconada del Venado",
   whatYouOffer: "destape de drenajes",
   homeDelivery: true,
   landline: "no tengo",
@@ -305,14 +332,21 @@ describe("Public registration page on a single screen", () => {
 
 describe("Required and optional form fields", () => {
   // Scenario: empty form on open
-  it("the five required fields and the optional ones, marked, with their literal labels, and nothing prefilled or wrong", async () => {
+  it("the required fields and the optional ones, marked, with their literal labels, and nothing prefilled or wrong", async () => {
     const html = await render();
 
     expect(labels(html)).toEqual(LABELS);
-    for (const name of ["name", "category", "whatsapp", "zone", "consent"]) {
+    for (const name of ["name", "category", "whatsapp", "postalCode", "zone", "consent"]) {
       expect(has(control(html, name), "required"), name).toBe(true);
     }
-    for (const name of ["whatYouOffer", "homeDelivery", "landline", "address", "openingHours"]) {
+    for (const name of [
+      "zoneOther",
+      "whatYouOffer",
+      "homeDelivery",
+      "landline",
+      "address",
+      "openingHours",
+    ]) {
       expect(has(control(html, name), "required"), name).toBe(false);
     }
     expect(has(control(html, "facebookUrl"), "required")).toBe(false);
@@ -374,7 +408,9 @@ describe("Required and optional form fields", () => {
       "name",
       "category",
       "whatsapp",
+      "postalCode",
       "zone",
+      "zoneOther",
       "whatYouOffer",
       "homeDelivery",
       "landline",
@@ -428,10 +464,16 @@ describe("Form states and registration accessibility", () => {
   // Scenario: announced errors; empty required fields
   it("each error sits next to its field, tied to it, and the first field with one takes the focus", async () => {
     const html = await render({
-      errors: { name: "required", category: "required", whatsapp: "invalid", zone: "required" },
+      errors: {
+        name: "required",
+        category: "required",
+        whatsapp: "invalid",
+        postalCode: "required",
+        zone: "required",
+      },
     });
 
-    for (const name of ["name", "category", "whatsapp", "zone"]) {
+    for (const name of ["name", "category", "whatsapp", "postalCode", "zone"]) {
       const tag = control(html, name);
       const id = attribute(tag, "id") ?? "";
       expect(attribute(tag, "aria-invalid"), name).toBe("true");
@@ -443,7 +485,8 @@ describe("Form states and registration accessibility", () => {
       "Escribe el nombre de tu negocio",
       "Elige una categoría",
       "Revisa tu número de WhatsApp: deben ser 10 dígitos",
-      "Escribe el nombre de tu colonia",
+      "Escribe tu código postal",
+      "Elige tu colonia",
     ]);
     const focused = controls(formOf(html)).filter((tag) => has(tag, "autofocus"));
     expect(focused.map((tag) => attribute(tag, "name"))).toEqual(["name"]);
@@ -722,7 +765,9 @@ describe("The server validates every field and returns per-field errors in Spani
 
     expect(attribute(control(html, "name"), "value")).toBe("Plomería Güicho");
     expect(attribute(control(html, "whatsapp"), "value")).toBe("771 999 45");
-    expect(attribute(control(html, "zone"), "value")).toBe("Rinconada del Venado");
+    expect(attribute(control(html, "postalCode"), "value")).toBe("43899");
+    expect(selectOf(html, "zone")).toMatch(/<option value="_otra" selected/);
+    expect(attribute(control(html, "zoneOther"), "value")).toBe("Rinconada del Venado");
     expect(attribute(control(html, "landline"), "value")).toBe("no tengo");
     expect(attribute(control(html, "openingHours"), "value")).toBe("Solo fines de semana");
     expect(attribute(control(html, "facebookUrl"), "value")).toBe("facebook.com/minegocio");
@@ -773,7 +818,7 @@ describe("The server validates every field and returns per-field errors in Spani
   it("what was written is shown as text, escaped, and breaks nothing", async () => {
     const markup = '</textarea><script>alert(1)</script>"><b>';
     const html = await render({
-      draft: { ...FULL_DRAFT, name: markup, address: markup, zone: markup },
+      draft: { ...FULL_DRAFT, name: markup, address: markup, zone: markup, zoneOther: markup },
       errors: { name: "length" },
     });
 
@@ -786,7 +831,9 @@ describe("The server validates every field and returns per-field errors in Spani
       "&lt;/textarea&gt;&lt;script&gt;alert(1)&lt;/script&gt;&quot;&gt;&lt;b&gt;</textarea>",
     );
     expect(attribute(control(html, "name"), "value")).toBe(markup);
-    expect(attribute(control(html, "zone"), "value")).toBe(markup);
+    expect(attribute(control(html, "zoneOther"), "value")).toBe(markup);
+    // An unknown zone chooses no option.
+    expect(selectOf(html, "zone")).toMatch(/<option value="" selected/);
   });
 });
 
@@ -833,27 +880,146 @@ describe("Consent with a visible simplified notice and a consent record", () => 
   });
 });
 
-describe('The zone is typed with the locality\'s zones as suggestions, and a name that is none of them is kept as "Otra" (v2)', () => {
-  it("a text field whose suggestions are the visible zones of the locality, by display name", async () => {
-    const html = await render();
-    const zone = control(html, "zone");
-    const list = attribute(zone, "list") ?? "";
-    const datalist = new RegExp(`<datalist id="${list}">([\\s\\S]*?)</datalist>`).exec(html)?.[1];
-
-    expect(attribute(zone, "type")).toBe("text");
-    expect([...(datalist ?? "").matchAll(/<option value="([^"]*)"/g)].map(([, v]) => v)).toEqual([
-      "El Carmen (Colonia)",
-      "Haciendas de Tizayuca",
-      "Huicalco",
-    ]);
-    const help = (attribute(zone, "aria-describedby") ?? "").split(" ")[0] ?? "";
-    expect(
-      readable(new RegExp(`<p id="${help}"[^>]*>([\\s\\S]*?)</p>`).exec(html)?.[1] ?? ""),
-    ).toBe(
-      "Empieza a escribirla y elígela de la lista. Si no aparece, escríbela completa y nosotros la acomodamos.",
+describe("The zone is chosen from the zones of the postal code the business types, or written when it does not appear (v2)", () => {
+  /** The help of a control: the first id it is described by. */
+  const helpOf = (html: string, tag: string) => {
+    const help = (attribute(tag, "aria-describedby") ?? "").split(" ")[0] ?? "";
+    return readable(new RegExp(`<p id="${help}"[^>]*>([\\s\\S]*?)</p>`).exec(html)?.[1] ?? "");
+  };
+  /** The groups of the zone select: each label, its postal code and its options. */
+  const groupsOf = (select: string) =>
+    [...select.matchAll(/<optgroup\b([^>]*)>([\s\S]*?)<\/optgroup>/g)].map(
+      ([, tag = "", inner = ""]) => ({
+        label: attribute(tag, "label"),
+        // An empty attribute is written without its value.
+        postalCode:
+          attribute(tag, "data-postal-code") ?? (has(tag, "data-postal-code") ? "" : undefined),
+        options: [...inner.matchAll(/<option\b([^>]*)>([\s\S]*?)<\/option>/g)].map(
+          ([, option = "", text = ""]) => [attribute(option, "value"), readable(text)],
+        ),
+      }),
     );
-    // No option "Otra" to choose, and no second field for it.
-    expect(formOf(html)).not.toMatch(/>Otra</);
+
+  it("the postal code comes first: five digits, the numeric keyboard, and where to find it", async () => {
+    const html = await render();
+    const postalCode = control(html, "postalCode");
+
+    expect(labels(html).indexOf("Código postal")).toBe(
+      labels(html).indexOf("¿En qué colonia estás?") - 1,
+    );
+    expect(attribute(postalCode, "type")).toBe("text");
+    expect(attribute(postalCode, "inputmode")).toBe("numeric");
+    expect(attribute(postalCode, "maxlength")).toBe("5");
+    expect(attribute(postalCode, "autocomplete")).toBe("postal-code");
+    expect(helpOf(html, postalCode)).toBe(
+      "Si no te lo sabes, viene en tu recibo de luz o de agua.",
+    );
+  });
+
+  it("a classic select: every visible zone by display name, grouped by postal code in order, and Mi colonia no aparece last", async () => {
+    const html = await render();
+    const select = selectOf(html, "zone");
+    const options = [...select.matchAll(/<option\b([^>]*)>([\s\S]*?)<\/option>/g)];
+
+    expect(attribute(options[0]?.[1] ?? "", "value")).toBe("");
+    expect(readable(options[0]?.[2] ?? "")).toBe("Elige tu colonia");
+    expect(has(options[0]?.[1] ?? "", "selected")).toBe(true);
+    expect(groupsOf(select)).toEqual([
+      { label: "C.P. 43808", postalCode: "43808", options: [["huicalco", "Huicalco"]] },
+      {
+        label: "C.P. 43815",
+        postalCode: "43815",
+        options: [
+          ["colonia-el-carmen", "El Carmen (Colonia)"],
+          ["haciendas-de-tizayuca", "Haciendas de Tizayuca"],
+        ],
+      },
+    ]);
+    const last = options.at(-1);
+    expect(attribute(last?.[1] ?? "", "value")).toBe("_otra");
+    expect(readable(last?.[2] ?? "")).toBe("Mi colonia no aparece");
+    expect(select.lastIndexOf("</optgroup>")).toBeLessThan(select.indexOf('value="_otra"'));
+    expect(helpOf(html, control(html, "zone"))).toBe(
+      "Si tu colonia no aparece en la lista, elige “Mi colonia no aparece” y escríbela abajo.",
+    );
+    // No suggestions of the browser any more.
+    expect(html).not.toContain("<datalist");
+  });
+
+  it("without JavaScript, the field for the name of a zone that does not appear is always there", async () => {
+    const html = await render();
+    const wrapper = /<div\b[^>]*data-zone-other[^>]*>/.exec(html)?.[0] ?? "";
+
+    expect(wrapper).not.toBe("");
+    expect(has(wrapper, "hidden")).toBe(false);
+    expect(labelFor(html, "registration-zoneOther")).toBe(
+      "Si tu colonia no aparece, escribe cómo se llama",
+    );
+    expect(attribute(control(html, "zoneOther"), "maxlength")).toBe("80");
+  });
+
+  it("what the script says of a postal code no zone has waits in the markup, empty and announced", async () => {
+    const html = await render();
+    const hint = /<p\b([^>]*data-postal-code-hint[^>]*)>([\s\S]*?)<\/p>/.exec(html);
+
+    expect(attribute(hint?.[1] ?? "", "role")).toBe("status");
+    expect(hint?.[2]).toBe("");
+    expect(attribute(hint?.[1] ?? "", "data-postal-code-hint")).toBe(
+      "No tenemos colonias con ese código postal. Revisa que esté bien o elige “Mi colonia no aparece”.",
+    );
+  });
+
+  it("zones without a postal code go last, under Otras colonias", async () => {
+    const html = await render({
+      catalogue: {
+        ...CATALOGUE,
+        zones: [
+          ...CATALOGUE.zones,
+          { id: 14, slug: "nueva", name: "Nueva", displayName: "Nueva", postalCode: null },
+        ],
+      },
+    });
+
+    expect(
+      groupsOf(selectOf(html, "zone")).map(({ label, postalCode }) => [label, postalCode]),
+    ).toEqual([
+      ["C.P. 43808", "43808"],
+      ["C.P. 43815", "43815"],
+      ["Otras colonias", ""],
+    ]);
+  });
+
+  it("the form comes back with the zone chosen, or Mi colonia no aparece with its name", async () => {
+    const chosen = await render({
+      draft: { ...EMPTY_REGISTRATION_DRAFT, postalCode: "43808", zone: "huicalco" },
+      errors: { name: "required" },
+    });
+    expect(selectOf(chosen, "zone")).toMatch(/<option value="huicalco" selected/);
+    expect(selectOf(chosen, "zone")).not.toMatch(/<option value="" selected/);
+    expect(attribute(control(chosen, "postalCode"), "value")).toBe("43808");
+
+    const other = await render({ draft: FULL_DRAFT, errors: { name: "required" } });
+    expect(selectOf(other, "zone")).toMatch(/<option value="_otra" selected/);
+    expect(attribute(control(other, "zoneOther"), "value")).toBe("Rinconada del Venado");
+  });
+
+  // Scenarios: a zone of another postal code; "Otra" without text
+  it("the errors of the postal code and the zone, next to their fields, the first one focused", async () => {
+    const html = await render({
+      draft: { ...EMPTY_REGISTRATION_DRAFT, postalCode: "43815", zone: "huicalco" },
+      errors: { postalCode: "invalid", zone: "postal-code", zoneOther: "required" },
+    });
+
+    expect(alerts(html)).toEqual([
+      "Revisa tu código postal: deben ser 5 dígitos",
+      "Esa colonia no es de ese código postal. Revisa el código o elige otra colonia.",
+      "Escribe el nombre de tu colonia",
+    ]);
+    for (const name of ["postalCode", "zone", "zoneOther"]) {
+      expect(attribute(control(html, name), "aria-invalid"), name).toBe("true");
+    }
+    const focused = controls(formOf(html)).filter((tag) => has(tag, "autofocus"));
+    expect(focused.map((tag) => attribute(tag, "name"))).toEqual(["postalCode"]);
   });
 });
 

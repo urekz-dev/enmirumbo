@@ -77,7 +77,10 @@ test("Cloudflare's real Turnstile script loads under the policy, gets its token 
     .fill("Taller Real de Mentiras");
   await page.getByLabel("¿A qué se dedica?", { exact: true }).selectOption({ label: "Talleres" });
   await page.getByLabel("Tu WhatsApp (10 dígitos)", { exact: true }).fill(WHATSAPP);
-  await page.getByLabel("¿En qué colonia estás?", { exact: true }).fill("Huicalco");
+  await page.getByLabel("Código postal", { exact: true }).fill("43808");
+  await page
+    .getByLabel("¿En qué colonia estás?", { exact: true })
+    .selectOption({ label: "Huicalco" });
   await page
     .getByLabel(
       "Acepto el aviso de privacidad y confirmo que este negocio es mío o que tengo permiso para registrarlo.",

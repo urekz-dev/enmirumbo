@@ -589,6 +589,7 @@ const REGISTRATION: Registration = {
   zoneSlug: "huicalco",
   zoneName: "Huicalco",
   zoneOther: null,
+  postalCode: "43808",
   whatYouOffer: "Destapes y <b>fugas</b>",
   homeDelivery: true,
   landline: "7719990151",
@@ -633,6 +634,7 @@ describe("Registration detail with all the captured data, only inside the panel"
       "Servicios del hogar",
       "Foto del negocio",
       "WhatsApp\n7719990101",
+      "Código postal\n43808",
       "Colonia\nHuicalco",
       "¿Qué ofreces?\nDestapes y <b>fugas</b>",
       "¿Hace entregas o va a domicilio?\nSí",
@@ -679,6 +681,10 @@ describe("Registration detail with all the captured data, only inside the panel"
 
     expect(text).toContain("Foto del negocio\nSin foto");
     expect(text.match(/No capturado/g)).toHaveLength(5);
+    // A card registered before the form asked for the postal code has none.
+    expect(visibleText(await renderRegistration({ postalCode: null }))).toContain(
+      "Código postal\nNo capturado",
+    );
     expect(text).toContain("¿Hace entregas o va a domicilio?\nNo");
     expect(text).toContain("Estado\nEn revisión");
     expect(text).toContain("Origen\nSe registró solo");
@@ -838,6 +844,7 @@ const EDIT: EditData = {
     zoneSlug: "huicalco",
     zoneName: "Huicalco",
     zoneOther: null,
+    postalCode: "43808",
     whatYouOffer: "Tacos",
     homeDelivery: false,
     landline: null,
@@ -852,6 +859,7 @@ const EDIT: EditData = {
     zoneSlug: "huicalco",
     zoneName: "Huicalco",
     zoneOther: null,
+    postalCode: "43808",
     whatYouOffer: "Tacos",
     homeDelivery: false,
     landline: null,
@@ -886,8 +894,8 @@ describe("The pending edit detail compares what is published with what is propos
 
     expect(html).toMatch(/<h1\b[^>]*>Cambios por revisar<\/h1>/);
     expect(text).toContain("Tacos del Güero de Mentiras");
-    expect(text.match(/Lo que está publicado/g)).toHaveLength(11);
-    expect(text.match(/Lo que quiere cambiar/g)).toHaveLength(11);
+    expect(text.match(/Lo que está publicado/g)).toHaveLength(12);
+    expect(text.match(/Lo que quiere cambiar/g)).toHaveLength(12);
     expect(visibleText(fieldBlock(html, "openingHours"))).toBe(
       "Horario\nCambió\nLo que está publicado\nDe 9 a 5\nLo que quiere cambiar\nDe 10 a 6",
     );
@@ -896,6 +904,7 @@ describe("The pending edit detail compares what is published with what is propos
       "name",
       "categoryName",
       "whatsapp",
+      "postalCode",
       "zone",
       "whatYouOffer",
       "homeDelivery",
@@ -907,6 +916,17 @@ describe("The pending edit detail compares what is published with what is propos
     }
     expect(text).not.toContain("Ojo: está cambiando su WhatsApp");
     expect(linksNamed(html, "Escribirle por WhatsApp")).toEqual([]);
+  });
+
+  it("a new postal code: both, marked; one from before the form asked for it is not captured", async () => {
+    const html = await renderEdit({
+      published: { ...EDIT.published, postalCode: null },
+      proposed: { ...EDIT.proposed, postalCode: "43815" },
+    });
+
+    expect(visibleText(fieldBlock(html, "postalCode"))).toBe(
+      "Código postal\nCambió\nLo que está publicado\nNo capturado\nLo que quiere cambiar\n43815",
+    );
   });
 
   it("a new WhatsApp: both numbers, the warning, and the button to the proposed number", async () => {

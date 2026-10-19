@@ -4,8 +4,8 @@
 // server validates every field and returns per-field errors in Spanish",
 // "Consent with a visible simplified notice and a consent record", "Nobody
 // consents to a notice version they did not have in front of them", "The
-// zone is typed with the locality's zones as suggestions, and a name that is
-// none of them is kept as "Otra" (v2)", "The photo field explains the PRD
+// zone is chosen from the zones of the postal code the business types, or
+// written when it does not appear (v2)", "The photo field explains the PRD
 // §6.1 policy and opens the phone gallery" and "Resubmission after a
 // rejection allows changing or removing the photo"). The form works without
 // JavaScript and a submission can arrive without it, so every rule is
@@ -19,6 +19,7 @@ import { NOTICE_VERSION } from "../legal/version.ts";
 import { MAX_PHOTO_BYTES, PHOTO_FORMATS } from "../photos/limits.ts";
 import { TURNSTILE_FAILED_MESSAGE } from "../turnstile/keys.ts";
 import type { RegistrationCatalogue } from "./catalogue.ts";
+import { isPostalCode, POSTAL_CODE_LENGTH } from "../catalogue/postal-code.ts";
 import { chooseZone } from "./zone.ts";
 
 /** The names of the form's fields, in the order of the screen. */
@@ -26,7 +27,9 @@ export const REGISTRATION_FIELDS = {
   name: "name",
   category: "category",
   whatsapp: "whatsapp",
+  postalCode: "postalCode",
   zone: "zone",
+  zoneOther: "zoneOther",
   whatYouOffer: "whatYouOffer",
   homeDelivery: "homeDelivery",
   landline: "landline",
@@ -43,7 +46,8 @@ export const REGISTRATION_FIELDS = {
 export const MAX_LENGTHS = {
   name: 80,
   whatsapp: 30,
-  zone: 80,
+  postalCode: POSTAL_CODE_LENGTH,
+  zoneOther: 80,
   whatYouOffer: 200,
   landline: 20,
   address: 200,
@@ -58,7 +62,9 @@ export const ERROR_FIELDS = [
   "name",
   "category",
   "whatsapp",
+  "postalCode",
   "zone",
+  "zoneOther",
   "whatYouOffer",
   "landline",
   "address",
@@ -76,7 +82,10 @@ export const ERROR_CODES = {
   category: ["required"],
   // `taken` is the edit's: the number of another card (src/core/edit/).
   whatsapp: ["invalid", "duplicate", "taken"],
-  zone: ["required", "length"],
+  postalCode: ["required", "invalid"],
+  // `postal-code`: a zone of another postal code than the one typed.
+  zone: ["required", "postal-code"],
+  zoneOther: ["required", "length"],
   whatYouOffer: ["length"],
   landline: ["invalid", "length"],
   address: ["length"],
@@ -107,7 +116,18 @@ const MESSAGES: { [F in ErrorField]: Record<ErrorCode<F>, string> } = {
       "Este número ya tiene una ficha registrada. Si es tu negocio, no hace falta registrarlo otra vez: te vamos a pasar por WhatsApp el enlace para editarlo.",
     taken: "Ese número ya está en otra ficha del directorio.",
   },
-  zone: { required: "Escribe el nombre de tu colonia", length: lengthMessage(MAX_LENGTHS.zone) },
+  postalCode: {
+    required: "Escribe tu código postal",
+    invalid: "Revisa tu código postal: deben ser 5 dígitos",
+  },
+  zone: {
+    required: "Elige tu colonia",
+    "postal-code": "Esa colonia no es de ese código postal. Revisa el código o elige otra colonia.",
+  },
+  zoneOther: {
+    required: "Escribe el nombre de tu colonia",
+    length: lengthMessage(MAX_LENGTHS.zoneOther),
+  },
   whatYouOffer: { length: lengthMessage(MAX_LENGTHS.whatYouOffer) },
   landline: {
     invalid:
@@ -156,6 +176,28 @@ export const PHOTO_ACCEPT = PHOTO_FORMATS.join(",");
 /** The checkbox that leaves a card without a photo, the same for everyone. */
 export const REMOVE_PHOTO_LABEL = "Dejar mi ficha sin foto";
 
+/** The first option of the zone select, which chooses none. */
+export const ZONE_PLACEHOLDER = "Elige tu colonia";
+
+/** The last option of the zone select, which asks for the name of the zone. */
+export const OTHER_ZONE_LABEL = "Mi colonia no aparece";
+
+/** The label of a group of the zone select: "C.P. 43800". */
+export function postalCodeGroupLabel(postalCode: string): string {
+  return `C.P. ${postalCode}`;
+}
+
+/** The label of the group of zones without a postal code, which the select lists last. */
+export const NO_POSTAL_CODE_GROUP = "Otras colonias";
+
+/**
+ * What the form says under the postal code, only through its script, when
+ * five digits name no zone the form offers: the zone select is left with
+ * "Mi colonia no aparece" alone.
+ */
+export const UNKNOWN_POSTAL_CODE_HINT =
+  "No tenemos colonias con ese código postal. Revisa que esté bien o elige “Mi colonia no aparece”.";
+
 /** The message of `field` for `code`, or an empty string for a code it does not have. */
 export function errorMessage(field: ErrorField, code: string): string {
   const messages: Record<string, string> = MESSAGES[field];
@@ -194,6 +236,8 @@ export interface NewRegistration {
   categoryId: number;
   /** Ten digits. */
   whatsapp: string;
+  /** Five digits. */
+  postalCode: string;
   zoneId: number | null;
   /** The free text of "Otra", only without a catalogue zone. */
   zoneOther: string | null;
@@ -305,9 +349,22 @@ function readBusinessFields(
     whatsappText.length > MAX_LENGTHS.whatsapp ? null : registrationWhatsapp(whatsappText);
   if (whatsapp === null) errors.whatsapp = "invalid";
 
-  const zoneText = text(F.zone);
-  if (zoneText === "") errors.zone = "required";
-  else if (zoneText.length > MAX_LENGTHS.zone) errors.zone = "length";
+  const postalCodeText = text(F.postalCode);
+  const postalCode = isPostalCode(postalCodeText) ? postalCodeText : null;
+  if (postalCodeText === "") errors.postalCode = "required";
+  else if (postalCode === null) errors.postalCode = "invalid";
+
+  const zone = chooseZone(
+    text(F.zone),
+    text(F.zoneOther),
+    postalCode,
+    catalogue.zones,
+    MAX_LENGTHS.zoneOther,
+  );
+  if ("field" in zone) {
+    if (zone.field === "zone") errors.zone = zone.code;
+    else errors.zoneOther = zone.code;
+  }
 
   /** An optional field: null when empty, and an error past its limit. */
   const optional = (
@@ -335,13 +392,23 @@ function readBusinessFields(
   const file = removePhoto ? null : uploadedFile(form, F.photo);
   if (file !== null && file.size > MAX_PHOTO_BYTES) errors.photo = "too-large";
 
-  if (Object.keys(errors).length > 0 || category === undefined || whatsapp === null) return null;
+  if (
+    Object.keys(errors).length > 0 ||
+    category === undefined ||
+    whatsapp === null ||
+    postalCode === null ||
+    "field" in zone
+  ) {
+    return null;
+  }
   return {
     registration: {
       name,
       categoryId: category.id,
       whatsapp,
-      ...chooseZone(zoneText, catalogue.zones),
+      postalCode,
+      zoneId: zone.zoneId,
+      zoneOther: zone.zoneOther,
       whatYouOffer,
       homeDelivery: isChecked(form, F.homeDelivery),
       landline,
@@ -410,7 +477,11 @@ export interface RegistrationDraft {
   /** The slug the owner chose; an unknown one chooses no option. */
   category: string;
   whatsapp: string;
+  postalCode: string;
+  /** What the zone select sent: a slug, OTHER_ZONE or nothing; an unknown one chooses no option. */
   zone: string;
+  /** The name written for "Mi colonia no aparece". */
+  zoneOther: string;
   whatYouOffer: string;
   homeDelivery: boolean;
   landline: string;
@@ -428,7 +499,9 @@ export const EMPTY_REGISTRATION_DRAFT: RegistrationDraft = {
   name: "",
   category: "",
   whatsapp: "",
+  postalCode: "",
   zone: "",
+  zoneOther: "",
   whatYouOffer: "",
   homeDelivery: false,
   landline: "",
@@ -439,8 +512,8 @@ export const EMPTY_REGISTRATION_DRAFT: RegistrationDraft = {
   removePhoto: false,
 };
 
-/** The longest category slug worth reading back; it is matched, never shown. */
-const MAX_CATEGORY_LENGTH = 80;
+/** The longest category or zone slug worth reading back; it is matched, never shown. */
+const MAX_CHOICE_LENGTH = 80;
 
 /**
  * What the owner had written, read from the same submission, so it never
@@ -456,9 +529,11 @@ export function registrationDraft(form: FormData): RegistrationDraft {
     boundedText(formText(form, F[field]).trim(), MAX_LENGTHS[field]);
   return {
     name: text("name"),
-    category: boundedText(formText(form, F.category).trim(), MAX_CATEGORY_LENGTH),
+    category: boundedText(formText(form, F.category).trim(), MAX_CHOICE_LENGTH),
     whatsapp: text("whatsapp"),
-    zone: text("zone"),
+    postalCode: text("postalCode"),
+    zone: boundedText(formText(form, F.zone).trim(), MAX_CHOICE_LENGTH),
+    zoneOther: text("zoneOther"),
     whatYouOffer: text("whatYouOffer"),
     homeDelivery: isChecked(form, F.homeDelivery),
     landline: text("landline"),

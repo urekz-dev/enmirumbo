@@ -31,9 +31,11 @@ export interface Fixture {
   /** Two localities of the same fictitious state. */
   localityA: string;
   localityB: string;
-  /** A zone of locality A and one of locality B. */
+  /** A zone of locality A and one of locality B, each with its postal code. */
   zoneA: number;
   zoneB: number;
+  postalCodeA: string;
+  postalCodeB: string;
   categoryId: number;
   tradeIds: [number, number, number];
 }
@@ -49,9 +51,20 @@ export function fakePhone(): string {
   return `771999${String(phoneCounter).padStart(4, "0")}`;
 }
 
+/**
+ * A fictitious postal code of the fixture state `stateCode`: no real postal
+ * code starts with 00 (SEPOMEX's start at 01000), and the state code keeps
+ * each file's apart.
+ */
+export function fakePostalCode(stateCode: string, n: number): string {
+  return `00${stateCode}${n}`;
+}
+
 export async function createFixture(stateCode: string): Promise<Fixture> {
   const localityA = `${stateCode}001`;
   const localityB = `${stateCode}002`;
+  const postalCodeA = fakePostalCode(stateCode, 1);
+  const postalCodeB = fakePostalCode(stateCode, 2);
   await cleanup(stateCode);
   return db(async (tx) => {
     await tx.insert(states).values({
@@ -81,11 +94,23 @@ export async function createFixture(stateCode: string): Promise<Fixture> {
     ]);
     const [zoneA] = await tx
       .insert(zones)
-      .values({ localityCode: localityA, type: "Colonia", name: "Centro", slug: "centro" })
+      .values({
+        localityCode: localityA,
+        type: "Colonia",
+        name: "Centro",
+        slug: "centro",
+        postalCode: postalCodeA,
+      })
       .returning({ id: zones.id });
     const [zoneB] = await tx
       .insert(zones)
-      .values({ localityCode: localityB, type: "Colonia", name: "Centro", slug: "centro" })
+      .values({
+        localityCode: localityB,
+        type: "Colonia",
+        name: "Centro",
+        slug: "centro",
+        postalCode: postalCodeB,
+      })
       .returning({ id: zones.id });
     const [category] = await tx
       .insert(categories)
@@ -109,6 +134,8 @@ export async function createFixture(stateCode: string): Promise<Fixture> {
       localityB,
       zoneA: zoneA.id,
       zoneB: zoneB.id,
+      postalCodeA,
+      postalCodeB,
       categoryId: category.id,
       tradeIds: [tradeRows[0]!.id, tradeRows[1]!.id, tradeRows[2]!.id],
     };

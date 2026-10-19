@@ -769,9 +769,9 @@ The prototype's hand-maintained list of colonias MUST be used only to cross-chec
 
 ### Requirement: Zones belong to a locality, and Tizayuca's come from the SEPOMEX postal catalogue (v2)
 
-Added in v2 — source: decision of the product owner, 2026-10-14; ADR 0006 (amended on 2026-10-15). Amended on 2026-10-15 by decision of the product owner: a zone whose name repeats in its locality, or is the locality's, is shown on the public pages with its type. Amended on 2026-10-18 by EMR-52 and the decision of the product owner of that date: the admin adds zones from the panel, which are data the panel writes, not reference data.
+Added in v2 — source: decision of the product owner, 2026-10-14; ADR 0006 (amended on 2026-10-15). Amended on 2026-10-15 by decision of the product owner: a zone whose name repeats in its locality, or is the locality's, is shown on the public pages with its type. Amended on 2026-10-18 by EMR-52 and the decision of the product owner of that date: the admin adds zones from the panel, which are data the panel writes, not reference data. Amended on 2026-10-18 (EMR-74) by decision of the product owner: each zone stores its postal code ("Each zone has its postal code, and Tizayuca's come from the SEPOMEX postal catalogue (v2)").
 
-Each zone MUST belong to exactly one locality, and its settlement type (colonia, fraccionamiento, pueblo, barrio, unidad habitacional or another settlement type) MUST be stored with it. The zones of a city's catalogue (Tizayuca's, from SEPOMEX) are reference data and ship as data migrations with the rest of their locality's reference data, so that they reach every environment, production included, without seeds; an automatic check MUST verify what they leave in the database. Postal codes are not stored. Every zone starts visible, and the admin MUST be able to hide or rename a zone (`admin-review`, "The admin can hide and rename the zones of a locality (v2)"). The admin MAY also add a zone to a locality from the panel, such as a housing development that SEPOMEX does not list yet, with one of the settlement types the zones of the locality have (`admin-review`, "The admin can add a zone to a locality (v2)"): such a zone is data the panel writes in each environment, like a card, and no migration or seed carries it. How the zones of a new city are prepared is decided when one is needed (see "The database holds only the reference data of the localities it serves (v2)").
+Each zone MUST belong to exactly one locality, and its settlement type (colonia, fraccionamiento, pueblo, barrio, unidad habitacional or another settlement type) MUST be stored with it. The zones of a city's catalogue (Tizayuca's, from SEPOMEX) are reference data and ship as data migrations with the rest of their locality's reference data, so that they reach every environment, production included, without seeds; an automatic check MUST verify what they leave in the database. Each zone stores its postal code, as "Each zone has its postal code, and Tizayuca's come from the SEPOMEX postal catalogue (v2)" describes. Every zone starts visible, and the admin MUST be able to hide or rename a zone (`admin-review`, "The admin can hide and rename the zones of a locality (v2)"). The admin MAY also add a zone to a locality from the panel, such as a housing development that SEPOMEX does not list yet, with one of the settlement types the zones of the locality have (`admin-review`, "The admin can add a zone to a locality (v2)"): such a zone is data the panel writes in each environment, like a card, and no migration or seed carries it. How the zones of a new city are prepared is decided when one is needed (see "The database holds only the reference data of the localities it serves (v2)").
 
 The zones of Tizayuca are its settlements in SEPOMEX's Catálogo Nacional de Códigos Postales, which Correos de México publishes: one zone per settlement, with its type as SEPOMEX writes it. Their data migration MUST name the source, its download page and the date of the catalogue's last update; it is the record of where they came from, and SEPOMEX's file is not kept in the repository. Their names are SEPOMEX's, with its accents and capitals, single spaces and no text garbled by an encoding, and settlements whose names differ only in case, accents or spacing are a single zone. Their slugs follow the slug rule of the states and municipalities (see "The database holds only the reference data of the localities it serves (v2)") and are unique within the locality. Four names that SEPOMEX lists with two settlement types keep the name in both zones, and their slugs carry the type: "El Carmen" (`colonia-el-carmen`, `fraccionamiento-el-carmen`), "El Chopo" (`pueblo-el-chopo`, `rancho-el-chopo`), "El Manantial" (`fraccionamiento-el-manantial`, `rancho-el-manantial`) and "Tizayuca" (`unidad-habitacional-tizayuca`, `zona-industrial-tizayuca`). On the public pages, those zones, and any zone whose name repeats in its locality or is the locality's, are told apart by their type, as `public-directory` describes in "A zone whose name repeats in its locality is shown with its settlement type (v2)"; the stored name stays SEPOMEX's.
 
@@ -785,7 +785,7 @@ The prototype's hand-maintained list of colonias MUST be used only to cross-chec
 #### Scenario: the migration credits SEPOMEX
 
 - **WHEN** the data migration of the zones of Tizayuca is read
-- **THEN** it names SEPOMEX's catalogue and its download page, carries the line "Fuente: Servicio Postal Mexicano (Correos de México), …" with the date of the catalogue's last update, and holds no postal code
+- **THEN** it names SEPOMEX's catalogue and its download page, carries the line "Fuente: Servicio Postal Mexicano (Correos de México), …" with the date of the catalogue's last update, and holds no postal code: those ship in a data migration of their own
 
 #### Scenario: names as SEPOMEX writes them
 
@@ -816,6 +816,53 @@ The prototype's hand-maintained list of colonias MUST be used only to cross-chec
 
 - **WHEN** the admin adds a fraccionamiento to Tizayuca from the panel
 - **THEN** Tizayuca has one more zone, visible, with that type, and the migrations still leave the 105 zones of SEPOMEX
+
+### Requirement: Each zone has its postal code, and Tizayuca's come from the SEPOMEX postal catalogue (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-74); ADR 0006. The registration and edit forms narrow their zones by the postal code a business types (`business-registration`, "The zone is chosen from the zones of the postal code the business types, or written when it does not appear (v2)"), so each zone carries its postal code. It amends "Zones belong to a locality, and Tizayuca's come from the SEPOMEX postal catalogue (v2)", whose zones had none.
+
+Each zone MUST store its postal code: five digits, as SEPOMEX writes them (`d_codigo`), which a CHECK in the migration enforces. It is null only on a zone the admin added from the panel before zones had a postal code; a zone the admin adds now needs one (`admin-review`, "The admin can add a zone to a locality (v2)"). The postal codes of the zones of Tizayuca are those of SEPOMEX's Catálogo Nacional de Códigos Postales for the settlement each zone came from: every zone of its migration matched exactly one settlement of the catalogue by its name, its settlement type and its municipality (Tizayuca, Hidalgo), with no zone left over and none matching two. They ship in a data migration of their own, which names each zone by its slug, names the source, its download page and the date of the catalogue's last update, and is additive: a nullable column, which every existing row meets, filled in for the zones of Tizayuca. SEPOMEX's file is not kept in the repository, nor is any script that read it; the migration is the record. A postal code is not shown on any public page.
+
+#### Scenario: every zone of Tizayuca has its postal code
+
+- **WHEN** the migrations are applied to an empty database
+- **THEN** each of the 105 zones of Tizayuca has a postal code of five digits, one of 15 from 43800 to 43825: "Tizayuca Centro" 43800, "Huicalco" 43808, "Haciendas de Tizayuca" 43815, and the two zones named "El Chopo" 43824 (Pueblo) and 43817 (Rancho)
+
+#### Scenario: the migration credits SEPOMEX
+
+- **WHEN** the data migration of the postal codes is read
+- **THEN** it names SEPOMEX's catalogue and its download page and carries the line "Fuente: Servicio Postal Mexicano (Correos de México), …" with the date of the catalogue's last update
+
+#### Scenario: a postal code of another shape
+
+- **WHEN** a zone is saved with "4381", "438155" or "C.P. 43815" as its postal code
+- **THEN** the database rejects the write; and a zone saved without one is accepted
+
+### Requirement: A business and its pending edit store the postal code the owner typed (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-74); `business-registration`, "The zone is chosen from the zones of the postal code the business types, or written when it does not appear (v2)". It amends "The `Business` model covers the registration fields", with one more field, and "A pending edit stores the full content of what is to be published": the full content includes the postal code.
+
+The business MUST store the postal code its owner typed: five digits, which a CHECK in the migration enforces, null only on a card registered before the form asked for it. A pending edit MUST store the postal code of its submission too, with the same CHECK, null only on an edit saved before; applying an edit gives the card the edit's postal code, as it gives it every field of its full content (`admin-review`, "Applying the pending edit updates the published card and only that"), except that an edit saved before the form asked for it leaves the card's as it is. The postal code is data of the card for the panel: no public page shows it, and the permanent deletion of the business takes it with the card. The migration that adds both columns MUST be additive: nullable columns that every existing row meets.
+
+#### Scenario: a registration keeps its postal code
+
+- **WHEN** a business registers with the postal code 43808
+- **THEN** its row holds 43808
+
+#### Scenario: an edit keeps its postal code
+
+- **WHEN** the owner sends an edit with the postal code 43815
+- **THEN** the pending edit holds 43815 and the card keeps its own until the edit is applied
+
+#### Scenario: applying an edit
+
+- **WHEN** the admin applies an edit with the postal code 43815 to a card with 43808, and later an edit saved before the form asked for it
+- **THEN** the card has 43815 after the first, and keeps it after the second
+
+#### Scenario: cards and edits from before
+
+- **WHEN** the migration runs on a database with cards and edits
+- **THEN** their postal code is null, and only five digits are accepted from then on
 
 ### Requirement: Businesses, pending edits, reports and the audit log reference their locality, and slugs are unique per locality (v2)
 

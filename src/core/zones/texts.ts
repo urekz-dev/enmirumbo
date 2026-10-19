@@ -27,6 +27,9 @@ export const ADD_HELP =
 export const NAME_LABEL = "Nombre";
 export const TYPE_LABEL = "Tipo";
 export const TYPE_PLACEHOLDER = "Elige el tipo";
+export const POSTAL_CODE_LABEL = "Código postal";
+export const POSTAL_CODE_HELP =
+  "El del catálogo de SEPOMEX, si ya la tiene; si no, el que usan sus vecinos. El formulario de registro ofrece cada colonia con su código postal.";
 export const ADD_BUTTON = "Agregar colonia";
 
 // The list.
@@ -42,6 +45,11 @@ export const RENAME_BUTTON = "Guardar el nombre";
 /** "Tipo: Fraccionamiento". */
 export function typeText(type: string): string {
   return `${TYPE_LABEL}: ${type}`;
+}
+
+/** "Código postal: 43808", or that a zone added before zones had one has none. */
+export function postalCodeText(postalCode: string | null): string {
+  return `${POSTAL_CODE_LABEL}: ${postalCode ?? "sin registrar"}`;
 }
 
 /** "En la URL: huicalco": the slug, which a rename never changes. */
@@ -63,6 +71,8 @@ export const NAME_NO_LETTERS = "Escribe el nombre con letras o números.";
 export const NAME_NO_SLUG =
   "Ese nombre tiene letras que no caben en una URL. Escríbelo con las letras del español, números y espacios.";
 export const TYPE_REQUIRED = "Elige el tipo de la colonia.";
+export const POSTAL_CODE_REQUIRED = "Escribe el código postal de la colonia.";
+export const POSTAL_CODE_INVALID = "El código postal son 5 números, sin espacios.";
 /** A submission the screen could not save, for a reason that is not the form's. */
 export const GENERAL_ERROR = "No se pudo guardar el cambio. Vuelve a intentarlo.";
 

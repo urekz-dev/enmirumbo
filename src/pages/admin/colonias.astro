@@ -25,6 +25,7 @@
 import { actions } from "astro:actions";
 import { env, waitUntil } from "cloudflare:workers";
 import ZonesScreen from "../../components/admin/ZonesScreen.astro";
+import { POSTAL_CODE_LENGTH } from "../../core/catalogue/postal-code.ts";
 import { withDb } from "../../core/db/client.ts";
 import { boundedText, formText } from "../../core/forms/text.ts";
 import { localityFilterOptions } from "../../core/review/localities.ts";
@@ -100,6 +101,10 @@ if (result?.error) {
           errors: result.data.errors,
           name: typed,
           type: formText(form, ZONE_FIELDS.type).trim(),
+          postalCode: boundedText(
+            formText(form, ZONE_FIELDS.postalCode).trim(),
+            POSTAL_CODE_LENGTH,
+          ),
         };
 }
 
