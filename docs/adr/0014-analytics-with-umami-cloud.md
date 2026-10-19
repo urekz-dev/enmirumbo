@@ -20,6 +20,10 @@ Amended again on 2026-10-15 (EMR-36), by decision of the product owner:
 
 - The search with no results is not an event. The results page knows it found nothing when the server renders it, so it tags its page view instead: the Umami script of that page carries `data-tag="search-no-results"`, and the tagged views are filtered in Umami and compared with all the views of the results page. It needs no JavaScript of the site and no count on the server, and the text searched never reaches Umami: the tag is a fixed word and the script already leaves the query out of the address (`data-exclude-search`). Three events remain: `whatsapp-listing`, `whatsapp-card` and `registration-submitted`.
 
+Amended on 2026-10-18 (EMR-45), by decision of the product owner:
+
+- The registration submitted is not an event. Umami sends a declared event when its element is clicked, so the event could only come from the form's submit button, which also counts a submission that comes back with errors and would inflate the conversion, or from JavaScript of the site written to measure; the registration specification forbids both. The registration funnel is the page views of `/{estado}/{municipio}/registro` and of `/{estado}/{municipio}/registro/gracias`, where a received registration lands; neither address carries anything the owner wrote, and the script leaves the query out (`data-exclude-search`). The thank-you views are a proxy for conversion: the exact number of registrations per locality and category lives in the database. Two events remain, `whatsapp-listing` and `whatsapp-card`, and the tag `search-no-results`.
+
 ## Consequences
 
 Ad blockers undercount; if an exact contact count is ever needed, a redirect route in the Worker can count it server-side. Moving to the Pro plan (20 USD per month) adds websites for `stage` and longer retention.

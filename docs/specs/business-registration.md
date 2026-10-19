@@ -729,6 +729,8 @@ Edit submission MUST be protected without a captcha and without friction (PRD §
 
 ### Requirement: The registration funnel is measured with the views of its two screens
 
+Amended on 2026-10-18 (EMR-45) by decision of the product owner: this requirement wins over the event "registration submitted" that `base-layout` and ADR 0014 declared, which is removed (`base-layout`, "Two product events and the no-results tag are recorded, only in production (v2)"; ADR 0014, amended). In v2 the two screens are those of each locality, `/{estado}/{municipio}/registro` and `/{estado}/{municipio}/registro/gracias` ("The registration page of a locality lives under it, and lands on its thank-you page (v2)"), so the conversion is read per locality, and the exact number of registrations per locality and category is counted in the database.
+
 The events "formulario iniciado" and "formulario enviado" of PRD §9 MUST be measured with the page views of `/registro` and `/registro/gracias`, without adding our own JavaScript, without instrumenting the "Enviar" button and without any extra event. The button is deliberately not instrumented: a click on "Enviar" with validation errors is not a registration, and counting it would inflate the PRD §10 conversion ("% de registros completados sin ayuda", read as views of `/registro/gracias` divided by views of `/registro`). The thank-you screen is a proxy for conversion, not the accounting count of registrations: the exact number of registered businesses lives in the database.
 
 #### Scenario: successful registration

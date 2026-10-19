@@ -19,7 +19,11 @@
 // photo field explains the PRD §6.1 policy and opens the phone gallery" and,
 // for what the photo field shows, "The server only accepts the photo if it
 // is a real image of at most 5 MB" and "Image work has a ceiling, and what
-// does not fit is turned away with a message, not queued". What the
+// does not fit is turned away with a message, not queued"; and, in
+// production with a Website ID, "The registration funnel is measured with
+// the views of its two screens" and "No form data travels to the
+// measurement", with docs/specs/base-layout.md, "Two product events and the
+// no-results tag are recorded, only in production (v2)". What the
 // page decides, with the database, the action and the quota, runs end to end
 // in test/e2e/registration.spec.ts and test/e2e/registration-photo.spec.ts;
 // the submission itself is tested in test/worker/registration.test.ts and
@@ -99,6 +103,8 @@ interface State {
   locality?: ServedLocality;
   /** Turnstile, with its site key, while the switch is on; off by default, as E1 built the form. */
   turnstile?: { siteKey: string | null } | null;
+  /** The address of the page: the form's, or the answer to a submission with the action's name. */
+  address?: string;
 }
 
 /** The registration page in one of its states. */
@@ -108,11 +114,21 @@ function render({
   general = null,
   locality = TIZAYUCA,
   turnstile = null,
+  address = PATH,
 }: State = {}): Promise<string> {
   return container.renderToString(RegistrationPage, {
     partial: false,
     props: { catalogue: CATALOGUE, action: ACTION, draft, errors, general, turnstile },
-    request: new Request(`https://enmirumbo.urekz.workers.dev${PATH}`),
+    request: new Request(`https://enmirumbo.urekz.workers.dev${address}`),
+    locals: { locality } as App.Locals,
+  });
+}
+
+/** The thank-you page of `locality`, at its address, which has no query. */
+function renderThanks(locality: ServedLocality = TIZAYUCA): Promise<string> {
+  return container.renderToString(ThanksPage, {
+    partial: false,
+    request: new Request(`https://enmirumbo.urekz.workers.dev${PATH}/gracias`),
     locals: { locality } as App.Locals,
   });
 }
@@ -854,15 +870,6 @@ describe("The registration's honeypot and per-IP quota are those of the public f
 });
 
 describe("A successful submission queues the business and shows the thank-you screen", () => {
-  /** The thank-you page of `locality`. */
-  function renderThanks(locality: ServedLocality = TIZAYUCA) {
-    return container.renderToString(ThanksPage, {
-      partial: false,
-      request: new Request(`https://enmirumbo.urekz.workers.dev${PATH}/gracias`),
-      locals: { locality } as App.Locals,
-    });
-  }
-
   // Scenario: successful registration
   it("the literal of PRD §6.1 as its only h1, and Volver al inicio to the home of the locality", async () => {
     const html = await renderThanks();
@@ -891,5 +898,83 @@ describe("A successful submission queues the business and shows the thank-you sc
       "Gracias por registrar tu negocio — enmirumbo",
     );
     expect(mainOf(html)).toContain('href="/estado-de-prueba-91/pueblo-uno"');
+  });
+});
+
+// business-registration, "The registration funnel is measured with the views
+// of its two screens" and "No form data travels to the measurement"; and
+// base-layout, "Two product events and the no-results tag are recorded, only
+// in production (v2)", scenario: a registration is measured by its page
+// views. In production with a Website ID both screens load Umami's script,
+// which leaves the query of the address out (`data-exclude-search`), and
+// nothing on them declares an event or adds a script to measure. The
+// addresses the browser shows, the answer with errors and the 303 to the
+// thank-you page, are checked end to end in test/e2e/registration.spec.ts.
+describe("The registration funnel is measured with the views of its two screens", () => {
+  const WEBSITE_ID = "94db1cb1-74f4-4a40-ad6c-962362670409";
+  const UMAMI = `<script defer src="https://cloud.umami.is/script.js" data-website-id="${WEBSITE_ID}" data-exclude-search="true">`;
+  const SITE = "https://enmirumbo.urekz.workers.dev";
+
+  function measured(): void {
+    Object.assign(env, { ENVIRONMENT: "prod", SITE_URL: SITE, UMAMI_WEBSITE_ID: WEBSITE_ID });
+  }
+
+  /** Every script tag, as its opening tag. */
+  const scripts = (html: string): string[] => html.match(/<script\b[^>]*>/g) ?? [];
+
+  /** The head, as a person would read its values. */
+  const headOf = (html: string): string => decode(/<head>([\s\S]*?)<\/head>/.exec(html)?.[1] ?? "");
+
+  // Scenarios: successful registration (the view of the form); no
+  // instrumentation on the button
+  it("the form page loads Umami's script and its own module, and declares no event", async () => {
+    measured();
+    const html = await render();
+    const tags = scripts(html);
+
+    expect(tags.filter((tag) => tag.includes("umami"))).toEqual([UMAMI]);
+    const own = tags.filter((tag) => !tag.includes("umami"));
+    expect(own).toHaveLength(1);
+    expect(attribute(own[0] ?? "", "src")).toMatch(/RegistrationForm\.astro/);
+    // Neither the form, nor its button, nor anything else carries an event.
+    expect(html).not.toContain("data-umami");
+  });
+
+  // Scenarios: a submission with errors does not count as a conversion; the
+  // registration URLs carry no data
+  it("the form that comes back with errors is the same page to the measurement, and nothing written reaches it", async () => {
+    measured();
+    const html = await render({
+      address: `${PATH}${ACTION}`,
+      draft: FULL_DRAFT,
+      errors: { whatsapp: "invalid", landline: "invalid", facebookUrl: "invalid" },
+    });
+
+    expect(alerts(html)).toHaveLength(3);
+    // The same script, no tag: the view is of the form's address, without its query.
+    expect(scripts(html).filter((tag) => tag.includes("umami"))).toEqual([UMAMI]);
+    expect(html).not.toContain("data-umami");
+    // What the owner wrote travels in no channel of the measurement: no
+    // attribute of the script, no title, no address the page declares.
+    const head = headOf(html);
+    expect(/<title>([^<]*)<\/title>/.exec(head)?.[1]).toBe(
+      "Registra tu negocio gratis en Tizayuca — enmirumbo",
+    );
+    expect(head).toContain(`<link rel="canonical" href="${SITE}${PATH}">`);
+    expect(head).not.toMatch(/Güicho|771 999 45|Rinconada|drenajes|primaria|semana|minegocio/);
+    const [form = ""] = formOf(html).match(/<form\b[^>]*>/) ?? [];
+    expect(attribute(form, "action")).toBe(ACTION);
+  });
+
+  // Scenario: successful registration (the view of the thank-you page)
+  it("the thank-you page, which needs no query, loads Umami's script alone and declares no event", async () => {
+    measured();
+    const html = await renderThanks();
+
+    expect(scripts(html)).toEqual([UMAMI]);
+    expect(html).not.toContain("data-umami");
+    expect(readable(/<h1\b[^>]*>([\s\S]*?)<\/h1>/.exec(html)?.[1] ?? "")).toBe(
+      "¡Gracias! Tu negocio está en revisión. Te contactaremos por WhatsApp para confirmar tus datos antes de publicarlo.",
+    );
   });
 });
