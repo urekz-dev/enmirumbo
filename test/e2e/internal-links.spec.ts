@@ -15,6 +15,8 @@ import { routePath, staticRoutes } from "../site-routes.ts";
 
 /** Enough for every page the seeded directory links to. */
 const MAX_PAGES = 200;
+// Cloudflare Access owns this same-host endpoint; it is not an Astro page.
+const ACCESS_LOGOUT_PATH = "/cdn-cgi/access/logout";
 
 /** The `/{estado}/{municipio}` of a page of a locality, or null for the site's own pages. */
 function localityPrefix(path: string, routes: Set<string>): string | null {
@@ -66,7 +68,10 @@ test("every internal link and form of the public pages leads to a page that exis
     const internal: string[] = [];
     for (const link of links) {
       const url = new URL(link.href);
-      if (url.protocol === "tel:") {
+      // Do not crawl the Cloudflare Access logout endpoint as an Astro route.
+      if (url.pathname === ACCESS_LOGOUT_PATH) {
+        continue;
+      } else if (url.protocol === "tel:") {
         if (link.target) problems.push(`${here}: the call link ${link.href} opens a new tab`);
       } else if (url.origin !== origin) {
         const rel = link.rel.split(/\s+/);

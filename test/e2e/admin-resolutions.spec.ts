@@ -57,9 +57,10 @@ const ids = {
   applied: newBusinessId(),
   discarded: newBusinessId(),
   noJs: newBusinessId(),
+  noJsDiscard: newBusinessId(),
 };
-const edits = { applied: 0, discarded: 0, noJs: 0 };
-const reportIds = { first: 0, last: 0 };
+const edits = { applied: 0, discarded: 0, noJs: 0, noJsDiscard: 0 };
+const reportIds = { first: 0, last: 0, noJs: 0 };
 let huicalco = 0;
 
 async function removeData(): Promise<void> {
@@ -113,6 +114,12 @@ test.beforeAll(async () => {
         photoKey: PHOTOS.discarded,
       },
       { ...base, id: ids.noJs, name: NAMES.noJs, whatsapp: `${PHONES}004` },
+      {
+        ...base,
+        id: ids.noJsDiscard,
+        name: "Con Cambios por Descartar Sin JavaScript de Mentiras",
+        whatsapp: `${PHONES}005`,
+      },
     ]);
     const editOf = (businessId: string, whatsapp: string) => ({
       businessId,
@@ -153,9 +160,19 @@ test.beforeAll(async () => {
         openingHours: "Sin JavaScript (de mentiras)",
       })
       .returning({ id: pendingEdits.id });
+    const [noJsDiscard] = await db
+      .insert(pendingEdits)
+      .values({
+        ...editOf(ids.noJsDiscard, `${PHONES}005`),
+        name: "Nombre que se va a descartar sin JavaScript",
+        zoneId: zone.id,
+        openingHours: "Horario propuesto para descartar",
+      })
+      .returning({ id: pendingEdits.id });
     edits.applied = applied?.id ?? 0;
     edits.discarded = discarded?.id ?? 0;
     edits.noJs = noJs?.id ?? 0;
+    edits.noJsDiscard = noJsDiscard?.id ?? 0;
     const [first, last] = await db
       .insert(reports)
       .values([
@@ -171,6 +188,17 @@ test.beforeAll(async () => {
       .returning({ id: reports.id });
     reportIds.first = first?.id ?? 0;
     reportIds.last = last?.id ?? 0;
+    const [noJsReport] = await db
+      .insert(reports)
+      .values({
+        businessId: ids.noJs,
+        localityCode: TIZAYUCA,
+        reason: "incorrect_data",
+        comment: "Comentario para marcar sin JavaScript",
+        createdAt: ago(1),
+      })
+      .returning({ id: reports.id });
+    reportIds.noJs = noJsReport?.id ?? 0;
   });
   await withLocalMediaBucket(async (bucket) => {
     const objects = seedPhotoObjects([
@@ -529,6 +557,35 @@ test.describe("resolving without JavaScript", () => {
         .from(pendingEdits)
         .where(inArray(pendingEdits.id, [edits.noJs]));
       expect(rows).toEqual([{ status: "applied" }]);
+    });
+
+    await page.goto(`/admin/registros/${ids.noJs}`);
+    await page.getByRole("button", { name: "Marcar como atendido" }).click();
+    await expect(page.getByRole("status")).toHaveText("Reporte atendido.");
+    await expect(page.getByTestId("pending-reports")).toHaveCount(0);
+    await withDatabase(async (db) => {
+      const [report] = await db
+        .select({ attendedAt: reports.attendedAt })
+        .from(reports)
+        .where(eq(reports.id, reportIds.noJs));
+      expect(report?.attendedAt).toBeInstanceOf(Date);
+    });
+
+    await page.goto(`/admin/ediciones/${edits.noJsDiscard}`);
+    await page
+      .getByLabel("¿Por qué no aplicas los cambios?")
+      .fill("No aplicamos estos cambios en la prueba sin JavaScript.");
+    await page.getByRole("button", { name: "Descartar los cambios" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Cambios descartados.");
+    await withDatabase(async (db) => {
+      const [edit] = await db
+        .select({ status: pendingEdits.status, discardReason: pendingEdits.discardReason })
+        .from(pendingEdits)
+        .where(eq(pendingEdits.id, edits.noJsDiscard));
+      expect(edit).toMatchObject({
+        status: "discarded",
+        discardReason: "No aplicamos estos cambios en la prueba sin JavaScript.",
+      });
     });
   });
 });

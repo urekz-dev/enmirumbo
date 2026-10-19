@@ -1042,7 +1042,7 @@ Every WhatsApp message the panel builds for the admin to send to a business MUST
 
 ### Requirement: The panel is operated from the phone and without unnecessary client JavaScript
 
-The panel MUST be mobile-first: queue —**including the section of reported businesses**—, listing of all businesses with its filters and its pagination, detail —**including the list of unattended reports**—, **comparative detail of the pending edit**, forms to approve, reject, unpublish, apply the changes, discard the changes, generate a new link and mark as attended, and the deletion confirmation screen MUST look complete and be usable in a 390px viewport, without horizontal scroll, with touch targets of at least 44px and AA contrast (PRD §8). The comparison between what is published and what is proposed MUST be readable on that screen, without forcing the admin to scroll sideways. Amended on 2026-10-19 (EMR-51): the direct rectification form reuses the registration's bundled script only for its postal-code select, offer example and submission state; it remains fully usable without JavaScript. The panel screens MUST be Server Components and their forms MUST work without client JavaScript, just like the public registration. In the listing, filtering and changing page are links, not controls with JavaScript: the whole view works with client JavaScript disabled.
+The panel MUST be mobile-first: queue —**including the section of reported businesses**—, listing of all businesses with its filters and its pagination, detail —**including the list of unattended reports**—, **comparative detail of the pending edit**, forms to approve, reject, unpublish, apply the changes, discard the changes, generate a new link and mark as attended, and the deletion confirmation screen MUST look complete and be usable in a 390px viewport, without horizontal scroll, with touch targets of at least 44px and AA contrast (PRD §8). The comparison between what is published and what is proposed MUST be readable on that screen, without forcing the admin to scroll sideways. Amended on 2026-10-19 (EMR-51): the direct rectification form reuses the registration's bundled script only for its postal-code select, offer example and submission state; it remains fully usable without JavaScript. The panel screens MUST be Server Components and their forms MUST work without client JavaScript, just like the public registration. In the listing, filtering and changing page are links, not controls with JavaScript: the whole view works with client JavaScript disabled. Amended on 2026-10-19 (EMR-53) by decision of the product owner: for a checkbox or radio, its associated label row is the tappable target and MUST be at least 44px tall and as wide as its text; the native control itself stays 20–24px.
 
 #### Scenario: review from the phone
 
@@ -1083,7 +1083,7 @@ The panel MUST be mobile-first: queue —**including the section of reported bus
 
 Added in v2 — source: ADR 0010, PRD §2 (principle 1).
 
-One self-hosted Cloudflare Access application MUST protect `/admin` in every environment, with one destination per hostname. Login MUST be a one-time code sent by email, the policy MUST list the five team mailboxes explicitly and sessions MUST last 24 hours. The application MUST have no login form, password, session cookie or second factor of its own: the second factor is the mailbox. The panel MUST NOT count login attempts, because there is no login of its own. The screen "Panel de revisión" with a password field and the buttons "Entrar" and "Salir" no longer exist.
+One self-hosted Cloudflare Access application MUST protect `/admin` in every environment, with one destination per hostname. Login MUST be a one-time code sent by email, the policy MUST list the five team mailboxes explicitly and sessions MUST last 24 hours. The application MUST have no login form, password, session cookie or second factor of its own: the second factor is the mailbox. The panel MUST NOT count login attempts, because there is no login of its own. The former password-based screen "Panel de revisión" with its "Entrar" and "Salir" controls no longer exists. Amended on 2026-10-19 (EMR-53) by decision of the product owner: every screen with panel navigation, including the panel home, MUST show a link labelled "Salir" to the same-host Cloudflare Access logout path `/cdn-cgi/access/logout`. It MUST remain visible in `local`, even though Access is not in front there, and its tappable row MUST be at least 44px tall.
 
 #### Scenario: logging in
 
@@ -1099,6 +1099,11 @@ One self-hosted Cloudflare Access application MUST protect `/admin` in every env
 
 - **WHEN** the panel code and its responses are reviewed
 - **THEN** there is no password field, no session cookie of the application, no sign-in form and no counter of failed attempts
+
+#### Scenario: end the Access session from the panel
+
+- **WHEN** an admin selects "Salir" from panel navigation, including on the panel home
+- **THEN** the browser opens `/cdn-cgi/access/logout` on the same host so Cloudflare Access can end the session; the link is also rendered in `local`
 
 ### Requirement: Every admin request carries an Access token that the Worker verifies (v2)
 
