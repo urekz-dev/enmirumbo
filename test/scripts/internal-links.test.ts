@@ -14,6 +14,8 @@ import { routePath, siteRoutes, staticRoutes } from "../site-routes.ts";
 
 const SRC = fileURLToPath(new URL("../../src/", import.meta.url));
 const SOURCE = /\.(astro|ts|tsx|js|md|mdx|html)$/;
+// Cloudflare Access owns this same-host endpoint; it is not an Astro route.
+const ACCESS_LOGOUT_PATH = "/cdn-cgi/access/logout";
 
 /** The site paths written as `href="/…"` or `action="/…"`, in quotes or in braces. */
 function literalLinks(source: string): string[] {
@@ -27,7 +29,8 @@ function literalLinks(source: string): string[] {
 function brokenLinks(files: Record<string, string>, routes: Set<string>): string[] {
   return Object.entries(files).flatMap(([file, source]) =>
     literalLinks(source)
-      .filter((link) => !routes.has(routePath(link)))
+      // Exempt Access's logout endpoint from the Astro route check.
+      .filter((link) => link !== ACCESS_LOGOUT_PATH && !routes.has(routePath(link)))
       .map((link) => `${file}: ${link}`),
   );
 }
@@ -92,6 +95,14 @@ describe("Internal links to existing routes and protected external links", () =>
     expect(brokenLinks({ "src/components/Footer.astro": footer }, routes)).toEqual([
       "src/components/Footer.astro: /terminos-y-condiciones",
     ]);
+  });
+
+  it("Cloudflare Access owns its logout endpoint rather than an Astro route", () => {
+    const navigation = '<a href="/cdn-cgi/access/logout">Salir</a>';
+    expect(literalLinks(navigation)).toEqual([ACCESS_LOGOUT_PATH]);
+    expect(
+      brokenLinks({ "src/components/admin/PanelNavigation.astro": navigation }, staticRoutes()),
+    ).toEqual([]);
   });
 
   it("search form destination: a form that submits to a route that does not exist fails", () => {

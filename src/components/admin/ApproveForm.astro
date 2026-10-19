@@ -12,7 +12,7 @@
 // and its origin, and comes back after an error with exactly what the admin
 // chose, none included, and each error next to its field. Every check is the
 // server's, so the form is `novalidate`. No client JavaScript: each trade and
-// origin is a native control inside a label at least 44px tall.
+// origin is a normal-size native control inside a label at least 44px tall.
 import type {
   ApprovalCatalogue,
   ApprovalDraft,
@@ -51,7 +51,7 @@ interface Props {
 const { action, catalogue, draft, errors, needsZone, zoneOther } = Astro.props;
 const label = "text-sm font-semibold text-ink";
 const choice = "flex min-h-11 cursor-pointer items-center gap-3 text-sm text-ink";
-const box = "h-5 w-5 shrink-0 border-control";
+const box = "size-5 shrink-0 border-control";
 const select =
   "w-full rounded-lg bg-background px-4 py-3 text-base text-ink focus:ring-2 focus:ring-action-strong focus:outline-none";
 ---

@@ -32,17 +32,17 @@ vp run dev                           # http://localhost:4321
 
 The dev server, the build and the preview run Astro in workerd, the Workers runtime. Astro's commands are tasks: `vp dev`, `vp build` and `vp preview` run plain Vite and do not work in this project.
 
-| Command            | What it does                                                                                                |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `vp run dev`       | Starts the dev server at http://localhost:4321.                                                             |
-| `vp run build`     | Builds the site and the Worker into `dist/`.                                                                |
-| `vp run preview`   | Serves the build at http://localhost:4321.                                                                  |
-| `vp check`         | Formats, lints and type checks.                                                                             |
-| `vp run check:all` | Runs `vp check`, Prettier on `.astro` files, `astro check` and a Worker types check.                        |
-| `vp test`          | Runs the tests inside workerd.                                                                              |
-| `vp run e2e`       | Builds, migrates and seeds the database, then runs the Playwright tests (port `E2E_PORT`, 4321 by default). |
-| `vp run fmt:astro` | Formats `.astro` files with Prettier.                                                                       |
-| `vp run types`     | Regenerates `worker-configuration.d.ts` after a change to `wrangler.jsonc`.                                 |
+| Command            | What it does                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `vp run dev`       | Starts the dev server at http://localhost:4321.                                                                                                                                |
+| `vp run build`     | Builds the site and the Worker into `dist/`.                                                                                                                                   |
+| `vp run preview`   | Serves the build at http://localhost:4321.                                                                                                                                     |
+| `vp check`         | Formats, lints and type checks.                                                                                                                                                |
+| `vp run check:all` | Runs `vp check`, Prettier on `.astro` files, `astro check` and a Worker types check.                                                                                           |
+| `vp test`          | Runs the tests inside workerd.                                                                                                                                                 |
+| `vp run e2e`       | Builds, migrates and seeds the database, then runs the Playwright tests (port `E2E_PORT`, 4321 by default), including a full 390px admin-panel audit with JavaScript disabled. |
+| `vp run fmt:astro` | Formats `.astro` files with Prettier.                                                                                                                                          |
+| `vp run types`     | Regenerates `worker-configuration.d.ts` after a change to `wrangler.jsonc`.                                                                                                    |
 
 ### Admin panel
 
@@ -65,6 +65,8 @@ The end-to-end tests do the same in their own database (`test/e2e/local-admin.ts
 | `ENVIRONMENT`        | `local`, `dev`, `stage` or `prod`. Any other value, or none, closes `/admin`. |
 | `ACCESS_TEAM_DOMAIN` | The Access team domain, `urekz.cloudflareaccess.com`.                         |
 | `ACCESS_AUD`         | The AUD tag of the `enmirumbo admin` Access application. Empty locally.       |
+
+The shared panel navigation, including the panel home, has a 44px-tall "Salir" link to Cloudflare Access's same-host logout path, `/cdn-cgi/access/logout`. It remains visible locally, where Cloudflare Access is not in front. For phone use, checkbox and radio controls stay 20–24px while their associated label rows provide the 44px tap target.
 
 The review screens ([admin-review](docs/specs/admin-review.md)) read through `HYPERDRIVE_FRESH` and show each person only the localities where a role lets them see each part (`src/core/review/scope.ts`): the "Alta nueva" rows need `businesses.review`, the "Edición" rows and the detail of an edit `edits.review`, the reported cards and their reports `reports.manage`, the audit log and the section of entries of a card's detail `audit_log.view`, and the detail of a card, with its row in the list, any permission that acts on a card. A screen with nothing to show answers 403; a card of another locality answers 404. Every date is written in the time zone of the card's locality.
 

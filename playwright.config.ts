@@ -53,6 +53,7 @@ export default defineConfig({
         "admin-removals.spec.ts",
         "admin-users.spec.ts",
         "admin-rectification.spec.ts",
+        "admin-phone-audit.spec.ts",
         "turnstile-real.spec.ts",
       ],
     },
@@ -157,18 +158,29 @@ export default defineConfig({
       testMatch: "admin-users.spec.ts",
       dependencies: ["phone, admin rectification"],
     },
+    // The full phone audit seeds realistic review, report, edit, list, user,
+    // role and audit-log content, then opens every panel screen with client
+    // JavaScript disabled. It runs after the suites that narrow the local
+    // identity and before the second locality.
+    {
+      name: "phone, admin audit",
+      use: { ...PHONE, javaScriptEnabled: false },
+      testMatch: "admin-phone-audit.spec.ts",
+      dependencies: ["phone, admin users"],
+    },
     // The same site with a second, fictitious active locality
     // (test/e2e/two-localities/): the list of localities at the root, the
     // locality cookie and the link to change municipality, and the crawls
     // again, now through the list. It runs after "phone", "phone, many cards",
     // "phone, search pages", "phone, registration", "phone, edit", "phone,
     // admin", "phone, admin zones", "phone, admin resolutions" and "phone,
-    // admin removals", "phone, admin rectification" and "phone, admin users",
+    // admin removals", "phone, admin rectification", "phone, admin users"
+    // and "phone, admin audit",
     // whose tests expect Tizayuca alone. Its teardown removes the second locality.
     {
       name: "second locality",
       testMatch: "two-localities/second-locality.setup.ts",
-      dependencies: ["phone, admin users"],
+      dependencies: ["phone, admin audit"],
       teardown: "no second locality",
     },
     {
