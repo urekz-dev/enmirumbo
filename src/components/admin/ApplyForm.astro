@@ -1,0 +1,94 @@
+---
+// The apply form of a pending edit (docs/specs/admin-review.md, "Applying the
+// pending edit updates the published card and only that" and "Attending a
+// report and resolving a pending edit are forms of their details, and their
+// action checks everything again (v2)"): "Aplicar los cambios". Only when
+// the edit proposes its zone as "Otra" it shows that text exactly as the
+// owner wrote it and "¿En qué colonia está?" with every zone of the card's
+// locality by its display name, a hidden one marked "(oculta)", as the
+// approval does: a published card always has a catalogue zone. It posts to
+// the detail's own address with the action `admin.applyEdit`, and comes back
+// after an error with the zone the admin chose and the error next to its
+// field, or, when another card has the proposed number, with "Ese número ya
+// está en otra ficha: no se pudieron aplicar los cambios." above its button.
+// Every check is the server's, so the form is `novalidate`. No client
+// JavaScript.
+import type { ApplyDraft, ApplyErrors, ApplyForm } from "../../core/review/apply.ts";
+import { APPLY_FIELDS } from "../../core/review/apply.ts";
+import {
+  APPLY_BUTTON,
+  APPLY_HEADING,
+  hiddenZoneOption,
+  otherZoneWrittenText,
+  WHATSAPP_TAKEN_ON_APPLY,
+  ZONE_LABEL,
+  ZONE_PLACEHOLDER,
+  ZONE_REQUIRED,
+} from "../../core/review/texts.ts";
+import { SECONDARY_BUTTON } from "../../lib/buttons.ts";
+import FieldError from "../FieldError.astro";
+
+interface Props {
+  /** The address the form posts to: the detail with the action `admin.applyEdit`. */
+  action: string;
+  form: ApplyForm;
+  /** What the form shows chosen. */
+  draft: ApplyDraft;
+  errors: ApplyErrors;
+  /** Another card has the proposed number: nothing was applied. */
+  taken: boolean;
+}
+
+const { action, form, draft, errors, taken } = Astro.props;
+const select =
+  "w-full rounded-lg bg-background px-4 py-3 text-base text-ink focus:ring-2 focus:ring-action-strong focus:outline-none";
+---
+
+<form
+  method="post"
+  action={action}
+  novalidate
+  class="flex flex-col gap-5 rounded-xl border border-line p-4"
+  data-testid="apply-form"
+>
+  <h2 class="font-semibold text-ink">{APPLY_HEADING}</h2>
+
+  {form.needsZone && (
+    <div class="flex flex-col gap-1.5">
+      {form.zoneOther !== null && (
+        <p class="text-sm break-words text-ink-muted">{otherZoneWrittenText(form.zoneOther)}</p>
+      )}
+      <label for="apply-zone" class="text-sm font-semibold text-ink">
+        {ZONE_LABEL}
+      </label>
+      <select
+        id="apply-zone"
+        name={APPLY_FIELDS.zone}
+        aria-invalid={errors.zone ? "true" : undefined}
+        aria-describedby={errors.zone ? "apply-zone-error" : undefined}
+        class:list={[select, errors.zone ? "border-2 border-ink" : "border border-control"]}
+      >
+        <option value="" selected={draft.zone === ""}>
+          {ZONE_PLACEHOLDER}
+        </option>
+        {form.zones.map((zone) => (
+          <option value={zone.slug} selected={draft.zone === zone.slug}>
+            {zone.hidden ? hiddenZoneOption(zone.displayName) : zone.displayName}
+          </option>
+        ))}
+      </select>
+      <FieldError id="apply-zone-error" message={errors.zone ? ZONE_REQUIRED : null} />
+    </div>
+  )}
+
+  {taken && (
+    <p role="alert" class="font-semibold text-ink">
+      <span aria-hidden="true">⚠ </span>
+      {WHATSAPP_TAKEN_ON_APPLY}
+    </p>
+  )}
+
+  <button type="submit" class={`${SECONDARY_BUTTON} w-full px-4 text-base`}>
+    {APPLY_BUTTON}
+  </button>
+</form>

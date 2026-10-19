@@ -1,0 +1,27 @@
+---
+// The confirmation of a discarded edit (docs/specs/admin-review.md,
+// "Discarding the pending edit requires a reason, does not touch the card
+// and offers to notify by WhatsApp"): "Cambios descartados." and "Avisarle
+// por WhatsApp" to the card's published number with the notice, whose
+// reason is the one stored, whole. A discard changes nothing public, so it
+// does not say that the site takes a minute to show it. No client
+// JavaScript.
+import { discardedMessage } from "../../core/review/notices.ts";
+import { EDIT_DISCARDED } from "../../core/review/texts.ts";
+import DecisionScreen from "./DecisionScreen.astro";
+import NoticeButton from "./NoticeButton.astro";
+
+interface Props {
+  name: string;
+  whatsapp: string;
+  reason: string;
+  /** "Volver a la cola", when the user may open the queue. */
+  queueHref: string | null;
+}
+
+const { name, whatsapp, reason, queueHref } = Astro.props;
+---
+
+<DecisionScreen heading={EDIT_DISCARDED} queueHref={queueHref}>
+  <NoticeButton whatsapp={whatsapp} message={discardedMessage(name, reason)} />
+</DecisionScreen>

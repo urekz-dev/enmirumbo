@@ -1,0 +1,36 @@
+---
+// The confirmation of an applied edit (docs/specs/admin-review.md, "Applying
+// the pending edit updates the published card and only that" and "The panel
+// says that a change takes up to a minute to reach the site (v2)"): "Listo,
+// la ficha ya se actualizó.", that the site takes up to a minute to show it,
+// and "Avisarle por WhatsApp" to the card's number, which the edit may have
+// changed, with the notice, whose message carries the card's public address,
+// absolute. Without a public origin to build it with, the screen says so
+// instead of offering a broken notice. No client JavaScript.
+import { updatedMessage } from "../../core/review/notices.ts";
+import { EDIT_APPLIED, NO_SITE_URL, PUBLIC_DELAY } from "../../core/review/texts.ts";
+import DecisionScreen from "./DecisionScreen.astro";
+import NoticeButton from "./NoticeButton.astro";
+
+interface Props {
+  name: string;
+  whatsapp: string;
+  /** The card's public address; null when the site has no public origin. */
+  cardUrl: string | null;
+  /** "Volver a la cola", when the user may open the queue. */
+  queueHref: string | null;
+}
+
+const { name, whatsapp, cardUrl, queueHref } = Astro.props;
+---
+
+<DecisionScreen heading={EDIT_APPLIED} queueHref={queueHref}>
+  <p class="text-ink-muted">{PUBLIC_DELAY}</p>
+  {cardUrl !== null ? (
+    <NoticeButton whatsapp={whatsapp} message={updatedMessage(name, cardUrl)} />
+  ) : (
+    <p role="alert" class="max-w-sm text-ink">
+      {NO_SITE_URL}
+    </p>
+  )}
+</DecisionScreen>

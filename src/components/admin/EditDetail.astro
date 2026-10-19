@@ -1,5 +1,5 @@
 ---
-// The detail of a pending edit, read-only (docs/specs/admin-review.md, "The
+// The detail of a pending edit (docs/specs/admin-review.md, "The
 // pending edit detail compares what is published with what is proposed", "A
 // pending edit is resolved only once and only if it is still the latest" and
 // "The detail of a pending edit shows the photo it proposes (v2)").
@@ -11,8 +11,9 @@
 // the edit proposes (the same one, "Sin foto", or the new photo). A new
 // WhatsApp is warned about, and "Escribirle por WhatsApp" opens the
 // conversation with the proposed number. An edit no longer pending says
-// what happened to it. The actions F4 adds (apply and discard) go after all
-// of it. No client JavaScript.
+// what happened to it. The actions the page offers (its default slot: apply
+// and discard, for a pending edit) go after all of it, so the admin reads
+// before acting. No client JavaScript.
 import type { ComparedField, EditDetail } from "../../core/review/edit.ts";
 import { changesWhatsapp } from "../../core/review/edit.ts";
 import { isPhotoKey } from "../../core/photos/photo.ts";
@@ -158,4 +159,6 @@ const column = "flex min-w-0 flex-col gap-0.5";
       />
     </div>
   )}
+
+  <slot />
 </article>

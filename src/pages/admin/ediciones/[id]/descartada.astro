@@ -1,0 +1,47 @@
+---
+// The confirmation of a discarded edit, at /admin/ediciones/<id>/descartada
+// (docs/specs/admin-review.md, "Discarding the pending edit requires a
+// reason, does not touch the card and offers to notify by WhatsApp", "A
+// pending edit is resolved only once and only if it is still the latest" and
+// "Attending a report and resolving a pending edit are forms of their
+// details, and their action checks everything again (v2)"): where a discard
+// answers with a 303, so reloading it never discards again. "Cambios
+// descartados." and "Avisarle por WhatsApp" with the reason stored, never one
+// an address carries. It exists only for an edit that was discarded with a
+// reason and that the user may resolve: any other goes back to the detail of
+// the edit, which answers for itself (a 404 for an edit the user may not
+// see), with nothing of the card in this answer. It reads through
+// HYPERDRIVE_FRESH, behind the panel's Access check, headers and layout
+// rules, and answers any method but GET or HEAD with a 405.
+import { env, waitUntil } from "cloudflare:workers";
+import DiscardedConfirmation from "../../../../components/admin/DiscardedConfirmation.astro";
+import { withDb } from "../../../../core/db/client.ts";
+import { discardedNotice } from "../../../../core/review/discard.ts";
+import { editPath, queuePath } from "../../../../core/review/paths.ts";
+import { EDIT_DISCARDED } from "../../../../core/review/texts.ts";
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../../../lib/access/admin-gate.ts";
+import { seeOther } from "../../../../lib/locality.ts";
+
+const admin = Astro.locals.admin;
+// Second line of defense: never render the panel without an identity.
+if (admin === undefined) return forbiddenResponse();
+if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+}
+
+const editId = Astro.params.id ?? "";
+const notice = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, (db) =>
+  discardedNotice(db, { email: admin.email, editId }),
+);
+if (notice === null) return seeOther(editPath(editId));
+---
+
+<BaseLayout title={EDIT_DISCARDED}>
+  <DiscardedConfirmation
+    name={notice.name}
+    whatsapp={notice.whatsapp}
+    reason={notice.reason}
+    queueHref={queuePath()}
+  />
+</BaseLayout>

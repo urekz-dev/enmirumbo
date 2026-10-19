@@ -1,51 +1,119 @@
 ---
 // The detail of a pending edit, at /admin/ediciones/<id>, the number of the
 // edit (docs/specs/admin-review.md, "The pending edit detail compares what is
-// published with what is proposed", "A pending edit is resolved only once and
-// only if it is still the latest", "The detail of a pending edit shows the
-// photo it proposes (v2)" and "Each review screen checks its permission in
-// the locality of what it shows (v2)"). Read-only for now: F4 adds apply and
-// discard after what it shows.
+// published with what is proposed", "Applying the pending edit updates the
+// published card and only that", "Discarding the pending edit requires a
+// reason, does not touch the card and offers to notify by WhatsApp", "A
+// pending edit is resolved only once and only if it is still the latest",
+// "The detail of a pending edit shows the photo it proposes (v2)", "Each
+// review screen checks its permission in the locality of what it shows (v2)"
+// and "Attending a report and resolving a pending edit are forms of their
+// details, and their action checks everything again (v2)").
 //
 // Behind the same Access check, headers and layout rules as the rest of the
-// panel (see src/pages/admin/index.astro). A user who resolves edits nowhere,
-// or who is not a panel user, gets the panel's 403 before the edit is read;
-// an edit that does not exist, and an edit of a card of a locality where the
-// user may not resolve edits (`edits.review`), answer the same 404.
+// panel (see src/pages/admin/index.astro). The forms of a pending edit post
+// here with the actions `admin.applyEdit` and `admin.discardEdit`
+// (src/actions/index.ts), which Astro runs before this page
+// (src/lib/edit-review.ts). Then:
+//
+// 1. A resolution that saved answers a 303 to its confirmation,
+//    /admin/ediciones/<id>/aplicada or /descartada, which reads what was
+//    stored, so a reload never resolves again.
+// 2. An edit that does not exist, or that the user may not see, is the
+//    site's 404; a user who resolves edits nowhere gets the panel's 403.
+// 3. Anything else renders the detail, as a GET does: a user who resolves
+//    edits nowhere, or who is not a panel user, gets the panel's 403 before
+//    the edit is read; an edit that does not exist, and an edit of a card of
+//    a locality where the user may not resolve edits (`edits.review`),
+//    answer the same 404. An edit no longer pending says what happened to it
+//    (and is what a resolution that came too late answers, with a 409); a
+//    pending one offers "Aplicar los cambios" and "Descartar los cambios"
+//    after the comparison, again with what the admin chose or wrote and its
+//    errors after a failed resolution, with "No se aplicó nada: …" when its
+//    card is no longer published, with the WhatsApp another card has above
+//    the apply button, and with "No se pudo guardar" when saving failed. Any
+//    other POST is a 405.
+import { actions } from "astro:actions";
 import { env, waitUntil } from "cloudflare:workers";
+import ApplyForm from "../../../components/admin/ApplyForm.astro";
+import DiscardForm from "../../../components/admin/DiscardForm.astro";
 import EditDetail from "../../../components/admin/EditDetail.astro";
 import { can } from "../../../core/access/queries.ts";
 import { withDb } from "../../../core/db/client.ts";
+import { formText } from "../../../core/forms/text.ts";
+import { applyForm, readApply } from "../../../core/review/apply.ts";
+import { DISCARD_FIELD } from "../../../core/review/discard.ts";
 import { comparedFields, editDetail, parseEditId } from "../../../core/review/edit.ts";
 import { panelLocalities, zoneNamesByLocality } from "../../../core/review/localities.ts";
-import { queuePath } from "../../../core/review/paths.ts";
+import { appliedPath, discardedPath, queuePath } from "../../../core/review/paths.ts";
 import { panelScope, queueLocalities } from "../../../core/review/scope.ts";
-import { EDIT_HEADING } from "../../../core/review/texts.ts";
+import { EDIT_CARD_UNPUBLISHED, EDIT_HEADING, SAVE_FAILED } from "../../../core/review/texts.ts";
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { forbiddenResponse } from "../../../lib/access/admin-gate.ts";
-import { notFound } from "../../../lib/locality.ts";
+import { editFailure } from "../../../lib/edit-review.ts";
+import { notFound, seeOther } from "../../../lib/locality.ts";
 
 const admin = Astro.locals.admin;
 // Second line of defense: never render the panel without an identity.
 if (admin === undefined) return forbiddenResponse();
 
+const id = Astro.params.id ?? "";
+const applied = Astro.getActionResult(actions.admin.applyEdit);
+const discarded = Astro.getActionResult(actions.admin.discardEdit);
+if (applied !== undefined && !applied.error) return seeOther(appliedPath(id));
+if (discarded !== undefined && !discarded.error) return seeOther(discardedPath(id));
+if (applied === undefined && discarded === undefined) {
+  if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+    return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+  }
+}
+
+const sent = applied !== undefined ? "apply" : discarded !== undefined ? "discard" : null;
+const failure = applied?.error
+  ? editFailure(applied.error, "apply")
+  : discarded?.error
+    ? editFailure(discarded.error, "discard")
+    : null;
+if (failure?.kind === "not-found") return notFound();
+if (failure?.kind === "forbidden") return forbiddenResponse();
+
+/** What the admin sent with the resolution that failed: shown again as it was. */
+const keepsDraft =
+  failure?.kind === "apply" ||
+  failure?.kind === "discard" ||
+  failure?.kind === "unpublished" ||
+  failure?.kind === "taken" ||
+  (failure?.kind === "server" && failure.keepsDraft);
+const submission = keepsDraft ? await Astro.request.formData().catch(() => null) : null;
+
 const result = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
   const scope = await panelScope(db, admin.email);
   if (scope.edits.length === 0) return "forbidden" as const;
-  const id = parseEditId(Astro.params.id);
-  const detail = id === null ? null : await editDetail(db, id);
+  const editId = parseEditId(id);
+  const detail = editId === null ? null : await editDetail(db, editId);
   if (detail === null) return "not-found" as const;
   if (!(await can(db, admin.email, "edits.review", detail.localityCode))) {
     return "not-found" as const;
   }
   const seen = await panelLocalities(db, [detail.localityCode]);
   const names = (await zoneNamesByLocality(db, seen)).get(detail.localityCode);
-  return { scope, detail, fields: comparedFields(detail, names) };
+  const form =
+    detail.status === "pending"
+      ? await applyForm(db, {
+          localityCode: detail.localityCode,
+          // A proposed zone with no catalogue slug is the free text of "Otra".
+          needsZone: detail.proposed.zoneSlug === null,
+          zoneOther: detail.proposed.zoneOther,
+        })
+      : null;
+  return { scope, detail, fields: comparedFields(detail, names), form };
 });
 if (result === "forbidden") return forbiddenResponse();
 if (result === "not-found") return notFound();
 
-const { scope, detail, fields } = result;
+const { scope, detail, fields, form } = result;
+const applyDraft = sent === "apply" && submission !== null ? readApply(submission) : { zone: "" };
+const reason = sent === "discard" && submission !== null ? formText(submission, DISCARD_FIELD) : "";
 ---
 
 <BaseLayout title={EDIT_HEADING}>
@@ -53,5 +121,34 @@ const { scope, detail, fields } = result;
     detail={detail}
     fields={fields}
     queueHref={queueLocalities(scope).length > 0 ? queuePath() : null}
-  />
+  >
+    {form && failure?.kind === "unpublished" && (
+      <p role="alert" class="rounded-xl border-2 border-ink p-4 font-semibold text-ink">
+        <span aria-hidden="true">⚠ </span>
+        {EDIT_CARD_UNPUBLISHED}
+      </p>
+    )}
+    {form && failure?.kind === "server" && (
+      <p role="alert" class="font-semibold text-ink">
+        <span aria-hidden="true">⚠ </span>
+        {SAVE_FAILED}
+      </p>
+    )}
+    {form && (
+      <ApplyForm
+        action={actions.admin.applyEdit.queryString}
+        form={form}
+        draft={applyDraft}
+        errors={failure?.kind === "apply" ? failure.errors : {}}
+        taken={failure?.kind === "taken"}
+      />
+    )}
+    {form && (
+      <DiscardForm
+        action={actions.admin.discardEdit.queryString}
+        reason={reason}
+        error={failure?.kind === "discard" ? failure.error : null}
+      />
+    )}
+  </EditDetail>
 </BaseLayout>
