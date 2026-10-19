@@ -1,0 +1,33 @@
+---
+// "Escribirle por WhatsApp" (docs/specs/admin-review.md, "Verification button
+// that opens WhatsApp with a prefilled message"): the conversation with the
+// number to verify, the first-contact message already written; the admin
+// sends it. A number that is not ten national digits is shown as stored,
+// with no button and no broken link. It opens a new tab, so it carries
+// `rel="noopener noreferrer"`. No client JavaScript.
+import { verificationLink } from "../../core/review/verification.ts";
+import { unlinkedWhatsappText, VERIFY_BUTTON } from "../../core/review/texts.ts";
+import { PRIMARY_BUTTON } from "../../lib/buttons.ts";
+
+interface Props {
+  whatsapp: string;
+  businessName: string;
+  localityName: string;
+}
+
+const { whatsapp, businessName, localityName } = Astro.props;
+const href = verificationLink(whatsapp, businessName, localityName);
+---
+
+{href ? (
+  <a
+    href={href}
+    target="_blank"
+    rel="noopener noreferrer"
+    class={`${PRIMARY_BUTTON} w-full px-4 text-base sm:w-auto`}
+  >
+    {VERIFY_BUTTON}
+  </a>
+) : (
+  <p class="break-words text-ink-muted">{unlinkedWhatsappText(whatsapp)}</p>
+)}

@@ -6,7 +6,8 @@
 // and `vp run db:seed`, and only a database on this machine is accepted. Like
 // `vp run db:seed`, it writes the seeded photos to the local media bucket,
 // which the preview serves under /_media/ (scripts/seed-media.ts). It leaves
-// Turnstile's switch on.
+// Turnstile's switch on, and makes the local identity of the panel a super
+// admin (./local-admin.ts).
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
@@ -15,6 +16,7 @@ import { seed } from "../../src/core/db/seed/index.ts";
 import { seedPhotoObjects } from "../../src/core/db/seed/photos.ts";
 import { isLocalConnectionString, LOCAL_DATABASE_URL } from "../../src/core/db/url.ts";
 import { writeLocalSeedMedia } from "../../scripts/seed-media.ts";
+import { ensureLocalSuperAdmin } from "./local-admin.ts";
 
 export default async function setup(): Promise<void> {
   const url = process.env["DATABASE_URL"] ?? LOCAL_DATABASE_URL;
@@ -31,6 +33,7 @@ export default async function setup(): Promise<void> {
     await db.update(schema.siteSettings).set({ turnstileEnabled: true });
     const report = await seed(db);
     await writeLocalSeedMedia(seedPhotoObjects(report.photos));
+    await ensureLocalSuperAdmin(db);
   } finally {
     await client.end();
   }

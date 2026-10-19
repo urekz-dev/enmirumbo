@@ -14,8 +14,14 @@
 // loopback host, the same gate as the panel's local identity, so in a
 // deployed Worker it does not exist.
 //
-// Pages never build a photo address themselves: they get it from here, from
-// the stored key of a published card (src/core/photos/photo.ts).
+// Pages never build a photo address themselves: they get it from here. A
+// public page asks businessPhoto for the stored key of a published card, and
+// only of a published card (src/core/photos/photo.ts). The admin panel asks
+// panelPhoto for the key of any card or pending edit it reviews, in review,
+// rejected or unpublished included (docs/specs/admin-review.md, "The panel
+// shows the photos it reviews from the media hostname (v2)"): the key is
+// opaque and unguessable, and only the panel names it, behind Access, never
+// indexed, never cached and with a referrer policy that sends no path.
 import {
   PHOTO_CONTENT_TYPE,
   PHOTO_VARIANTS,
@@ -58,6 +64,20 @@ export function mediaBase(vars: MediaVars): string | null {
 
 /** One variant of a published card's photo, as an `<img>` renders it, or null. */
 export function businessPhoto(
+  vars: MediaVars,
+  photoKey: string | null | undefined,
+  variant: PhotoVariant,
+): PhotoSource | null {
+  return photoUrl(mediaBase(vars), photoKey, variant);
+}
+
+/**
+ * One variant of a photo the admin panel reviews, as an `<img>` renders it,
+ * or null: the photo of any card, whatever its status, or the new photo of a
+ * pending edit. Only the panel's pages call it; a public page calls
+ * businessPhoto, with a published card's key.
+ */
+export function panelPhoto(
   vars: MediaVars,
   photoKey: string | null | undefined,
   variant: PhotoVariant,

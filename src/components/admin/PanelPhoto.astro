@@ -1,0 +1,33 @@
+---
+// A photo the panel reviews, large enough to judge it against the photo
+// policy before deciding (docs/specs/admin-review.md, "Registration detail
+// with all the captured data, only inside the panel" and "The panel shows the
+// photos it reviews from the media hostname (v2)"): the `full` variant, from
+// the address src/lib/media.ts builds from the stored key, whatever the
+// status of its card; "Sin foto" when there is none, or the stored value is
+// not a key the server generated. No client JavaScript.
+import { env } from "cloudflare:workers";
+import { NO_PHOTO } from "../../core/review/texts.ts";
+import { panelPhoto } from "../../lib/media.ts";
+
+interface Props {
+  photoKey: string | null;
+  alt: string;
+}
+
+const { photoKey, alt } = Astro.props;
+const photo = panelPhoto(env, photoKey, "full");
+---
+
+{photo ? (
+  <img
+    src={photo.src}
+    width={photo.width}
+    height={photo.height}
+    alt={alt}
+    decoding="async"
+    class="aspect-4/3 w-full max-w-md rounded-lg border border-line bg-surface object-cover"
+  />
+) : (
+  <p class="text-ink-muted italic">{NO_PHOTO}</p>
+)}

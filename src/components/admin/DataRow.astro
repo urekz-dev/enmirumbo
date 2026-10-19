@@ -1,0 +1,20 @@
+---
+// One field of a detail of the panel, inside its `<dl>`: the label and what
+// the business captured, or "No capturado" when it left it blank, never
+// invented content. What a business wrote is plain text, escaped by Astro,
+// and a very long word wraps instead of scrolling a 390px phone. No client
+// JavaScript.
+import { NOT_CAPTURED } from "../../core/review/texts.ts";
+
+interface Props {
+  label: string;
+  value: string | null;
+}
+
+const { label, value } = Astro.props;
+---
+
+<div class="flex min-w-0 flex-col gap-0.5 border-b border-line py-2.5 last:border-0">
+  <dt class="text-sm font-semibold text-ink">{label}</dt>
+  <dd class="break-words text-ink-muted">{value ?? <span class="italic">{NOT_CAPTURED}</span>}</dd>
+</div>

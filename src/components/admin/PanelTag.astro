@@ -1,0 +1,27 @@
+---
+// A label of the panel's rows: "Alta nueva", "Edición", "Ya estaba publicada,
+// la despublicaste", "Lleva más de 48 horas", "Cambió" and the status of a
+// card (docs/specs/admin-review.md). What it says is text, readable by a
+// screen reader and in greyscale, never only a colour; `strong` draws the
+// ones the admin must not miss with a darker outline. It measures only what
+// its text does. No client JavaScript.
+interface Props {
+  text: string;
+  /** A darker outline, for the labels that call for attention. */
+  strong?: boolean;
+  /** A decorative mark before the text, hidden from screen readers. */
+  icon?: string;
+}
+
+const { text, strong = false, icon } = Astro.props;
+---
+
+<span
+  class:list={[
+    "inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold text-ink",
+    strong ? "border-2 border-ink" : "border border-control",
+  ]}
+>
+  {icon && <span aria-hidden="true">{icon}</span>}
+  {text}
+</span>

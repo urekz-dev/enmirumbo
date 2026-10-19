@@ -1,0 +1,108 @@
+---
+// "Todos los negocios", at /admin/negocios (docs/specs/admin-review.md,
+// "'Todos los negocios' view with the status in sight and an entry to the
+// detail", "The listing is filtered by status without leaving the view",
+// "The listing is cut into pages and does not degrade when there are many
+// records", "The queue has a visible entry to the listing, and the listing
+// returns to the queue", "The listing inherits the panel's access,
+// no-indexing and minimal data exposure", "The listing searches by name or
+// WhatsApp (v2)", "The panel filters by locality, and the filter is hidden
+// while there is one (v2)" and "Each review screen checks its permission in
+// the locality of what it shows (v2)").
+//
+// Behind the same Access check, headers and layout rules as the rest of the
+// panel (see src/pages/admin/index.astro). It lists the cards of the
+// localities where the user holds a permission that opens a card's detail;
+// with none, the panel's 403 before anything else is read. Its query carries
+// only `localidad`, `estado`, `q` and `pagina`, each read so it never fails.
+// It writes nothing, and a request with any method but GET or HEAD gets a
+// 405 with no body, before anything is read.
+import { env, waitUntil } from "cloudflare:workers";
+import BusinessesList from "../../components/admin/BusinessesList.astro";
+import { withDb } from "../../core/db/client.ts";
+import {
+  businessesPage,
+  parseListPage,
+  parseSearch,
+  parseStatusFilter,
+} from "../../core/review/businesses.ts";
+import {
+  chosenLocality,
+  localityFilterOptions,
+  panelLocalities,
+  withZoneNames,
+  zoneNamesByLocality,
+} from "../../core/review/localities.ts";
+import { type BusinessesView, businessesPath, queuePath } from "../../core/review/paths.ts";
+import { panelScope, queueLocalities } from "../../core/review/scope.ts";
+import {
+  ALL_LOCALITIES,
+  BUSINESSES_HEADING,
+  FILTER_BY_LOCALITY,
+  localityText,
+} from "../../core/review/texts.ts";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../lib/access/admin-gate.ts";
+
+const admin = Astro.locals.admin;
+// Second line of defense: never render the panel without an identity.
+if (admin === undefined) return forbiddenResponse();
+if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+}
+
+const params = Astro.url.searchParams;
+const result = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  const scope = await panelScope(db, admin.email);
+  const seen = await panelLocalities(db, scope.cards);
+  if (seen.length === 0) return null;
+  const options = localityFilterOptions(seen);
+  const view: BusinessesView = {
+    locality: chosenLocality(params.getAll("localidad"), options),
+    status: parseStatusFilter(params.getAll("estado")),
+    query: parseSearch(params.getAll("q")),
+    page: parseListPage(params.getAll("pagina")),
+  };
+  const page = await businessesPage(db, {
+    localityCodes: view.locality === null ? scope.cards : [view.locality],
+    status: view.status,
+    query: view.query,
+    page: view.page,
+  });
+  const list = { ...page, rows: withZoneNames(page.rows, await zoneNamesByLocality(db, seen)) };
+  return { scope, seen, options, view, list };
+});
+if (result === null) return forbiddenResponse();
+
+const { scope, seen, options, view, list } = result;
+const localityFilter =
+  options.length === 0
+    ? []
+    : [
+        {
+          text: ALL_LOCALITIES,
+          href: businessesPath({ ...view, locality: null, page: 1 }),
+          current: view.locality === null,
+        },
+        ...options.map((locality) => ({
+          text: localityText(locality),
+          href: businessesPath({ ...view, locality: locality.code, page: 1 }),
+          current: view.locality === locality.code,
+        })),
+      ];
+const localityNames =
+  options.length === 0 || view.locality !== null
+    ? null
+    : new Map(seen.map((locality) => [locality.code, localityText(locality)]));
+---
+
+<BaseLayout title={BUSINESSES_HEADING}>
+  <BusinessesList
+    list={list}
+    view={view}
+    localityFilter={localityFilter}
+    localityFilterLabel={FILTER_BY_LOCALITY}
+    localityNames={localityNames}
+    queueHref={queueLocalities(scope).length > 0 ? queuePath(view.locality) : null}
+  />
+</BaseLayout>

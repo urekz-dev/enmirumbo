@@ -1,31 +1,93 @@
 ---
-// Placeholder for the admin panel: shows who signed in through Cloudflare
-// Access, so the flow can be seen end to end. The review queue arrives with its
-// stories. src/middleware.ts has already verified the token and set
-// Astro.locals.admin.
-import { forbiddenResponse } from "../../lib/access/admin-gate.ts";
+// The review queue, the panel's main screen, at /admin
+// (docs/specs/admin-review.md, "Review queue with the pending registrations,
+// oldest first", "Visible indicator for registrations waiting more than 48
+// hours", "The queue tells which businesses have unattended reports", "The
+// queue has a visible entry to the listing, and the listing returns to the
+// queue", "The panel filters by locality, and the filter is hidden while
+// there is one (v2)" and "Each review screen checks its permission in the
+// locality of what it shows (v2)").
+//
+// src/middleware.ts has already verified the Access token and set
+// Astro.locals.admin, and marked the response as not indexable and not
+// cacheable; the layout declares `noindex, nofollow` and the panel's
+// referrer policy, and no analytics, by where the page lives. Then the page:
+//
+// 1. Reads what the user may see (src/core/review/scope.ts), through
+//    HYPERDRIVE_FRESH: a user who may see nothing of the queue, or who is
+//    not a panel user, gets the panel's 403 before anything else is read.
+// 2. Narrows it with the locality filter, `?localidad=`, shown only while
+//    the user sees two or more active localities.
+// 3. Reads "Registros por revisar" and "Negocios reportados" of those
+//    localities, with the clock of this request, and the display names of
+//    their zones.
+import { env, waitUntil } from "cloudflare:workers";
+import ReviewQueue from "../../components/admin/ReviewQueue.astro";
+import { withDb } from "../../core/db/client.ts";
+import {
+  chosenLocality,
+  localityFilterOptions,
+  panelLocalities,
+  withZoneNames,
+  zoneNamesByLocality,
+} from "../../core/review/localities.ts";
+import { businessesPath, queuePath } from "../../core/review/paths.ts";
+import { reportedBusinesses, reviewQueue } from "../../core/review/queue.ts";
+import { narrowScope, panelScope, queueLocalities } from "../../core/review/scope.ts";
+import {
+  ALL_LOCALITIES,
+  FILTER_BY_LOCALITY,
+  localityText,
+  QUEUE_HEADING,
+} from "../../core/review/texts.ts";
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../lib/access/admin-gate.ts";
 
 const admin = Astro.locals.admin;
-if (admin === undefined) {
-  // Second line of defense: never render the panel without an identity.
-  return forbiddenResponse();
-}
+// Second line of defense: never render the panel without an identity.
+if (admin === undefined) return forbiddenResponse();
+
+const now = new Date();
+const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  const scope = await panelScope(db, admin.email);
+  const seen = await panelLocalities(db, queueLocalities(scope));
+  if (seen.length === 0) return null;
+  const options = localityFilterOptions(seen);
+  const chosen = chosenLocality(Astro.url.searchParams.getAll("localidad"), options);
+  const narrowed = narrowScope(scope, chosen);
+  const zoneNames = await zoneNamesByLocality(db, seen);
+  const rows = withZoneNames(await reviewQueue(db, narrowed, now), zoneNames);
+  const reported = await reportedBusinesses(db, narrowed.reports);
+  return { scope, seen, options, chosen, rows, reported };
+});
+if (view === null) return forbiddenResponse();
+
+const { scope, seen, options, chosen, rows, reported } = view;
+const localityFilter =
+  options.length === 0
+    ? []
+    : [
+        { text: ALL_LOCALITIES, href: queuePath(), current: chosen === null },
+        ...options.map((locality) => ({
+          text: localityText(locality),
+          href: queuePath(locality.code),
+          current: chosen === locality.code,
+        })),
+      ];
+const localityNames =
+  options.length === 0 || chosen !== null
+    ? null
+    : new Map(seen.map((locality) => [locality.code, localityText(locality)]));
 ---
 
-<BaseLayout title="Panel de revisión">
-  <Fragment slot="head">
-    <meta name="robots" content="noindex, nofollow" />
-    <meta name="referrer" content="strict-origin" />
-  </Fragment>
-  <section class="flex flex-1 flex-col justify-center gap-4">
-    <h1 class="text-3xl font-bold">Panel de enmirumbo</h1>
-    <p class="text-lg">Entraste con este correo:</p>
-    <p class="text-lg font-semibold break-all" data-testid="admin-email">
-      {admin.email}
-    </p>
-    <p class="text-ink-muted">
-      Aquí vas a revisar los registros de los negocios. Todavía lo estamos armando.
-    </p>
-  </section>
+<BaseLayout title={QUEUE_HEADING}>
+  <ReviewQueue
+    rows={rows}
+    reported={reported}
+    now={now}
+    localityFilter={localityFilter}
+    localityFilterLabel={FILTER_BY_LOCALITY}
+    localityNames={localityNames}
+    listHref={scope.cards.length > 0 ? businessesPath({ locality: chosen }) : null}
+  />
 </BaseLayout>

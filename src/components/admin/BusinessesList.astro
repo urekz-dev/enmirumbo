@@ -1,0 +1,191 @@
+---
+// "Todos los negocios" (docs/specs/admin-review.md, "'Todos los negocios' view
+// with the status in sight and an entry to the detail", "The listing is
+// filtered by status without leaving the view", "The listing is cut into
+// pages and does not degrade when there are many records", "The queue has a
+// visible entry to the listing, and the listing returns to the queue", "The
+// listing inherits the panel's access, no-indexing and minimal data exposure"
+// and "The listing searches by name or WhatsApp (v2)").
+//
+// Read-only: the only things it does are search, filter, change page and
+// open a detail, all of them links or a GET form, so it works without client
+// JavaScript. Each row shows the name, the zone, "Se registró el …" in its
+// locality's time zone, the status in words, "Ya estaba publicada, la
+// despublicaste" when it applies and "Ver detalle"; nothing else of the card.
+// Every control measures at least 44px.
+import {
+  type BusinessesView,
+  businessesPath,
+  registrationPath,
+  STATUS_PARAMS,
+} from "../../core/review/paths.ts";
+import type { ListPage } from "../../core/review/businesses.ts";
+import { panelDate } from "../../core/review/time.ts";
+import {
+  BACK_TO_QUEUE,
+  BUSINESSES_HEADING,
+  CLEAR_SEARCH,
+  FILTER_BY_STATUS,
+  FILTER_EMPTY,
+  LIST_EMPTY,
+  listCountText,
+  NEWER_PAGE,
+  OLDER_PAGE,
+  pageOfText,
+  PAGES_LABEL,
+  registeredOnText,
+  SEARCH_BUTTON,
+  SEARCH_EMPTY,
+  SEARCH_LABEL,
+  SEE_DETAIL,
+  STATUS_FILTER_TEXT,
+  STATUS_TEXT,
+  UNPUBLISHED_TAG,
+} from "../../core/review/texts.ts";
+import { SECONDARY_BUTTON } from "../../lib/buttons.ts";
+import FilterLinks from "./FilterLinks.astro";
+import PanelTag from "./PanelTag.astro";
+
+interface FilterOption {
+  text: string;
+  href: string;
+  current: boolean;
+}
+
+interface Props {
+  /** The page being viewed, each zone with its display name. */
+  list: ListPage;
+  /** The view: its filters, its search and its page. */
+  view: BusinessesView;
+  /** The options of the locality filter; none hides it. */
+  localityFilter: readonly FilterOption[];
+  localityFilterLabel: string;
+  /** The name of each locality, by code, while the cards of several are shown; null otherwise. */
+  localityNames: ReadonlyMap<string, string> | null;
+  /** "Volver a la cola", when the user may open the queue. */
+  queueHref: string | null;
+}
+
+const { list, view, localityFilter, localityFilterLabel, localityNames, queueHref } = Astro.props;
+
+const statusOptions = (["all", "in_review", "published", "rejected"] as const).map((status) => ({
+  text: STATUS_FILTER_TEXT[status],
+  // Changing the filter always goes back to the first page.
+  href: businessesPath({ ...view, status, page: 1 }),
+  current: status === view.status,
+}));
+
+const emptyText =
+  view.query !== "" ? SEARCH_EMPTY : view.status !== "all" ? FILTER_EMPTY : LIST_EMPTY;
+const newer = list.beyond ? list.pages : view.page - 1;
+const showsPages = list.pages > 1 || list.beyond;
+const pageLink =
+  "inline-flex min-h-11 items-center rounded-full border border-control px-3.5 py-1.5 text-sm font-semibold text-action-strong";
+---
+
+<section class="flex flex-col gap-6">
+  <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{BUSINESSES_HEADING}</h1>
+
+  {queueHref && (
+    <a
+      href={queueHref}
+      class="inline-flex min-h-11 w-fit items-center font-semibold text-action-strong underline underline-offset-4"
+    >
+      {BACK_TO_QUEUE}
+    </a>
+  )}
+
+  <form method="get" action={businessesPath()} role="search" class="flex flex-col gap-2">
+    <label for="search-businesses" class="text-sm font-semibold text-ink">
+      {SEARCH_LABEL}
+    </label>
+    {view.locality && <input type="hidden" name="localidad" value={view.locality} />}
+    {view.status !== "all" && (
+      <input type="hidden" name="estado" value={STATUS_PARAMS[view.status]} />
+    )}
+    <div class="flex flex-col gap-2 sm:flex-row">
+      <input
+        type="search"
+        id="search-businesses"
+        name="q"
+        value={view.query}
+        maxlength={80}
+        autocomplete="off"
+        class="min-h-11 w-full min-w-0 rounded-lg border border-control bg-background px-4 text-base text-ink focus:ring-2 focus:ring-action-strong focus:outline-none"
+      />
+      <button type="submit" class={`${SECONDARY_BUTTON} px-4 text-base`}>
+        {SEARCH_BUTTON}
+      </button>
+    </div>
+    {view.query !== "" && (
+      <a
+        href={businessesPath({ ...view, query: "", page: 1 })}
+        class="inline-flex min-h-11 w-fit items-center text-sm font-semibold text-ink underline underline-offset-4"
+      >
+        {CLEAR_SEARCH}
+      </a>
+    )}
+  </form>
+
+  {localityFilter.length > 0 && (
+    <FilterLinks label={localityFilterLabel} options={localityFilter} />
+  )}
+
+  <FilterLinks label={FILTER_BY_STATUS} options={statusOptions} />
+
+  <p class="text-sm font-semibold text-ink-muted" data-testid="list-count">
+    {listCountText(list.total)}
+  </p>
+
+  {list.total === 0 && <p class="text-ink-muted">{emptyText}</p>}
+
+  {list.rows.length > 0 && (
+    <ul class="flex flex-col gap-3" data-testid="businesses">
+      {list.rows.map((row) => (
+        <li>
+          <article class="relative flex flex-col gap-1.5 rounded-xl border border-line bg-background p-4">
+            <h2 class="font-semibold break-words text-ink">{row.name}</h2>
+            {row.zoneName && <p class="text-sm break-words text-ink-muted">{row.zoneName}</p>}
+            {localityNames && (
+              <p class="text-sm text-ink-muted">{localityNames.get(row.localityCode)}</p>
+            )}
+            <p class="text-sm text-ink-muted">
+              {registeredOnText(panelDate(row.registeredAt, row.timeZone))}
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <PanelTag text={STATUS_TEXT[row.status]} />
+              {row.unpublished && <PanelTag text={UNPUBLISHED_TAG} />}
+            </div>
+            <a
+              href={registrationPath(row.id)}
+              aria-label={`${SEE_DETAIL}: ${row.name}`}
+              class="inline-flex min-h-11 w-fit items-center font-semibold text-action-strong underline underline-offset-4 after:absolute after:inset-0"
+            >
+              {SEE_DETAIL}
+            </a>
+          </article>
+        </li>
+      ))}
+    </ul>
+  )}
+
+  {showsPages && (
+    <nav aria-label={PAGES_LABEL} class="flex flex-wrap items-center justify-between gap-3">
+      {!list.beyond && (
+        <p class="text-sm font-semibold text-ink">{pageOfText(view.page, list.pages)}</p>
+      )}
+      <div class="flex flex-wrap gap-3">
+        {(list.beyond || view.page > 1) && (
+          <a href={businessesPath({ ...view, page: newer })} class={pageLink}>
+            {NEWER_PAGE}
+          </a>
+        )}
+        {!list.beyond && view.page < list.pages && (
+          <a href={businessesPath({ ...view, page: view.page + 1 })} class={pageLink}>
+            {OLDER_PAGE}
+          </a>
+        )}
+      </div>
+    </nav>
+  )}
+</section>
