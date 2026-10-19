@@ -74,5 +74,5 @@ export function isUsableSiteKey(key: string, local: boolean): boolean {
  * The actions the widgets declare, one per form, which a real token carries
  * back and the server checks: a token from one form does not pass on another.
  */
-export const TURNSTILE_ACTIONS = ["registration"] as const;
+export const TURNSTILE_ACTIONS = ["registration", "edit"] as const;
 export type TurnstileAction = (typeof TURNSTILE_ACTIONS)[number];

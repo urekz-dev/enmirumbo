@@ -7,8 +7,10 @@
 import { ActionError, defineAction } from "astro:actions";
 import { env, waitUntil } from "cloudflare:workers";
 import { withDb } from "../core/db/client.ts";
+import { submitEdit } from "../core/edit/submit.ts";
 import { submitRegistration } from "../core/registration/submit.ts";
 import { submitReport } from "../core/report/submit.ts";
+import { editActionError, editTarget } from "../lib/edit.ts";
 import { takeQuota } from "../lib/quota/quota.ts";
 import { registrationActionError, registrationLocality } from "../lib/registration.ts";
 import { reportActionError, reportTarget } from "../lib/report.ts";
@@ -60,6 +62,32 @@ export const server = {
         photos: { images: env.IMAGES, bucket: env.MEDIA },
       });
       const error = registrationActionError(outcome);
+      if (error !== null) throw error;
+    },
+  }),
+
+  // An owner sending changes to their published card from its management link
+  // (docs/specs/business-registration.md, the edit requirements), posted by
+  // the edit form of `/{estado}/{municipio}/editar/<token>`. The locality and
+  // the token are those of the page's address (editTarget): no field of the
+  // submission chooses the card, and a token that opens none is not found.
+  // The core decides (src/core/edit/submit.ts) in the registration's order,
+  // with Turnstile's action `edit` and the `edit` quota, and saves a pending
+  // edit through HYPERDRIVE_FRESH, which touches nothing of the card. A
+  // photo goes through IMAGES to MEDIA under a key no public page names.
+  // The token is never logged.
+  edit: defineAction({
+    accept: "form",
+    handler: async (form, context) => {
+      const target = editTarget(context);
+      if (target === null) throw new ActionError({ code: "NOT_FOUND" });
+      const outcome = await submitEdit(form, target, {
+        useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run),
+        takeQuota: () => takeQuota(env, context.request.headers, "edit"),
+        verifyTurnstile: turnstileVerifier(env),
+        photos: { images: env.IMAGES, bucket: env.MEDIA },
+      });
+      const error = editActionError(outcome);
       if (error !== null) throw error;
     },
   }),

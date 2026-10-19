@@ -1,5 +1,6 @@
 // Scenarios of docs/specs/deployment.md, requirements "Three deployed
 // environments, each with its own Worker, bindings and variables (v2)",
+// "Workers Logs and traces stay off in every environment (v2)",
 // "Public media live in R2, in one bucket for production and one for dev and
 // stage (v2)" and "Scheduled work runs from one hourly Cron Trigger per
 // environment (v2)" (scenario "one trigger"); and of docs/specs/
@@ -45,6 +46,7 @@ interface ResolvedConfig {
   name?: string;
   workers_dev?: boolean;
   preview_urls?: boolean;
+  observability?: unknown;
   route?: unknown;
   routes?: unknown[];
   triggers: { crons?: string[] };
@@ -270,4 +272,27 @@ describe("Scheduled work runs from one hourly Cron Trigger per environment (v2)"
     // dev declares an empty list, which removes any trigger left on its Worker.
     expect(read(env).triggers.crons).toEqual(crons);
   });
+});
+
+describe("Workers Logs and traces stay off in every environment (v2)", () => {
+  const OFF = {
+    enabled: false,
+    logs: { enabled: false, invocation_logs: false, persist: false },
+    traces: { enabled: false, persist: false },
+  };
+
+  // Scenarios: every environment; nothing left to Cloudflare's default
+  it.for([undefined, ...ENVIRONMENTS.map(({ env }) => env)])(
+    "%s keeps logs and traces off, every key of them written in its own block",
+    (env) => {
+      expect(read(env).observability).toEqual(OFF);
+      const raw = experimental_readRawConfig({ config: "wrangler.jsonc" }).rawConfig as {
+        observability?: unknown;
+        env?: Record<string, { observability?: unknown }>;
+      };
+      // Declared, not inherited: an environment that forgot it would keep
+      // whatever the dashboard had.
+      expect(env === undefined ? raw.observability : raw.env?.[env]?.observability).toEqual(OFF);
+    },
+  );
 });

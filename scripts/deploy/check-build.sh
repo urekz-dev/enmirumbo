@@ -6,6 +6,10 @@
 # wrangler.jsonc, and reports every problem at once:
 #   - the build targets <env>, with that environment's Worker name and vars;
 #   - workers.dev on and Version/Preview URLs off;
+#   - Workers Logs and traces off, every key of them written false, so
+#     Cloudflare keeps no request URL, which in the edit mode carries the key
+#     to a card (docs/specs/deployment.md, "Workers Logs and traces stay off
+#     in every environment (v2)");
 #   - the hourly Cron Trigger on stage and prod, none on dev (ADR 0013);
 #   - HYPERDRIVE and HYPERDRIVE_FRESH set to two different real Hyperdrive ids,
 #     so a placeholder id never reaches Cloudflare;
@@ -87,6 +91,9 @@ value() {
   error "workers_dev is $(value '.workers_dev'), expected true"
 [ "$(value '.preview_urls')" = "false" ] ||
   error "preview_urls is $(value '.preview_urls'), expected false: Version URLs would bypass Access"
+observability_off='{"enabled":false,"logs":{"enabled":false,"invocation_logs":false,"persist":false},"traces":{"enabled":false,"persist":false}}'
+[ "$(value '.observability')" = "${observability_off}" ] ||
+  error "observability is $(value '.observability'), expected ${observability_off}: Workers Logs and traces stay off, so no request URL is kept; declare it in env.${env_name} of wrangler.jsonc"
 [ "$(value '.triggers.crons')" = "${crons}" ] ||
   error "the Cron Triggers are $(value '.triggers.crons'), expected ${crons}"
 

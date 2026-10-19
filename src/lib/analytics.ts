@@ -16,6 +16,7 @@
 // measurement by where their pages live (isMeasured), not by a list of pages.
 import { localityPath, type LocalityRef } from "../core/locality/paths.ts";
 import { isAdminRequest } from "./access/admin-gate.ts";
+import { isEditModeRequest } from "./edit-mode.ts";
 
 /** The script of Umami Cloud, loaded deferred from the head of each measured page. */
 export const UMAMI_SCRIPT_URL = "https://cloud.umami.is/script.js";
@@ -78,27 +79,6 @@ export function readAnalytics(vars: AnalyticsVars): Analytics | null {
   return { scriptUrl: UMAMI_SCRIPT_URL, websiteId: websiteId.toLowerCase() };
 }
 
-/** Decodes a path until it is stable and lowercases it, or undefined when it cannot. */
-function decodedSegments(pathname: string): string[] | undefined {
-  let current = pathname;
-  for (let round = 0; round < 10; round++) {
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(current);
-    } catch {
-      return undefined;
-    }
-    if (decoded === current) {
-      return current.toLowerCase().replaceAll("\\", "/").split("/").filter(Boolean);
-    }
-    current = decoded;
-  }
-  return undefined;
-}
-
-/** The segment of the edit mode under a locality: `/{estado}/{municipio}/editar/<token>`. */
-const EDIT_SEGMENT = "editar";
-
 /**
  * Whether a page belongs to the measured trunk of the site. The admin panel
  * (`/admin` and below, its actions and any address under it, even one that
@@ -110,9 +90,7 @@ const EDIT_SEGMENT = "editar";
  */
 export function isMeasured(url: URL, routePattern: string): boolean {
   if (isAdminRequest(url, routePattern)) return false;
-  if (routePattern.startsWith(`/[state]/[municipality]/${EDIT_SEGMENT}`)) return false;
-  const segments = decodedSegments(url.pathname);
-  return segments !== undefined && segments[2] !== EDIT_SEGMENT;
+  return !isEditModeRequest(url, routePattern);
 }
 
 /**

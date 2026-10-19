@@ -74,7 +74,8 @@ describe("The admin panel and edit mode stay out of the measurement", () => {
     ["/ADMIN", "/404"],
     ["/%61dmin/x", "/404"],
     ["/hidalgo/tizayuca/editar/abc", "/[state]/[municipality]/editar/[token]"],
-    ["/hidalgo/tizayuca/editar/abc/gracias", "/[state]/[municipality]/editar/[token]/gracias"],
+    ["/hidalgo/tizayuca/editar/gracias", "/[state]/[municipality]/editar/gracias"],
+    ["/hidalgo/tizayuca/editar", "/[state]/[municipality]/[segment]"],
     ["/hidalgo/tizayuca/editar/abc/nada", "/404"],
     ["/hidalgo/tizayuca/%65ditar/abc", "/404"],
   ] as const)("%s is not measured", ([path, route]) => {

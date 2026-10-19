@@ -1,0 +1,33 @@
+---
+// The confirmation of an edit, /{estado}/{municipio}/editar/gracias
+// (docs/specs/business-registration.md, "Sending the edit does not touch the
+// public card: it creates a pending edit" and "The edit mode of a locality
+// lives under it, and lands on its confirmation (v2)"). The edit form answers
+// received changes with a 303 here, so reloading this page sends nothing: it
+// has no form, no query and no token, so its address is no key to anything.
+//
+// It says the same whatever happened to the submission (saved, or a bot
+// caught by the trap): the spec's literal, and "Volver al inicio" to the
+// home of the locality. It reads nothing and its title is static. It lives
+// under the edit mode, so it is `noindex, nofollow`, `no-store`, with the
+// referrer policy `strict-origin`, and never measured (src/lib/edit-mode.ts).
+// No client JavaScript.
+import { EDIT_THANK_YOU_MESSAGE, EDIT_THANKS_TITLE } from "../../../../core/edit/submission.ts";
+import { localityPath } from "../../../../core/locality/paths.ts";
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { requireLocality } from "../../../../lib/locality.ts";
+
+const locality = requireLocality(Astro.locals);
+---
+
+<BaseLayout title={EDIT_THANKS_TITLE}>
+  <section class="flex flex-1 flex-col items-center justify-center gap-6 py-12 text-center">
+    <h1 class="max-w-md text-2xl font-bold tracking-tight sm:text-3xl">{EDIT_THANK_YOU_MESSAGE}</h1>
+    <a
+      href={localityPath(locality)}
+      class="inline-flex min-h-11 items-center justify-center px-4 text-base font-semibold text-action-strong underline underline-offset-4"
+    >
+      Volver al inicio
+    </a>
+  </section>
+</BaseLayout>

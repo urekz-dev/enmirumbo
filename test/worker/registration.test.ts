@@ -460,6 +460,9 @@ describe("The server validates every field and returns per-field errors in Spani
       "whatsapp.invalid": "Revisa tu número de WhatsApp: deben ser 10 dígitos",
       "whatsapp.duplicate":
         "Este número ya tiene una ficha registrada. Si es tu negocio, no hace falta registrarlo otra vez: te vamos a pasar por WhatsApp el enlace para editarlo.",
+      // The edit's (business-registration, "The edit goes through the same
+      // validations as the registration and cannot set what is not its to set").
+      "whatsapp.taken": "Ese número ya está en otra ficha del directorio.",
       "zone.required": "Escribe el nombre de tu colonia",
       "zone.length": "Deja esto en 80 caracteres o menos",
       "whatYouOffer.length": "Deja esto en 200 caracteres o menos",

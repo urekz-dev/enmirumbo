@@ -10,7 +10,9 @@ Cloudflare is the team's platform for domains, DNS and edge. Cloudflare Pages is
 
 ## Decision
 
-The application runs as a Cloudflare Worker with Static Assets through `@astrojs/cloudflare`, with a custom entry that also exports the `scheduled` handler for cron jobs. Prerendered pages are served as static assets without invoking the Worker. We use Workers Free while building and switch to Workers Paid (5 USD per month) at public launch. Observability through Workers Logs.
+The application runs as a Cloudflare Worker with Static Assets through `@astrojs/cloudflare`, with a custom entry that also exports the `scheduled` handler for cron jobs. Prerendered pages are served as static assets without invoking the Worker. We use Workers Free while building and switch to Workers Paid (5 USD per month) at public launch. Observability through Workers Logs (amended on 2026-10-18: Workers Logs and traces are off; debugging uses `wrangler tail`).
+
+Amended on 2026-10-18 (EMR-43), by decision of the product owner: Workers Logs and traces are off in every environment, declared in `wrangler.jsonc` with every key written. An invocation log keeps the URL and the metadata of each request for days, and the address of the edit mode of the management link is the key to a card; the privacy notice also keeps the visitor's address in memory only. Debugging a deployed environment uses `wrangler tail`, which is live and keeps nothing; alerts reach the admin by email (EMR-55).
 
 ## Consequences
 

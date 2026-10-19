@@ -173,6 +173,14 @@ const SITE_KEYS = {
   prod: "0x4AAAAAAFaqP_qD38iv_oZ6",
 } as const;
 
+// Workers Logs and traces off, every key written (docs/specs/deployment.md,
+// "Workers Logs and traces stay off in every environment (v2)").
+const OBSERVABILITY_OFF = {
+  enabled: false,
+  logs: { enabled: false, invocation_logs: false, persist: false },
+  traces: { enabled: false, persist: false },
+};
+
 // What `CLOUDFLARE_ENV=<env> vp run build` writes to dist/server/wrangler.json,
 // with real-looking Hyperdrive ids.
 function build(environment: Environment, overrides: Record<string, unknown> = {}) {
@@ -182,6 +190,7 @@ function build(environment: Environment, overrides: Record<string, unknown> = {}
     topLevelName: "enmirumbo-local",
     workers_dev: true,
     preview_urls: false,
+    observability: OBSERVABILITY_OFF,
     triggers: { crons: environment === "dev" ? [] : ["0 * * * *"] },
     hyperdrive: [
       { binding: "HYPERDRIVE", id: "0123456789abcdef0123456789abcdef" },
@@ -320,6 +329,24 @@ describe("Each environment is built and deployed by its own workflow (v2): the b
     expect(problems).toContain('the Worker name is "dev-enmirumbo", expected "stage-enmirumbo"');
     expect(problems).toContain('ENVIRONMENT is "dev", expected "stage"');
     expect(problems).toContain('the Cron Triggers are [], expected ["0 * * * *"]');
+  });
+
+  // deployment, "Workers Logs and traces stay off in every environment (v2)"
+  it("Workers Logs or traces on, or left to Cloudflare's default, are refused", () => {
+    for (const observability of [
+      undefined,
+      { enabled: false },
+      { ...OBSERVABILITY_OFF, enabled: true },
+      { ...OBSERVABILITY_OFF, logs: { ...OBSERVABILITY_OFF.logs, invocation_logs: true } },
+      { ...OBSERVABILITY_OFF, logs: { ...OBSERVABILITY_OFF.logs, persist: true } },
+      { ...OBSERVABILITY_OFF, traces: { enabled: true, persist: false } },
+    ]) {
+      const result = checkBuild("prod", build("prod", { observability }));
+      expect(result.status, JSON.stringify(observability)).toBe(1);
+      expect(errors(result), JSON.stringify(observability)).toEqual([
+        expect.stringMatching(/observability is .*Workers Logs and traces stay off.*env\.prod/),
+      ]);
+    }
   });
 
   it("Version URLs on, workers.dev off, a cron on dev or a bad SITE_URL are refused", () => {

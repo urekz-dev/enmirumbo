@@ -1,0 +1,23 @@
+---
+// The note the edit form shows where the registration has its consent block
+// (docs/specs/business-registration.md, "The management link opens the card
+// in edit mode with the same prefilled form", scenario "the edit does not ask
+// for consent again"): the consent given at registration stays in force, so
+// there is no checkbox and no notice version; the note says so, and "Lee el
+// aviso de privacidad completo" leads to the full notice in the same tab,
+// the same link as the registration's. The edit mode's referrer policy keeps
+// the edit address out of that request (src/lib/edit-mode.ts). No client
+// JavaScript.
+import { PRIVACY_NOTICE_PATH } from "../core/legal/document.ts";
+import { EDIT_PRIVACY_NOTE } from "../core/edit/submission.ts";
+---
+
+<div class="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
+  <p class="text-sm text-ink-muted">{EDIT_PRIVACY_NOTE}</p>
+  <a
+    href={PRIVACY_NOTICE_PATH}
+    class="inline-flex min-h-11 w-fit items-center text-sm font-semibold text-action-strong underline underline-offset-4"
+  >
+    Lee el aviso de privacidad completo
+  </a>
+</div>

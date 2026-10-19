@@ -1341,3 +1341,24 @@ The public pages may show a change up to a minute late (`public-directory`, "Pub
 
 - **WHEN** the admin generates a new management link
 - **THEN** that text does not appear
+
+### Requirement: Applying or discarding a pending edit carries out what it asks of the photo (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-43): the owner's edit may change the photo (`business-registration`, "The edit of a card may change its photo, which reaches the card only when the edit is applied (v2)"). It amends "Applying the pending edit updates the published card and only that", whose editable fields now include the photo, and "Discarding the pending edit requires a reason, does not touch the card and offers to notify by WhatsApp".
+
+Applying a pending edit MUST also carry out what it asks of the photo (`data-model`, "A pending edit may change the photo of its card (v2)"): `keep` leaves the card's photo as it is; `replace` gives the card the edit's new photo key; `remove` leaves the card without a photo. When the card stops naming its previous photo, the objects of that photo are deleted once the card is saved, and a deletion that fails is logged by its kind and left to the orphan sweep. An edit that is not applied (another card has its number, the card is no longer published, the edit is no longer the latest) changes nothing of the photo either, and its new photo stays with it. Discarding a pending edit that carries a new photo MUST delete that photo's objects once the edit is discarded; the card's photo does not change. How the detail of a pending edit shows the photo it proposes is settled with that screen (epic F).
+
+#### Scenario: applying a new photo
+
+- **WHEN** the admin applies a pending edit that carries a new photo for a card that had one
+- **THEN** the card shows the new photo, and the objects of the old one no longer exist
+
+#### Scenario: applying the removal of the photo
+
+- **WHEN** the admin applies a pending edit that asks to leave the card without a photo
+- **THEN** the card has no photo, and the objects of the one it had no longer exist
+
+#### Scenario: discarding a new photo
+
+- **WHEN** the admin discards a pending edit that carries a new photo
+- **THEN** the objects of that photo no longer exist, and the card keeps its own
