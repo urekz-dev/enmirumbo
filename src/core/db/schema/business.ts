@@ -113,6 +113,12 @@ export const businesses = pgTable(
     publishedAt: timestamptz("published_at"),
     rejectedAt: timestamptz("rejected_at"),
     rejectionReason: text("rejection_reason"),
+    // The rejection the last resubmission answered: a resubmission clears the
+    // rejection above (the 90-day purge reads it) and keeps it here, so the
+    // panel labels the card "Reenvío" and says why it was rejected before.
+    // Overwritten by the next resubmission; never cleared otherwise.
+    previousRejectedAt: timestamptz("previous_rejected_at"),
+    previousRejectionReason: text("previous_rejection_reason"),
     // The last unpublishing; never cleared.
     unpublishedAt: timestamptz("unpublished_at"),
     unpublishReason: text("unpublish_reason"),
@@ -147,6 +153,10 @@ export const businesses = pgTable(
     check(
       "businesses_rejection_check",
       sql`${together(t.rejectedAt, t.rejectionReason)} AND (${t.rejectedAt} IS NULL OR ${t.status} = 'rejected')`,
+    ),
+    check(
+      "businesses_previous_rejection_check",
+      together(t.previousRejectedAt, t.previousRejectionReason),
     ),
     check("businesses_unpublish_check", together(t.unpublishedAt, t.unpublishReason)),
     check(

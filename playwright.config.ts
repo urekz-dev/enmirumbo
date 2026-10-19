@@ -89,9 +89,10 @@ export default defineConfig({
     },
     // The review screens of the panel (test/e2e/admin.spec.ts): it adds
     // fictitious cards to Tizayuca, one published, with reports and a pending
-    // edit, and narrows the roles of the local identity for a while, which
-    // the queue, the sitemap and the crawls would see, so it runs alone,
-    // after "phone, edit" and before the second locality.
+    // edit, approves and rejects some of them, and narrows the roles of the
+    // local identity for a while, which the queue, the sitemap and the crawls
+    // would see, so it runs alone, after "phone, edit" and before the second
+    // locality.
     {
       name: "phone, admin",
       use: PHONE,

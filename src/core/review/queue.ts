@@ -12,6 +12,8 @@
 //   has waited since today. When the unpublishing is the later, the row says
 //   "Ya estaba publicada, la despublicaste". The unpublishing trace is never
 //   cleared, so an old one never moves a card that was resubmitted after it.
+//   A card that entered as the resubmission of a rejected one is labelled
+//   "Reenvío" instead (decision of the product owner, 2026-10-18).
 // - "Edición": every pending edit of a card that is not in the queue itself,
 //   since the moment its owner sent it; a newer edit supersedes it and so
 //   restarts the clock. A card in `in_review` takes one row only, as "Alta
@@ -54,6 +56,11 @@ export interface QueueRow extends ShowsZone {
   overdue: boolean;
   /** An "Alta nueva" that entered the queue because the admin unpublished it. */
   unpublished: boolean;
+  /**
+   * A card in review that entered the queue as the resubmission of a
+   * rejected one: labelled "Reenvío" instead of "Alta nueva".
+   */
+  resubmitted: boolean;
 }
 
 /** The localities where the user sees each kind of row. */
@@ -77,6 +84,20 @@ export function cameFromUnpublishing(registeredAt: Date, unpublishedAt: Date | n
   return unpublishedAt !== null && unpublishedAt > registeredAt;
 }
 
+/**
+ * Whether a card in review entered the queue as a resubmission: it keeps the
+ * rejection its last resubmission answered, and did not come back from an
+ * unpublishing since. A resubmission restarts `registered_at`, so an
+ * unpublishing later than it is what put the card in the queue.
+ */
+export function cameFromResubmission(
+  registeredAt: Date,
+  unpublishedAt: Date | null,
+  previousRejectedAt: Date | null,
+): boolean {
+  return previousRejectedAt !== null && !cameFromUnpublishing(registeredAt, unpublishedAt);
+}
+
 /** When a card in review entered the queue: the later of its registration and its last unpublishing. */
 export function enteredQueueAt(registeredAt: Date, unpublishedAt: Date | null): Date {
   return unpublishedAt !== null && cameFromUnpublishing(registeredAt, unpublishedAt)
@@ -97,6 +118,7 @@ export async function reviewQueue(db: Db, scope: QueueScope, now: Date): Promise
             name: businesses.name,
             registeredAt: businesses.registeredAt,
             unpublishedAt: businesses.unpublishedAt,
+            previousRejectedAt: businesses.previousRejectedAt,
             ...zoneColumns,
           })
           .from(businesses)
@@ -136,7 +158,7 @@ export async function reviewQueue(db: Db, scope: QueueScope, now: Date): Promise
           );
 
   const rows: QueueRow[] = [
-    ...registrations.map(({ registeredAt, unpublishedAt, ...row }) => {
+    ...registrations.map(({ registeredAt, unpublishedAt, previousRejectedAt, ...row }) => {
       const since = enteredQueueAt(registeredAt, unpublishedAt);
       return {
         ...row,
@@ -145,6 +167,7 @@ export async function reviewQueue(db: Db, scope: QueueScope, now: Date): Promise
         since,
         overdue: isOverdue(since, now),
         unpublished: cameFromUnpublishing(registeredAt, unpublishedAt),
+        resubmitted: cameFromResubmission(registeredAt, unpublishedAt, previousRejectedAt),
       };
     }),
     ...edits.map(({ createdAt, ...row }) => ({
@@ -153,6 +176,7 @@ export async function reviewQueue(db: Db, scope: QueueScope, now: Date): Promise
       since: createdAt,
       overdue: isOverdue(createdAt, now),
       unpublished: false,
+      resubmitted: false,
     })),
   ];
   return rows.sort(

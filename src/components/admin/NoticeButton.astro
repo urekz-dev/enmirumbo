@@ -1,0 +1,32 @@
+---
+// "Avisarle por WhatsApp" (docs/specs/admin-review.md, the notices after
+// approving and rejecting): the conversation with the business, the notice
+// already written; the admin sends it, the system never does. A number that
+// is not ten national digits is shown as stored, with no button and no broken
+// link. It opens a new tab, so it carries `rel="noopener noreferrer"`, and
+// the panel's referrer policy sends WhatsApp no path. No client JavaScript.
+import { panelWhatsappLink } from "../../core/review/notices.ts";
+import { NOTIFY_BUTTON, unlinkedWhatsappText } from "../../core/review/texts.ts";
+import { PRIMARY_BUTTON } from "../../lib/buttons.ts";
+
+interface Props {
+  whatsapp: string;
+  message: string;
+}
+
+const { whatsapp, message } = Astro.props;
+const href = panelWhatsappLink(whatsapp, message);
+---
+
+{href ? (
+  <a
+    href={href}
+    target="_blank"
+    rel="noopener noreferrer"
+    class={`${PRIMARY_BUTTON} w-full px-4 text-base sm:w-auto`}
+  >
+    {NOTIFY_BUTTON}
+  </a>
+) : (
+  <p class="break-words text-ink-muted">{unlinkedWhatsappText(whatsapp)}</p>
+)}

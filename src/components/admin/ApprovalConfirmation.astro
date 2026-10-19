@@ -1,0 +1,45 @@
+---
+// The confirmation of an approval (docs/specs/admin-review.md, "On approving,
+// an offer is made to notify the business by WhatsApp with its card link and
+// its management link" and "The panel says that a change takes up to a
+// minute to reach the site (v2)"): "Ya quedó publicado.", that the site takes
+// up to a minute to show it, "Mándale el mensaje ahora: este enlace solo se
+// ve aquí." and "Avisarle por WhatsApp" with the notice, whose message
+// carries the card's public address and its management link, both absolute. It is the only place the panel ever shows a management
+// link, in the one answer to the approval (src/lib/review.ts): leaving it
+// without sending the message, the admin needs a new link to have it again.
+// Without a public origin to build the addresses with, the card is published
+// all the same and the screen says so instead of offering a broken notice.
+// No client JavaScript.
+import { publishedMessage } from "../../core/review/notices.ts";
+import { APPROVED, LINK_SHOWN_ONCE, NO_SITE_URL, PUBLIC_DELAY } from "../../core/review/texts.ts";
+import type { ApprovalNotice } from "../../lib/review.ts";
+import DecisionScreen from "./DecisionScreen.astro";
+import NoticeButton from "./NoticeButton.astro";
+
+interface Props {
+  notice: ApprovalNotice;
+  /** "Volver a la cola", when the user may open the queue. */
+  queueHref: string | null;
+}
+
+const { notice, queueHref } = Astro.props;
+const { cardUrl, managementUrl } = notice;
+---
+
+<DecisionScreen heading={APPROVED} queueHref={queueHref}>
+  <p class="text-ink-muted">{PUBLIC_DELAY}</p>
+  {cardUrl !== null && managementUrl !== null ? (
+    <>
+      <p class="max-w-sm font-semibold text-ink">{LINK_SHOWN_ONCE}</p>
+      <NoticeButton
+        whatsapp={notice.whatsapp}
+        message={publishedMessage(notice.name, cardUrl, managementUrl)}
+      />
+    </>
+  ) : (
+    <p role="alert" class="max-w-sm text-ink">
+      {NO_SITE_URL}
+    </p>
+  )}
+</DecisionScreen>

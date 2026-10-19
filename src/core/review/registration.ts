@@ -4,8 +4,9 @@
 // reports" and "Approving a registration generates its management link,
 // unique and unrepeatable"): everything the business captured, its photo
 // included, and the internal data the admin decides with: status, origin,
-// the dates of its life, the consent record, the trace of its last
-// unpublishing and since when it has a management link.
+// the dates of its life, the consent record, the rejection its last
+// resubmission answered, the trace of its last unpublishing and since when it
+// has a management link.
 //
 // It reads any card, in any status, of any locality: the page has already
 // checked who may see it (./scope.ts) and checks the card's locality before
@@ -56,6 +57,9 @@ export interface RegistrationDetail extends ShowsZone {
   publishedAt: Date | null;
   rejectedAt: Date | null;
   rejectionReason: string | null;
+  /** The rejection its last resubmission answered; null when it was never resubmitted. */
+  previousRejectedAt: Date | null;
+  previousRejectionReason: string | null;
   unpublishedAt: Date | null;
   unpublishReason: string | null;
   consentedToNoticeAt: Date;
@@ -100,6 +104,8 @@ export async function registrationDetail(db: Db, id: string): Promise<Registrati
       publishedAt: businesses.publishedAt,
       rejectedAt: businesses.rejectedAt,
       rejectionReason: businesses.rejectionReason,
+      previousRejectedAt: businesses.previousRejectedAt,
+      previousRejectionReason: businesses.previousRejectionReason,
       unpublishedAt: businesses.unpublishedAt,
       unpublishReason: businesses.unpublishReason,
       consentedToNoticeAt: businesses.consentedToNoticeAt,

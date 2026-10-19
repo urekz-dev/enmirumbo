@@ -7,9 +7,10 @@
 // filters by locality, and the filter is hidden while there is one (v2)").
 //
 // "Registros por revisar", oldest first: each row says in words what it is
-// ("Alta nueva" or "Edición"), its name, its zone, how long it has waited,
-// "Ya estaba publicada, la despublicaste" and "Lleva más de 48 horas" when
-// they apply, and "Revisar", to the detail of the card or of the edit. Above
+// ("Alta nueva", "Reenvío" for a rejected card sent again, or "Edición"),
+// its name, its zone, how long it has waited, "Ya estaba publicada, la
+// despublicaste" and "Lleva más de 48 horas" when they apply, and
+// "Revisar", to the detail of the card or of the edit. Above
 // the rows, how many wait past the goal. Below, "Negocios reportados", only
 // while a card has unattended reports. The page decides what the user may
 // see (src/core/review/scope.ts) and passes only that. Each row is one link
@@ -30,6 +31,7 @@ import {
   QUEUE_HEADING,
   REPORTED_HEADING,
   reportedCountText,
+  RESUBMISSION_TAG,
   REVIEW_LINK,
   SEE_ALL_BUSINESSES,
   SEE_REPORTS,
@@ -117,7 +119,15 @@ const entryClass =
             )}
             <p class="text-sm text-ink-muted">{waitText(row.since, now)}</p>
             <div class="flex flex-wrap gap-2">
-              <PanelTag text={row.kind === "edit" ? EDIT_TAG : NEW_REGISTRATION_TAG} />
+              <PanelTag
+                text={
+                  row.kind === "edit"
+                    ? EDIT_TAG
+                    : row.resubmitted
+                      ? RESUBMISSION_TAG
+                      : NEW_REGISTRATION_TAG
+                }
+              />
               {row.unpublished && <PanelTag text={UNPUBLISHED_TAG} />}
               {row.overdue && <PanelTag text={OVERDUE_TAG} strong icon="⏰" />}
             </div>

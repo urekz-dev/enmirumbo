@@ -42,12 +42,8 @@ import {
 import { parseZoneId, zoneAnchor, zonesFormAction, zonesPath } from "../../src/core/zones/paths.ts";
 import { cleanZoneName, MAX_ZONE_NAME_LENGTH, nameProblem } from "../../src/core/zones/rules.ts";
 import { chosenZonesLocality, zonesLocalities } from "../../src/core/zones/scope.ts";
-import {
-  nameProblemText,
-  PUBLIC_DELAY,
-  zonesCountText,
-  zonesHeading,
-} from "../../src/core/zones/texts.ts";
+import { PUBLIC_DELAY } from "../../src/core/review/texts.ts";
+import { nameProblemText, zonesCountText, zonesHeading } from "../../src/core/zones/texts.ts";
 import {
   submittedName,
   submittedType,

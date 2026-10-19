@@ -1085,6 +1085,9 @@ describe("One card per WhatsApp number", () => {
       status: "in_review",
       rejectedAt: null,
       rejectionReason: null,
+      // The rejection it answers, kept for the panel ("Reenvío").
+      previousRejectedAt: before?.rejectedAt,
+      previousRejectionReason: "No contestó el WhatsApp",
       // Kept.
       origin: "seeded",
       consentedToNoticeAt: before?.consentedToNoticeAt,

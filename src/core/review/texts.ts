@@ -194,3 +194,77 @@ export const EDIT_SUPERSEDED =
   "Estos cambios ya no son los últimos: el negocio mandó otros más nuevos.";
 /** What a resolved edit that replaced the photo proposed, once its photo is no longer the edit's. */
 export const NEW_PHOTO = "Una foto nueva";
+
+// The resubmission of a rejected card (decision of the product owner,
+// 2026-10-18: "Reenvío", and the reason of the rejection it answers).
+export const RESUBMISSION_TAG = "Reenvío";
+
+/** The reason of the rejection a resubmission answered, as the detail says it. */
+export function previousRejectionText(reason: string): string {
+  return `La rechazaste antes por: ${reason}`;
+}
+
+/** When that rejection was, the moment already in its locality's time zone. */
+export function previousRejectedAtText(at: string): string {
+  return `Fue el ${at}.`;
+}
+
+// Approving ("Approving assigns trades, normalizes the zone, marks the origin
+// and publishes the card", "On approving, an offer is made to notify the
+// business by WhatsApp with its card link and its management link").
+export const APPROVE_HEADING = "Aprobar";
+export const TRADES_LABEL = "Giros (de 1 a 3, o ninguno si no embona)";
+export const ZONE_LABEL = "¿En qué colonia está?";
+export const ZONE_PLACEHOLDER = "Elige la colonia";
+export const ORIGIN_LABEL = "¿De dónde salió?";
+export const APPROVE_BUTTON = "Aprobar y publicar";
+export const TOO_MANY_TRADES = "Elige máximo 3 giros";
+export const ZONE_REQUIRED = "Elige la colonia de este negocio";
+export const APPROVED = "Ya quedó publicado.";
+export const NOTIFY_BUTTON = "Avisarle por WhatsApp";
+/**
+ * After every action of the panel that changes what the public pages show
+ * ("The panel says that a change takes up to a minute to reach the site
+ * (v2)"): approving here, and the zones screen (../zones/texts.ts). Written
+ * once for the whole panel.
+ */
+export const PUBLIC_DELAY = "Listo. El cambio puede tardar hasta un minuto en verse en el sitio.";
+/**
+ * The site has no public origin to build the card's link with (a deployed
+ * environment without SITE_URL): the card is published all the same, and the
+ * panel says so instead of sending a local address (the prototype's copy).
+ */
+export const NO_SITE_URL =
+  "No se pudo armar el link de la ficha porque falta configurar la dirección pública del sitio. El negocio ya quedó publicado; avísale cuando esté configurada.";
+
+/** A hidden zone among the approval's options, by its display name, marked. */
+export function hiddenZoneOption(displayName: string): string {
+  return `${displayName} (oculta)`;
+}
+
+/** The management link of the notice is shown only on this screen. */
+export const LINK_SHOWN_ONCE = "Mándale el mensaje ahora: este enlace solo se ve aquí.";
+
+/** The free text of a zone "Otra", exactly as the business wrote it, above the zone list. */
+export function otherZoneWrittenText(text: string): string {
+  return `El negocio escribió su colonia como "Otra": ${text}`;
+}
+
+// Rejecting ("Rejecting requires a reason, stores it with its date and offers
+// to notify by WhatsApp", "A rejection reason is never silently trimmed (v2)").
+export const REJECT_HEADING = "Rechazar";
+export const REJECT_REASON_LABEL = "¿Por qué lo rechazas?";
+export const REJECT_BUTTON = "Rechazar";
+export const REJECT_REASON_REQUIRED = "Escribe por qué lo rechazas";
+export const REJECTED = "Registro rechazado.";
+
+/** A reason over the limit, refused instead of trimmed: it travels whole to the business. */
+export function reasonTooLongText(limit: number): string {
+  return `El motivo no puede pasar de ${limit} caracteres. Recórtalo un poco: así, completo, es como le va a llegar al negocio.`;
+}
+
+// "A transition is only applied to a registration that is still in review".
+export const ALREADY_RESOLVED = "Este registro ya lo habías resuelto.";
+
+/** A decision that could not be saved: nothing was decided (the panel's copy). */
+export const SAVE_FAILED = "No se pudo guardar. Vuelve a intentarlo.";

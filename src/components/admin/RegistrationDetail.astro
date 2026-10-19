@@ -1,5 +1,5 @@
 ---
-// The detail of a card in the panel, read-only (docs/specs/admin-review.md,
+// The detail of a card in the panel (docs/specs/admin-review.md,
 // "Registration detail with all the captured data, only inside the panel",
 // "The business detail lists its unattended reports", "Verification button
 // that opens WhatsApp with a prefilled message", "Approving a registration
@@ -12,12 +12,13 @@
 // for what it left blank; the internal data (status, origin, dates, the
 // consent record with its version or "versión no registrada", the
 // re-acceptance, the rejection, "Cuándo la despublicaste" and "Por qué la
-// despublicaste" only when it was unpublished, and since when it has a
-// management link, never the link); "Reportes sin atender", only with some
-// and only for who attends reports; and "Escribirle por WhatsApp". The
-// actions that F2, F3 and F4 add go after all of it, so the admin reads
-// before acting. Every date is in the time zone of the card's locality. No
-// client JavaScript.
+// despublicaste" only when it was unpublished, "La rechazaste antes por: …"
+// and its date only when a resubmission answered a rejection, and since when
+// it has a management link, never the link); "Reportes sin atender", only
+// with some and only for who attends reports; and "Escribirle por WhatsApp".
+// The actions the page offers (its default slot) go after all of it, so the
+// admin reads before acting. Every date is in the time zone of the card's
+// locality. No client JavaScript.
 import type { PendingReport, RegistrationDetail } from "../../core/review/registration.ts";
 import { panelDate, panelDateTime, waitText } from "../../core/review/time.ts";
 import {
@@ -29,6 +30,8 @@ import {
   ORIGIN_TEXT,
   PENDING_REPORTS_HEADING,
   PHOTO_LABEL,
+  previousRejectedAtText,
+  previousRejectionText,
   reconsentLabel,
   STATUS_TEXT,
   UNPUBLISH_REASON_LABEL,
@@ -127,6 +130,14 @@ const at = (date: Date) => panelDateTime(date, detail.timeZone);
         <DataRow label={UNPUBLISH_REASON_LABEL} value={detail.unpublishReason} />
       )}
     </dl>
+    {detail.previousRejectedAt && detail.previousRejectionReason && (
+      <div class="flex min-w-0 flex-col gap-0.5 py-2.5" data-testid="previous-rejection">
+        <p class="break-words text-ink">{previousRejectionText(detail.previousRejectionReason)}</p>
+        <p class="text-sm text-ink-muted">
+          {previousRejectedAtText(at(detail.previousRejectedAt))}
+        </p>
+      </div>
+    )}
     {detail.managementLinkCreatedAt && (
       <p class="text-sm text-ink-muted">{managementLinkText(at(detail.managementLinkCreatedAt))}</p>
     )}
@@ -159,4 +170,6 @@ const at = (date: Date) => panelDateTime(date, detail.timeZone);
     businessName={detail.name}
     localityName={detail.localityName}
   />
+
+  <slot />
 </article>

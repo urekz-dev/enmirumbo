@@ -1,14 +1,12 @@
 // The copy of the zones screen of the panel (docs/specs/admin-review.md, "The
-// admin can hide and rename the zones of a locality (v2)", "The admin can add
-// a zone to a locality (v2)" and "The panel says that a change takes up to a
-// minute to reach the site (v2)"). The literals the specification quotes are
-// written here exactly as it quotes them, and the tests compare them
-// character by character. Colloquial Mexican Spanish. Pure.
+// admin can hide and rename the zones of a locality (v2)" and "The admin can
+// add a zone to a locality (v2)"). The literal of "The panel says that a
+// change takes up to a minute to reach the site (v2)" is the panel's one
+// copy, PUBLIC_DELAY in ../review/texts.ts. The literals the specification
+// quotes are written here exactly as it quotes them, and the tests compare
+// them character by character. Colloquial Mexican Spanish. Pure.
 import type { ConflictingPage, NameProblem } from "./rules.ts";
 import { MAX_ZONE_NAME_LENGTH } from "./rules.ts";
-
-/** After every action that changes what the public pages show (v2). */
-export const PUBLIC_DELAY = "Listo. El cambio puede tardar hasta un minuto en verse en el sitio.";
 
 export const ZONES_TITLE = "Colonias";
 /** The entry to the screen, from the queue. */

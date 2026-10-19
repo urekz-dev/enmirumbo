@@ -9,7 +9,7 @@
 // itself with its descriptor, "enmirumbo, el directorio de negocios de …",
 // the locality read from the card's record, never written here; the brand is
 // never followed by the locality's name. Pure.
-import { nationalNumber } from "../business/contact.ts";
+import { panelWhatsappLink } from "./notices.ts";
 
 /** The message of the first contact, with the card's name and its locality. */
 export function verificationMessage(businessName: string, localityName: string): string {
@@ -30,8 +30,5 @@ export function verificationLink(
   businessName: string,
   localityName: string,
 ): string | null {
-  const digits = nationalNumber(whatsapp);
-  if (digits === null) return null;
-  const message = verificationMessage(businessName, localityName);
-  return `https://wa.me/52${digits}?text=${encodeURIComponent(message)}`;
+  return panelWhatsappLink(whatsapp, verificationMessage(businessName, localityName));
 }

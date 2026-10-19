@@ -1,0 +1,137 @@
+---
+// The approval form of a registration in review (docs/specs/admin-review.md,
+// "Approving assigns trades, normalizes the zone, marks the origin and
+// publishes the card" and "A failed approval repaints exactly the trades the
+// admin selected (v2)"): the trades of the catalogue, from none to three, in
+// a list that scrolls by itself; "¿En qué colonia está?" only when the
+// business wrote its zone as "Otra", with that text exactly as it wrote it
+// and every zone of its locality by its display name, a hidden one marked
+// "(oculta)"; "¿De dónde
+// salió?"; and "Aprobar y publicar". It posts to the detail's own address
+// with the action `admin.approve`. It opens with the card's trades checked
+// and its origin, and comes back after an error with exactly what the admin
+// chose, none included, and each error next to its field. Every check is the
+// server's, so the form is `novalidate`. No client JavaScript: each trade and
+// origin is a native control inside a label at least 44px tall.
+import type {
+  ApprovalCatalogue,
+  ApprovalDraft,
+  ApprovalErrors,
+} from "../../core/review/approval.ts";
+import { APPROVAL_FIELDS } from "../../core/review/approval.ts";
+import {
+  APPROVE_BUTTON,
+  APPROVE_HEADING,
+  hiddenZoneOption,
+  ORIGIN_LABEL,
+  ORIGIN_TEXT,
+  otherZoneWrittenText,
+  TOO_MANY_TRADES,
+  TRADES_LABEL,
+  ZONE_LABEL,
+  ZONE_PLACEHOLDER,
+  ZONE_REQUIRED,
+} from "../../core/review/texts.ts";
+import { SECONDARY_BUTTON } from "../../lib/buttons.ts";
+import FieldError from "../FieldError.astro";
+
+interface Props {
+  /** The address the form posts to: the detail with the action `admin.approve`. */
+  action: string;
+  catalogue: ApprovalCatalogue;
+  /** What the form shows checked and chosen. */
+  draft: ApprovalDraft;
+  errors: ApprovalErrors;
+  /** Whether the card's zone is not a catalogue zone, so the admin chooses one. */
+  needsZone: boolean;
+  /** The free text of "Otra" the business wrote, when it wrote one. */
+  zoneOther: string | null;
+}
+
+const { action, catalogue, draft, errors, needsZone, zoneOther } = Astro.props;
+const label = "text-sm font-semibold text-ink";
+const choice = "flex min-h-11 cursor-pointer items-center gap-3 text-sm text-ink";
+const box = "h-5 w-5 shrink-0 border-control";
+const select =
+  "w-full rounded-lg bg-background px-4 py-3 text-base text-ink focus:ring-2 focus:ring-action-strong focus:outline-none";
+---
+
+<form
+  method="post"
+  action={action}
+  novalidate
+  class="flex flex-col gap-5 rounded-xl border border-line p-4"
+  data-testid="approve-form"
+>
+  <h2 class="font-semibold text-ink">{APPROVE_HEADING}</h2>
+
+  <fieldset
+    class="flex flex-col gap-2"
+    aria-describedby={errors.trades ? "approve-trades-error" : undefined}
+  >
+    <legend class={label}>{TRADES_LABEL}</legend>
+    <FieldError id="approve-trades-error" message={errors.trades ? TOO_MANY_TRADES : null} />
+    <div class="flex max-h-64 flex-col gap-1 overflow-y-auto rounded-lg border border-line p-2">
+      {catalogue.trades.map((trade) => (
+        <label class={choice}>
+          <input
+            type="checkbox"
+            name={APPROVAL_FIELDS.trades}
+            value={trade.slug}
+            checked={draft.trades.includes(trade.slug)}
+            class={`${box} rounded`}
+          />
+          {trade.name}
+        </label>
+      ))}
+    </div>
+  </fieldset>
+
+  {needsZone && (
+    <div class="flex flex-col gap-1.5">
+      {zoneOther !== null && (
+        <p class="text-sm break-words text-ink-muted">{otherZoneWrittenText(zoneOther)}</p>
+      )}
+      <label for="approve-zone" class={label}>
+        {ZONE_LABEL}
+      </label>
+      <select
+        id="approve-zone"
+        name={APPROVAL_FIELDS.zone}
+        aria-invalid={errors.zone ? "true" : undefined}
+        aria-describedby={errors.zone ? "approve-zone-error" : undefined}
+        class:list={[select, errors.zone ? "border-2 border-ink" : "border border-control"]}
+      >
+        <option value="" selected={draft.zone === ""}>
+          {ZONE_PLACEHOLDER}
+        </option>
+        {catalogue.zones.map((zone) => (
+          <option value={zone.slug} selected={draft.zone === zone.slug}>
+            {zone.hidden ? hiddenZoneOption(zone.displayName) : zone.displayName}
+          </option>
+        ))}
+      </select>
+      <FieldError id="approve-zone-error" message={errors.zone ? ZONE_REQUIRED : null} />
+    </div>
+  )}
+
+  <fieldset class="flex flex-col gap-2">
+    <legend class={label}>{ORIGIN_LABEL}</legend>
+    {(["organic", "seeded"] as const).map((origin) => (
+      <label class={choice}>
+        <input
+          type="radio"
+          name={APPROVAL_FIELDS.origin}
+          value={origin}
+          checked={draft.origin === origin}
+          class={box}
+        />
+        {ORIGIN_TEXT[origin]}
+      </label>
+    ))}
+  </fieldset>
+
+  <button type="submit" class={`${SECONDARY_BUTTON} w-full px-4 text-base`}>
+    {APPROVE_BUTTON}
+  </button>
+</form>

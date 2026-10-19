@@ -1260,7 +1260,7 @@ The filter is a group of links under the literal label "Filtrar por municipio", 
 
 ### Requirement: The admin can hide and rename the zones of a locality (v2)
 
-Added in v2 — source: ADR 0006. Amended on 2026-10-18 by EMR-52 and the decision of the product owner of that date: where the zones screen lives and what it shows, who may use it, that a rename keeps the display names unambiguous, and that the screen does not normalize the zone "Otra" of a card; adding a zone is "The admin can add a zone to a locality (v2)".
+Added in v2 — source: ADR 0006. Amended on 2026-10-18 by EMR-52 and the decision of the product owner of that date: where the zones screen lives and what it shows, who may use it, that a rename keeps the display names unambiguous, and that the screen does not normalize the zone "Otra" of a card; adding a zone is "The admin can add a zone to a locality (v2)". Amended on 2026-10-18 by EMR-47: the approval offers the hidden zones, marked.
 
 The panel MUST let the admin hide, show and rename the zones of a locality. Renaming does not change the slug (see "Catalogues of categories, zones and trades with stable slug").
 
@@ -1274,7 +1274,7 @@ The panel MUST let the admin hide, show and rename the zones of a locality. Rena
 
 **After a change.** A change saved answers a 303 to the screen of its locality with `listo=<zone id>` and the zone's row as the fragment, so a reload never sends the form again; that row says, as a status, "Listo. El cambio puede tardar hasta un minuto en verse en el sitio." ("The panel says that a change takes up to a minute to reach the site (v2)"). A form with errors comes back with a 400, open, with what was typed and each error next to its field. None of these changes writes to the audit log, which records only what is done to a card (`data-model`, "The audit log records the destructive actions of the admin (v2)").
 
-**"Otra".** The screen does not normalize the zone "Otra" of a card. By decision of the product owner (2026-10-18), that happens on approving a registration and on applying an owner's edit, as their requirements settle, so that a published card always has a catalogue zone.
+**"Otra".** The screen does not normalize the zone "Otra" of a card. By decision of the product owner (2026-10-18), that happens on approving a registration and on applying an owner's edit, as their requirements settle, so that a published card always has a catalogue zone. The approval offers the hidden zones too, marked "(oculta)", since a business that typed the name of a hidden zone arrived as "Otra" ("Approving and rejecting are forms of the detail, and their action checks everything again (v2)").
 
 #### Scenario: hide
 
@@ -1447,16 +1447,17 @@ Applying a pending edit MUST also carry out what it asks of the photo (`data-mod
 
 ### Requirement: The review screens live at fixed addresses under `/admin` (v2)
 
-Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-46); ADR 0010. It settles the address of the pending edit detail, which no earlier requirement gave.
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-46); ADR 0010. It settles the address of the pending edit detail, which no earlier requirement gave. Amended on 2026-10-18 by EMR-47: the confirmation of a rejection has its own address, and the detail of a card in review offers its decisions ("Approving and rejecting are forms of the detail, and their action checks everything again (v2)").
 
 The review screens of the panel MUST live at these addresses, all of them under `/admin`, so that the Access check, the panel's headers, its no-indexing and its referrer policy reach them by where they live:
 
 - `/admin`: the review queue, the panel's main screen ("Review queue with the pending registrations, oldest first"), which replaces the placeholder that only named the signed-in email.
 - `/admin/negocios`: "Todos los negocios".
 - `/admin/registros/<id>`: the detail of a card, by its identifier ("The card is identified by a short random id (v2)" in `data-model`), whatever its status. The queue's "Revisar" of an "Alta nueva", the list's "Ver detalle" and the reported section's "Ver reportes" lead here.
+- `/admin/registros/<id>/rechazado`: the confirmation of the rejection of that card, where a rejection lands ("Approving and rejecting are forms of the detail, and their action checks everything again (v2)").
 - `/admin/ediciones/<n>`: the detail of a pending edit, by its number. The queue's "Revisar" of an "Edición" leads here. Applying or discarding acts on the edit of that number, which is what lets them refuse an edit that is no longer the one the admin had in front of them ("A pending edit is resolved only once and only if it is still the latest").
 
-An identifier or a number of another shape, one that no card or edit has, and a card or edit the user may not see MUST all answer the site's 404, under the panel's headers. The queue and the list carry in their query only what "The listing is filtered by status without leaving the view", "The listing searches by name or WhatsApp (v2)" and "The panel filters by locality, and the filter is hidden while there is one (v2)" allow; the details carry nothing in theirs. Until the stories of their actions arrive, the two details are read-only: they show everything their requirements ask and no form, button or action that changes anything. Their actions come after what they show.
+An identifier or a number of another shape, one that no card or edit has, and a card or edit the user may not see MUST all answer the site's 404, under the panel's headers. The queue and the list carry in their query only what "The listing is filtered by status without leaving the view", "The listing searches by name or WhatsApp (v2)" and "The panel filters by locality, and the filter is hidden while there is one (v2)" allow; the details carry nothing in theirs but the name of the action a form posts with. The detail of a card in review offers approving and rejecting to who may review it; every other action of the details arrives with its own story, and until then they show no form, button or action that changes anything. Their actions come after what they show.
 
 #### Scenario: the panel's main screen
 
@@ -1585,3 +1586,107 @@ The first-contact message MUST name the locality of the card, read from its reco
 
 - **WHEN** the admin taps "Escribirle por WhatsApp" on the detail of a card of a second locality
 - **THEN** the message says "el directorio de negocios de" followed by that locality's name
+
+### Requirement: Approving and rejecting are forms of the detail, and their action checks everything again (v2)
+
+Added in v2 — source: backlog of epic F, story F2 (EMR-47); ADR 0010, ADR 0021; decisions of the product owner of 2026-10-18, the hidden zones among the approval's options included (EMR-52). It settles, for the Worker and Astro Actions, how "Approving assigns trades, normalizes the zone, marks the origin and publishes the card", "Rejecting requires a reason, stores it with its date and offers to notify by WhatsApp", "A transition is only applied to a registration that is still in review" and "The detail offers the actions that correspond to the status, with the context in sight" are posted and answered.
+
+The detail of a card in `in_review` MUST show, after its data, its reports and "Escribirle por WhatsApp", the approval form and the rejection form, and only to a user who holds `businesses.review` in the card's locality: a user who opens the detail with any other permission sees neither. Each form posts to the detail's own address with its action, `admin.approve` or `admin.reject`, and works without client JavaScript; every check is the server's, so neither relies on the browser's validation.
+
+Approving and rejecting need `businesses.review` in the card's locality and nothing else: assigning trades and normalizing the zone are part of approving ("Revisar registros: ver la cola y el detalle, aprobar y rechazar"), and `businesses.edit` is for editing a card outside its review ("The admin can edit any card to serve the rectification right (v2)"). Each action MUST, in this order and before anything is written: verify the Access token of its own request (`FORBIDDEN` without one); refuse, as not found, a submission that does not come from the detail's address, the action called at `/_actions/` or from any other page included, before reading anything; take the card from the address, never from a field; answer the site's 404 for a card that does not exist or of a locality where the user may not open a card's detail, and the panel's 403 for one the user sees but may not review there; answer "Este registro ya lo habías resuelto." for a card no longer in review; and only then check the form. Every read and write goes through the fresh connection.
+
+The transition MUST be one conditional write that applies only while the card is still `in_review`, so that of two decisions at once exactly one applies and the other answers "Este registro ya lo habías resuelto.", with status `409`. A failed check MUST answer the detail again, status `400`, with each error next to its field and what the admin chose or wrote, read from the same submission: every trade as it was ticked, none included, the zone and the origin chosen, and the reason exactly as typed. A decision that cannot be saved answers the detail, status `500`, with the literal text "No se pudo guardar. Vuelve a intentarlo." above the forms, and nothing is decided. Any other request to the detail with a method but `GET` or `HEAD` gets a `405` with no body.
+
+A rejection MUST answer with a `303` to `/admin/registros/<id>/rechazado`, with `Cache-Control: no-store`, so reloading it never rejects again. That screen reads the stored reason, never one an address carries, and exists only for a rejected card with a reason that the user may review: for any other, it MUST send the admin back to the detail, with nothing of the card in that answer. An approval answers as "The management link is shown only in the answer to the approval (v2)" says.
+
+The approval form MUST offer every trade of the catalogue in the catalogue's order, as checkboxes inside labels at least 44px tall, in a list that scrolls by itself; it opens with the trades the card already has ticked and with its origin chosen, so publishing an unpublished card again changes neither unnoticed. Only when the card's zone is not a catalogue zone it MUST show the free text the business wrote, as "El negocio escribió su colonia como "Otra": <texto>", and a list of every zone of the card's locality by the names the public pages show them with ("A zone whose name repeats in its locality is shown with its settlement type (v2)" in `public-directory`), headed "Elige la colonia", in alphabetical order. The hidden zones are in that list too, each marked after its name as "<nombre> (oculta)": the registration no longer offers a hidden zone, so a business that typed its name arrived as "Otra", and the admin gives it the zone that really applies ("The admin can hide and rename the zones of a locality (v2)"). A trade that is not of the catalogue is refused like too many trades, with "Elige máximo 3 giros", and a zone that is not one of the locality's with "Elige la colonia de este negocio"; an origin that is not `seeded` is `organic`. The chosen zone replaces only the missing catalogue zone: the free text the business wrote is kept, as everything it captured is. Approving writes no entry of the audit log.
+
+The rejection form MUST have no `maxlength`: a browser cuts a pasted text at it without saying so, and the reason travels whole to the business. Its 500 characters are counted as a person sees them written (a letter with its accent, or an emoji, is one); the spaces around the reason are dropped, a line break counts as one character and a NUL is dropped. In the same transaction as the rejection, the audit log MUST get its entry ("The destructive actions of the admin write to the audit log with the Access identity (v2)"): the Access email in lowercase, the locality, the card's identifier, `reject` and `in_review`, and nothing of the card's data.
+
+#### Scenario: only who may review sees the forms
+
+- **WHEN** a user who only attends reports in the card's locality opens the detail of a card in review
+- **THEN** they see its data and its reports, and neither the approval nor the rejection form
+
+#### Scenario: a decision from elsewhere
+
+- **WHEN** an approval is posted to `/_actions/admin.approve`, or with `?_action=admin.approve` to another page of the panel
+- **THEN** the action reads and writes nothing, the card stays in review, and the answer carries no notice and no management link
+
+#### Scenario: two approvals at once
+
+- **WHEN** two approvals of the same card arrive at the same moment
+- **THEN** exactly one publishes it, with its trades and its link, and the other answers "Este registro ya lo habías resuelto."
+
+#### Scenario: a rejection lands on its confirmation
+
+- **WHEN** the admin rejects a registration and then reloads the screen
+- **THEN** the first answer was a `303` to `/admin/registros/<id>/rechazado`, which shows "Registro rechazado.", and the reload rejects nothing again and writes no second entry of the audit log
+
+#### Scenario: a reason pasted too long
+
+- **WHEN** the admin pastes a reason of 600 characters and taps "Rechazar"
+- **THEN** the field took it whole, nothing is saved, and the form comes back with the 600 characters and the message to shorten it
+
+#### Scenario: a hidden zone at approval
+
+- **WHEN** the admin opens the approval of a card whose business typed "Nacozari" while that zone of Tizayuca was hidden
+- **THEN** the list offers "Nacozari (oculta)" among the zones, and approving with it gives the card that zone
+
+#### Scenario: an approval that names a trade of nowhere
+
+- **WHEN** a forged approval names a trade that is not in the catalogue
+- **THEN** nothing is published and the form says "Elige máximo 3 giros"
+
+### Requirement: The management link is shown only in the answer to the approval (v2)
+
+Added in v2 — source: backlog of epic F, story F2 (EMR-47); ADR 0010; `data-model`, "The management link is issued by the panel alone and resolved by its fingerprint (v2)"; decision of the product owner, 2026-10-18: the line that the link is shown only there. It settles how "On approving, an offer is made to notify the business by WhatsApp with its card link and its management link" shows the link "only once", and how "Approving a registration generates its management link, unique and unrepeatable" applies to an unpublished card published again.
+
+The transaction that publishes the card MUST issue its management link, after the card is `published`, and the token MUST exist in plain only in the memory of that request. The confirmation, "Ya quedó publicado.", MUST be the answer to the approval's own submission, status `200`, and never a redirect to an address of its own: an address that carried the token would keep it in the browser's history, and one that did not could not show it. The address of that answer carries only the action's name, its `Cache-Control: no-store` keeps it out of every cache, the panel's referrer policy sends no path to WhatsApp, and the token MUST NOT go in a cookie, a log, an error message or any other page. Sending the same submission again, by reloading that answer, going back to it or from a tab left open, MUST find the card already resolved: it answers "Este registro ya lo habías resuelto.", issues no new link and shows none.
+
+The notice MUST carry the card's public address and its management link, both absolute from the environment's public origin, as the message of "Avisarle por WhatsApp", the only link of the panel that ever carries a token. Right before that button the screen MUST say, literally, "Mándale el mensaje ahora: este enlace solo se ve aquí.", so the admin does not leave without sending it; it also says "Listo. El cambio puede tardar hasta un minuto en verse en el sitio." and offers "Volver a la cola". A deployed environment without a public origin publishes the card all the same, and the screen MUST say, instead of the button and its line, "No se pudo armar el link de la ficha porque falta configurar la dirección pública del sitio. El negocio ya quedó publicado; avísale cuando esté configurada."; the admin then sends a new link once the origin is set.
+
+Approving an unpublished card publishes it again and MUST issue it a new link that replaces the one it had: the panel cannot show the earlier one, and a notice without a link would leave the owner without one. The earlier link opened nothing while the card was unpublished, and it opens nothing afterwards.
+
+#### Scenario: the link is shown once
+
+- **WHEN** the admin approves a registration, leaves the confirmation and opens the detail of that card
+- **THEN** the confirmation said "Mándale el mensaje ahora: este enlace solo se ve aquí." and carried the token only inside the message of "Avisarle por WhatsApp", the detail says only since when the card has a link, and no address the browser visited carries the token
+
+#### Scenario: reloading the confirmation
+
+- **WHEN** the admin sends the approval again from the confirmation
+- **THEN** they read "Este registro ya lo habías resuelto.", and the link they had is still the valid one
+
+#### Scenario: both links open what they promise
+
+- **WHEN** the two links of the notice are opened
+- **THEN** the first answers the public card, with its photo and its trades, and the second opens the prefilled edit form of that card
+
+#### Scenario: publishing again
+
+- **WHEN** the admin approves a card they had unpublished
+- **THEN** it is published with the trades it had and a new link, and the link it had before opens nothing
+
+### Requirement: The queue labels the resubmission of a rejected card, and its detail says why it was rejected before (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-47); `data-model`, "The business keeps the rejection its resubmission answered (v2)". It amends "Review queue with the pending registrations, oldest first", whose rows are labelled "Alta nueva" or "Edición", and "Registration detail with all the captured data, only inside the panel".
+
+A card in review that entered the queue as the resubmission of a rejected card MUST be labelled, in its queue row, with the literal text "Reenvío" instead of "Alta nueva", as text and not only by a colour. It entered so when it keeps the rejection its last resubmission answered and was not unpublished since; a card that came back from an unpublishing keeps "Alta nueva" with "Ya estaba publicada, la despublicaste", and the wait of every row is counted as before.
+
+The detail of a card that keeps that rejection MUST say, among its internal data, "La rechazaste antes por: <motivo>", with the reason as it was stored, and below it "Fue el <fecha>", the moment of that rejection in the locality's time zone ("Dates in the panel use the time zone of the locality (v2)"). It is shown whatever the card's status afterwards, like the unpublishing trace, and never on a public page; a card never resubmitted shows neither line.
+
+#### Scenario: a resubmission in the queue
+
+- **WHEN** the owner of a rejected card corrects it and sends it again
+- **THEN** the queue shows it as "Reenvío", counting its wait from the resubmission
+
+#### Scenario: why it was rejected before
+
+- **WHEN** the admin opens the detail of that card
+- **THEN** they read "La rechazaste antes por: " followed by the reason they wrote, and the date of that rejection
+
+#### Scenario: unpublished after a resubmission
+
+- **WHEN** a card that was resubmitted, approved and then unpublished goes back to the queue
+- **THEN** its row says "Alta nueva" and "Ya estaba publicada, la despublicaste", not "Reenvío"
