@@ -4,6 +4,7 @@
 //
 //   /admin                      the review queue, the panel's main screen
 //   /admin/negocios             "Todos los negocios"
+//   /admin/bitacora             the audit log, newest first
 //   /admin/registros/<id>       the detail of a card, by its identifier, where
 //                               its decisions are posted
 //   /admin/registros/<id>/editar
@@ -36,6 +37,7 @@ import type { BusinessStatus } from "../db/schema/index.ts";
 
 export const QUEUE_PATH = "/admin";
 export const BUSINESSES_PATH = "/admin/negocios";
+export const AUDIT_LOG_PATH = "/admin/bitacora";
 
 /** The detail of a card. */
 export function registrationPath(businessId: string): string {
@@ -85,6 +87,24 @@ export function appliedPath(editId: number | string): string {
 /** The confirmation of a discarded edit, which a discard answers with a 303. */
 export function discardedPath(editId: number | string): string {
   return `${editPath(editId)}/descartada`;
+}
+
+/** The audit log's view: its locality filter and its page. */
+export interface AuditLogView {
+  locality: string | null;
+  page: number;
+}
+
+/**
+ * The address of a view of the audit log. Values at their default are left
+ * out, so "Todos" and page 1 are `/admin/bitacora` itself.
+ */
+export function auditLogPath(view: Partial<AuditLogView> = {}): string {
+  const params = new URLSearchParams();
+  if (view.locality) params.set("localidad", view.locality);
+  if (view.page !== undefined && view.page > 1) params.set("pagina", String(view.page));
+  const query = params.toString();
+  return query === "" ? AUDIT_LOG_PATH : `${AUDIT_LOG_PATH}?${query}`;
 }
 
 /** The status filter of the list: "Todos" or one status. */

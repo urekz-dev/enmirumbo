@@ -1,0 +1,75 @@
+---
+// One entry of the audit log (docs/specs/admin-review.md, "The panel shows
+// the audit log, read-only (v2)"): its action in Spanish, the moment in the
+// time zone of its locality, who did it, the previous status in Spanish and
+// the card. The card is a link to its detail only while it exists and the
+// user may open a card's detail in the entry's locality (`canOpenCard`, the
+// rule the detail page applies); otherwise the identifier is plain text, and
+// once it was deleted it keeps "Ficha borrada" and never a field of what it
+// held. Nothing here is an action: no form, no button, no client JavaScript.
+import type { AuditRow } from "../../core/review/audit-log.ts";
+import { registrationPath } from "../../core/review/paths.ts";
+import { panelDateTime } from "../../core/review/time.ts";
+import {
+  AUDIT_ACTION_TEXT,
+  AUDIT_ACTOR_LABEL,
+  AUDIT_CARD_LABEL,
+  AUDIT_DELETED_TAG,
+  AUDIT_PREVIOUS_STATUS_LABEL,
+  AUDIT_WHEN_LABEL,
+  auditActorText,
+  STATUS_TEXT,
+} from "../../core/review/texts.ts";
+import PanelTag from "./PanelTag.astro";
+
+interface Props {
+  row: AuditRow;
+  /** The name of the row's locality, while the log shows entries of several; null otherwise. */
+  localityName?: string | null;
+  /** Whether the user may open a card's detail in the entry's locality (opensCardIn). */
+  canOpenCard: boolean;
+}
+
+const { row, localityName = null, canOpenCard } = Astro.props;
+const label = "text-sm font-semibold text-ink";
+const value = "break-words text-sm text-ink-muted";
+---
+
+<li>
+  <article class="flex min-w-0 flex-col gap-2 rounded-xl border border-line bg-background p-4">
+    <h2 class="font-semibold break-words text-ink">{AUDIT_ACTION_TEXT[row.action]}</h2>
+    {localityName && <p class="text-sm text-ink-muted">{localityName}</p>}
+    <dl class="flex flex-col gap-1.5">
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <dt class={label}>{AUDIT_WHEN_LABEL}</dt>
+        <dd class={value}>{panelDateTime(row.occurredAt, row.timeZone)}</dd>
+      </div>
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <dt class={label}>{AUDIT_ACTOR_LABEL}</dt>
+        <dd class={value}>{auditActorText(row.actor)}</dd>
+      </div>
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <dt class={label}>{AUDIT_PREVIOUS_STATUS_LABEL}</dt>
+        <dd class={value}>{STATUS_TEXT[row.previousStatus]}</dd>
+      </div>
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <dt class={label}>{AUDIT_CARD_LABEL}</dt>
+        <dd class="flex flex-wrap items-center gap-2">
+          {row.cardExists && canOpenCard ? (
+            <a
+              href={registrationPath(row.businessId)}
+              class="inline-flex min-h-11 items-center font-semibold break-words text-action-strong underline underline-offset-4"
+            >
+              {row.businessId}
+            </a>
+          ) : (
+            <>
+              <span class={value}>{row.businessId}</span>
+              {!row.cardExists && <PanelTag text={AUDIT_DELETED_TAG} />}
+            </>
+          )}
+        </dd>
+      </div>
+    </dl>
+  </article>
+</li>

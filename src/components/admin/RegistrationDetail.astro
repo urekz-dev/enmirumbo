@@ -24,6 +24,7 @@
 // fragment, so the answer opens on it. The actions the page offers (its
 // default slot) go after all of it, so the admin reads before acting. Every
 // date is in the time zone of the card's locality. No client JavaScript.
+import type { AuditRow } from "../../core/review/audit-log.ts";
 import type { PendingReport, RegistrationDetail } from "../../core/review/registration.ts";
 import { panelDate, panelDateTime, waitText } from "../../core/review/time.ts";
 import {
@@ -47,6 +48,7 @@ import {
 import { REPORT_REASON_LABELS } from "../../core/report/submission.ts";
 import { REPORT_FIELD } from "../../core/review/attend.ts";
 import { SECONDARY_BUTTON } from "../../lib/buttons.ts";
+import AuditLogSection from "./AuditLogSection.astro";
 import DataRow from "./DataRow.astro";
 import PanelPhoto from "./PanelPhoto.astro";
 import VerifyButton from "./VerifyButton.astro";
@@ -59,6 +61,8 @@ interface Props {
   zone: string | null;
   /** Its unattended reports, oldest first; null when the user does not attend reports. */
   reports: readonly PendingReport[] | null;
+  /** Its audit log entries, newest first; null when the user may not read the log. */
+  auditEntries?: readonly AuditRow[] | null;
   /** The clock of the reports' waits. */
   now: Date;
   /** "Volver a la cola", when the user may open the queue. */
@@ -80,6 +84,7 @@ const {
   copyHref = null,
   zone,
   reports,
+  auditEntries = null,
   now,
   queueHref,
   attendAction = null,
@@ -175,6 +180,8 @@ const REPORT_NOTICE_ID = "report-notice";
       <p class="text-sm text-ink-muted">{managementLinkText(at(detail.managementLinkCreatedAt))}</p>
     )}
   </section>
+
+  {auditEntries && auditEntries.length > 0 && <AuditLogSection entries={auditEntries} />}
 
   {reportNotice && (
     <p

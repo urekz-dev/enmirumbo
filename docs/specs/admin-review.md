@@ -1204,6 +1204,46 @@ Each reject, unpublish, permanent deletion and edit of contact data done from th
 - **WHEN** the entry cannot be saved while unpublishing a card
 - **THEN** the action fails visibly and the card stays published
 
+### Requirement: The panel shows the audit log, read-only (v2)
+
+Added in v2 — source: backlog of epic F, story F5 (EMR-50); PRD §4, ADR 0010; `data-model`, "The audit log records the destructive actions of the admin (v2)". Amended on 2026-10-19 (EMR-50) by decision of the product owner: a row's card identifier links only to a detail the user may open in the entry's locality, by the detail page's own rule, so a user who holds only `audit_log.view` sees plain text; the card section of a detail stays uncapped.
+
+The panel MUST show the audit log at `/admin/bitacora`, behind the same Access check, headers, no-indexing and referrer policy as the rest of the panel, newest first, 25 rows a page ("Página n de m", "Ver más antiguos" and "Ver más nuevos"), cut by the database, so the page never grows with the table. A `pagina` that cannot be read is page 1, and one past the last is no error: it has no rows. Each row MUST show the date and time in the time zone of the entry's locality ("Dates in the panel use the time zone of the locality (v2)"), the actor (the Access email, or "Trabajo programado" for the `scheduled-job` entries of a purge), the action in Spanish ("Rechazo", "Despublicación", "Borrado definitivo", "Purga" or "Edición de datos de contacto"), the previous status in Spanish ("En revisión", "Publicado" or "Rechazado") and the card: its identifier as a link to its detail `/admin/registros/<id>` only while the card exists AND the user may open a card's detail in the entry's locality, by exactly the rule the detail page applies ("Each review screen checks its permission in the locality of what it shows (v2)"), reused, never a copy of it; otherwise the identifier MUST be plain text, so a user who holds only `audit_log.view` sees no link that would answer 404, and a deleted card keeps its identifier and "Ficha borrada" whatever the user may open. A row MUST show nothing the table does not hold: the log MUST NOT be joined to the data of a deleted card, and no name, number, address or reason MUST appear. The screen MUST offer no action and no form, MUST NOT delete or change an entry, and MUST NOT need client JavaScript.
+
+**Who.** The screen needs `audit_log.view` in the locality of the entries ("Each review screen checks its permission in the locality of what it shows (v2)"): a user who holds it in no locality, or who is not a panel user, gets the panel's 403 before anything is read, and a user sees the entries of the localities where they hold it, inactive ones included. Its locality filter is "Filtrar por municipio", with "Todos" and the active localities where the user holds `audit_log.view`, shown only while there are two or more, and its `localidad` behaves as the list's; while it shows entries of several localities, each row says its locality. The queue and the panel home link to it as "Ver la bitácora", shown only to who may open it (the home, to a user who holds `audit_log.view` in some locality: "The panel home opens the sections a user may use (v2)").
+
+**A card's entries.** The detail of a card MUST show, to a user who holds `audit_log.view` in the card's locality, a short section "Bitácora de esta ficha" with the same rows of that card, newest first, and MUST NOT show it to anyone else, nor show it while the card has no entry.
+
+#### Scenario: newest first and paginated
+
+- **WHEN** the admin opens `/admin/bitacora` with more entries than a page
+- **THEN** the rows come newest first, 25 a page, with "Página n de m", "Ver más antiguos" and "Ver más nuevos"
+
+#### Scenario: a deleted card keeps its entry
+
+- **WHEN** the admin opens the log after a permanent deletion
+- **THEN** the deleted card's row shows its identifier and "Ficha borrada", with no link and nothing else of it
+
+#### Scenario: the scheduled job
+
+- **WHEN** the log shows the entry of a purge
+- **THEN** its actor reads "Trabajo programado"
+
+#### Scenario: each user sees their localities
+
+- **WHEN** a user who holds `audit_log.view` in one locality opens the log, and a user who holds it in none
+- **THEN** the first sees the entries of that locality alone and the second gets the panel's 403
+
+#### Scenario: the identifier links only where the user may open the card
+
+- **WHEN** a user who holds `audit_log.view` and a card permission in the entry's locality opens the log, and a user who holds only `audit_log.view` there does
+- **THEN** the first sees the card's identifier as a link to `/admin/registros/<id>` and the second sees it as plain text, never a link that would answer 404
+
+#### Scenario: the detail of a card
+
+- **WHEN** the admin opens the detail of a card that has entries, and one that has none, with `audit_log.view` in its locality
+- **THEN** the first shows "Bitácora de esta ficha" with its rows and the second shows no such section
+
 ### Requirement: The admin can edit any card to serve the rectification right (v2)
 
 Added in v2 — source: PRD §3 (Flow E), PRD §7, prototype backlog E3-7.
@@ -1497,7 +1537,7 @@ Applying a pending edit MUST also carry out what it asks of the photo (`data-mod
 
 ### Requirement: The review screens live at fixed addresses under `/admin` (v2)
 
-Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-46); ADR 0010. It settles the address of the pending edit detail, which no earlier requirement gave. Amended on 2026-10-18 by EMR-47: the confirmation of a rejection has its own address, and the detail of a card in review offers its decisions ("Approving and rejecting are forms of the detail, and their action checks everything again (v2)"). Amended on 2026-10-18 by EMR-49: the confirmations of an applied and a discarded edit have their own addresses, the detail of a card offers "Marcar como atendido" and the detail of a pending edit its resolutions ("Attending a report and resolving a pending edit are forms of their details, and their action checks everything again (v2)"). Amended on 2026-10-18 by EMR-48: the confirmations of an unpublishing and of a permanent deletion, and the screen a deletion lands on, have their addresses, and the detail of a card offers unpublishing, a new link and the deletion ("Unpublishing, a new link and the permanent deletion are forms of the detail, and their actions check everything again (v2)").
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-46); ADR 0010. It settles the address of the pending edit detail, which no earlier requirement gave. Amended on 2026-10-18 by EMR-47: the confirmation of a rejection has its own address, and the detail of a card in review offers its decisions ("Approving and rejecting are forms of the detail, and their action checks everything again (v2)"). Amended on 2026-10-18 by EMR-49: the confirmations of an applied and a discarded edit have their own addresses, the detail of a card offers "Marcar como atendido" and the detail of a pending edit its resolutions ("Attending a report and resolving a pending edit are forms of their details, and their action checks everything again (v2)"). Amended on 2026-10-18 by EMR-48: the confirmations of an unpublishing and of a permanent deletion, and the screen a deletion lands on, have their addresses, and the detail of a card offers unpublishing, a new link and the deletion ("Unpublishing, a new link and the permanent deletion are forms of the detail, and their actions check everything again (v2)"). Amended on 2026-10-19 by EMR-50: the audit log has its own address ("The panel shows the audit log, read-only (v2)").
 
 Amended on 2026-10-19 (EMR-51): the direct rectification form and its confirmation have fixed addresses under the card.
 
@@ -1505,6 +1545,7 @@ The review screens of the panel MUST live at these addresses, all of them under 
 
 - `/admin`: the review queue, the panel's main screen ("Review queue with the pending registrations, oldest first"), which replaces the placeholder that only named the signed-in email.
 - `/admin/negocios`: "Todos los negocios".
+- `/admin/bitacora`: the audit log, newest first ("The panel shows the audit log, read-only (v2)"). Its query carries only `localidad` and `pagina`.
 - `/admin/registros/<id>`: the detail of a card, by its identifier ("The card is identified by a short random id (v2)" in `data-model`), whatever its status. The queue's "Revisar" of an "Alta nueva", the list's "Ver detalle" and the reported section's "Ver reportes" lead here.
 - `/admin/registros/<id>/editar`: direct rectification with the registration form, for `businesses.edit`, in any status; `/admin/registros/<id>/editado`: its confirmation after the save.
 - `/admin/registros/<id>/rechazado`: the confirmation of the rejection of that card, where a rejection lands ("Approving and rejecting are forms of the detail, and their action checks everything again (v2)").
@@ -1540,9 +1581,10 @@ Every review screen MUST first find out what the signed-in user may see, from th
 - the "Alta nueva" rows of the queue: `businesses.review` in the card's locality;
 - the "Edición" rows of the queue and the detail of a pending edit: `edits.review` in the card's locality;
 - "Negocios reportados" in the queue, and "Reportes sin atender" in the detail of a card: `reports.manage` in the card's locality;
-- the detail of a card, and so its row in "Todos los negocios": any permission that acts on a card in its locality (`businesses.review`, `businesses.edit`, `businesses.unpublish`, `businesses.delete`, `reports.manage` or `links.manage`), because the actions of those permissions live in that detail. Resolving pending edits alone does not open the detail of a card in review.
+- the detail of a card, and so its row in "Todos los negocios": any permission that acts on a card in its locality (`businesses.review`, `businesses.edit`, `businesses.unpublish`, `businesses.delete`, `reports.manage` or `links.manage`), because the actions of those permissions live in that detail. Resolving pending edits alone does not open the detail of a card in review;
+- the audit log, and the section of entries in the detail of a card: `audit_log.view` in the locality of the entries.
 
-A screen with nothing the user may see —a user who does not exist, is inactive, has no active assignment, or holds none of that screen's permissions anywhere— MUST answer the panel's generic 403, before reading any card. A card or an edit of a locality where the user may not see it MUST answer the same 404 as one that does not exist, so the panel cannot tell a user that it exists. A link to a screen the user may not open is not shown: "Ver todos los negocios" and "Volver a la cola" appear only to who may open the list and the queue. The panel's actions, when they arrive, check their own permission again in the locality of what they touch.
+A screen with nothing the user may see —a user who does not exist, is inactive, has no active assignment, or holds none of that screen's permissions anywhere— MUST answer the panel's generic 403, before reading any card. A card or an edit of a locality where the user may not see it MUST answer the same 404 as one that does not exist, so the panel cannot tell a user that it exists. A link to a screen the user may not open is not shown: "Ver todos los negocios", "Ver la bitácora" and "Volver a la cola" appear only to who may open the list, the log and the queue. The panel's actions, when they arrive, check their own permission again in the locality of what they touch.
 
 #### Scenario: a locality admin
 
@@ -1879,11 +1921,16 @@ Every form works without client JavaScript. Every action lives under `admin`, ve
 
 ### Requirement: The panel home opens the sections a user may use (v2)
 
-Added in v2 — source: decision of the product owner, 2026-10-19 (EMR-72). This amends the queue's `403` rule in "Each review screen checks its permission in the locality of what it shows (v2)" for `/admin` alone.
+Added in v2 — source: decision of the product owner, 2026-10-19 (EMR-72). This amends the queue's `403` rule in "Each review screen checks its permission in the locality of what it shows (v2)" for `/admin` alone. Amended on 2026-10-19 (EMR-50): the home also offers the audit log to a user who holds `audit_log.view` in some locality.
 
-An active panel user with at least one role assignment whose permissions reach no section of the queue MUST see a simple home at `/admin`, headed "Panel de enmirumbo", instead of `403`. It links only to implemented sections that user may open: "Todos los negocios" for any card permission, "Colonias" for `zones.manage` in any locality, "Usuarios" for global `users.manage`, and "Roles" for global `roles.manage`. Sections that are not implemented yet are not linked. A user whose role reaches a queue section still sees the queue. Both entries expose the permitted users and roles screens in the panel's navigation. An unknown or inactive user, or one without an assignment, still gets the generic `403` and no data. A role with no implemented section sees the home with "Tu rol todavía no tiene una sección disponible en el panel."
+An active panel user with at least one role assignment whose permissions reach no section of the queue MUST see a simple home at `/admin`, headed "Panel de enmirumbo", instead of `403`. It links only to implemented sections that user may open: "Todos los negocios" for any card permission, "Ver la bitácora" for `audit_log.view` in any locality, "Colonias" for `zones.manage` in any locality, "Usuarios" for global `users.manage`, and "Roles" for global `roles.manage`. Sections that are not implemented yet are not linked. A user whose role reaches a queue section still sees the queue. Both entries expose the permitted users and roles screens in the panel's navigation. An unknown or inactive user, or one without an assignment, still gets the generic `403` and no data. A role with no implemented section sees the home with "Tu rol todavía no tiene una sección disponible en el panel."
 
 #### Scenario: a user who only deletes cards
 
 - **WHEN** an active user assigned only `businesses.delete` in A opens `/admin`
 - **THEN** it answers `200` with the home and a link to "Todos los negocios", whose cards are only those of A, with no queue or users/roles links
+
+#### Scenario: a user who only reads the audit log
+
+- **WHEN** an active user assigned only `audit_log.view` in A opens `/admin`
+- **THEN** it answers `200` with the home and a link to "Ver la bitácora", whose rows are only those of A, with no queue, cards or users/roles links

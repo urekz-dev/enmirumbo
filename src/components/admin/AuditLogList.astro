@@ -1,0 +1,124 @@
+---
+// The audit log, at /admin/bitacora (docs/specs/admin-review.md, "The panel
+// shows the audit log, read-only (v2)"): the entries of the localities where
+// the user holds `audit_log.view`, newest first, 25 a page with "Página n de
+// m", "Ver más antiguos" and "Ver más nuevos". Every control is a link and
+// every date is in the time zone of its locality; there is no form, no button
+// and no client JavaScript, and nothing of the log can be changed or deleted
+// from here. A card's identifier links to its detail only while the card
+// exists and the user may open a card's detail in the entry's locality
+// (opensCardIn), so a user who holds only `audit_log.view` sees no dead link.
+import type { AuditPage } from "../../core/review/audit-log.ts";
+import { type AuditLogView, auditLogPath } from "../../core/review/paths.ts";
+import {
+  AUDIT_LOG_EMPTY,
+  AUDIT_LOG_HEADING,
+  AUDIT_LOG_PAGES_LABEL,
+  auditCountText,
+  BACK_TO_QUEUE,
+  NEWER_PAGE,
+  OLDER_PAGE,
+  pageOfText,
+} from "../../core/review/texts.ts";
+import AuditLogRow from "./AuditLogRow.astro";
+import FilterLinks from "./FilterLinks.astro";
+
+interface FilterOption {
+  text: string;
+  href: string;
+  current: boolean;
+}
+
+interface Props {
+  /** The page being viewed. */
+  list: AuditPage;
+  /** The view: its locality filter and its page. */
+  view: AuditLogView;
+  /** The options of the locality filter; none hides it. */
+  localityFilter: readonly FilterOption[];
+  localityFilterLabel: string;
+  /** The name of each locality, by code, while the entries of several are shown; null otherwise. */
+  localityNames: ReadonlyMap<string, string> | null;
+  /** "Volver a la cola", when the user may open the queue. */
+  queueHref: string | null;
+  /**
+   * The localities where the user may open a card's detail (`scope.cards`),
+   * the same rule the detail page applies. A card's identifier is only a link
+   * there.
+   */
+  cardLocalities: readonly string[];
+}
+
+const {
+  list,
+  view,
+  localityFilter,
+  localityFilterLabel,
+  localityNames,
+  queueHref,
+  cardLocalities,
+} = Astro.props;
+
+const newer = list.beyond ? list.pages : view.page - 1;
+const showsPages = list.pages > 1 || list.beyond;
+const pageLink =
+  "inline-flex min-h-11 items-center rounded-full border border-control px-3.5 py-1.5 text-sm font-semibold text-action-strong";
+---
+
+<section class="flex flex-col gap-6">
+  <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{AUDIT_LOG_HEADING}</h1>
+
+  {queueHref && (
+    <a
+      href={queueHref}
+      class="inline-flex min-h-11 w-fit items-center font-semibold text-action-strong underline underline-offset-4"
+    >
+      {BACK_TO_QUEUE}
+    </a>
+  )}
+
+  {localityFilter.length > 0 && (
+    <FilterLinks label={localityFilterLabel} options={localityFilter} />
+  )}
+
+  <p class="text-sm font-semibold text-ink-muted" data-testid="audit-count">
+    {auditCountText(list.total)}
+  </p>
+
+  {list.total === 0 && <p class="text-ink-muted">{AUDIT_LOG_EMPTY}</p>}
+
+  {list.rows.length > 0 && (
+    <ul class="flex flex-col gap-3" data-testid="audit-log">
+      {list.rows.map((row) => (
+        <AuditLogRow
+          row={row}
+          localityName={localityNames?.get(row.localityCode) ?? null}
+          canOpenCard={cardLocalities.includes(row.localityCode)}
+        />
+      ))}
+    </ul>
+  )}
+
+  {showsPages && (
+    <nav
+      aria-label={AUDIT_LOG_PAGES_LABEL}
+      class="flex flex-wrap items-center justify-between gap-3"
+    >
+      {!list.beyond && (
+        <p class="text-sm font-semibold text-ink">{pageOfText(view.page, list.pages)}</p>
+      )}
+      <div class="flex flex-wrap gap-3">
+        {(list.beyond || view.page > 1) && (
+          <a href={auditLogPath({ locality: view.locality, page: newer })} class={pageLink}>
+            {NEWER_PAGE}
+          </a>
+        )}
+        {!list.beyond && view.page < list.pages && (
+          <a href={auditLogPath({ locality: view.locality, page: view.page + 1 })} class={pageLink}>
+            {OLDER_PAGE}
+          </a>
+        )}
+      </div>
+    </nav>
+  )}
+</section>

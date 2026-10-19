@@ -34,6 +34,7 @@ import {
   RESUBMISSION_TAG,
   REVIEW_LINK,
   SEE_ALL_BUSINESSES,
+  SEE_AUDIT_LOG,
   SEE_REPORTS,
   UNPUBLISHED_TAG,
 } from "../../core/review/texts.ts";
@@ -63,11 +64,14 @@ interface Props {
   listHref: string | null;
   /** "Administrar colonias", when the user manages the zones of a locality. */
   zonesHref?: string | null;
+  /** "Ver la bitácora", when the user may read the audit log. */
+  auditLogHref?: string | null;
 }
 
 const { rows, reported, now, localityFilter, localityFilterLabel, localityNames, listHref } =
   Astro.props;
 const zonesHref = Astro.props.zonesHref ?? null;
+const auditLogHref = Astro.props.auditLogHref ?? null;
 const overdue = rows.filter((row) => row.overdue).length;
 const rowClass = "relative flex flex-col gap-1.5 rounded-xl border border-line bg-background p-4";
 const entryClass =
@@ -92,6 +96,15 @@ const entryClass =
       class="inline-flex min-h-11 w-fit items-center font-semibold text-action-strong underline underline-offset-4"
     >
       {MANAGE_ZONES}
+    </a>
+  )}
+
+  {auditLogHref && (
+    <a
+      href={auditLogHref}
+      class="inline-flex min-h-11 w-fit items-center font-semibold text-action-strong underline underline-offset-4"
+    >
+      {SEE_AUDIT_LOG}
     </a>
   )}
 

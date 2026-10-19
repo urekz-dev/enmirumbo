@@ -1,0 +1,91 @@
+---
+// The audit log, at /admin/bitacora (docs/specs/admin-review.md, "The panel
+// shows the audit log, read-only (v2)"; docs/specs/data-model.md, "The audit
+// log records the destructive actions of the admin (v2)").
+//
+// Behind the same Access check, headers and layout rules as the rest of the
+// panel (see src/pages/admin/index.astro). It lists the entries of the
+// localities where the user holds `audit_log.view`, newest first; with none,
+// the panel's 403 before anything else is read. Its query carries only
+// `localidad` and `pagina`, each read so it never fails. It offers no action
+// and no form, and a request with any method but GET or HEAD gets a 405 with
+// no body, before anything is read.
+import { env, waitUntil } from "cloudflare:workers";
+import AuditLogList from "../../components/admin/AuditLogList.astro";
+import { withDb } from "../../core/db/client.ts";
+import { auditLogPage } from "../../core/review/audit-log.ts";
+import { parseListPage } from "../../core/review/businesses.ts";
+import {
+  chosenLocality,
+  localityFilterOptions,
+  panelLocalities,
+} from "../../core/review/localities.ts";
+import { type AuditLogView, auditLogPath, queuePath } from "../../core/review/paths.ts";
+import { panelScope, queueLocalities } from "../../core/review/scope.ts";
+import {
+  ALL_LOCALITIES,
+  AUDIT_LOG_HEADING,
+  FILTER_BY_LOCALITY,
+  localityText,
+} from "../../core/review/texts.ts";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../lib/access/admin-gate.ts";
+
+const admin = Astro.locals.admin;
+// Second line of defense: never render the panel without an identity.
+if (admin === undefined) return forbiddenResponse();
+if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+}
+
+const params = Astro.url.searchParams;
+const result = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  const scope = await panelScope(db, admin.email);
+  const seen = await panelLocalities(db, scope.log);
+  if (seen.length === 0) return null;
+  const options = localityFilterOptions(seen);
+  const view: AuditLogView = {
+    locality: chosenLocality(params.getAll("localidad"), options),
+    page: parseListPage(params.getAll("pagina")),
+  };
+  const list = await auditLogPage(db, {
+    localityCodes: view.locality === null ? scope.log : [view.locality],
+    page: view.page,
+  });
+  return { scope, seen, options, view, list };
+});
+if (result === null) return forbiddenResponse();
+
+const { scope, seen, options, view, list } = result;
+const localityFilter =
+  options.length === 0
+    ? []
+    : [
+        {
+          text: ALL_LOCALITIES,
+          href: auditLogPath({ ...view, locality: null, page: 1 }),
+          current: view.locality === null,
+        },
+        ...options.map((locality) => ({
+          text: localityText(locality),
+          href: auditLogPath({ ...view, locality: locality.code, page: 1 }),
+          current: view.locality === locality.code,
+        })),
+      ];
+const localityNames =
+  options.length === 0 || view.locality !== null
+    ? null
+    : new Map(seen.map((locality) => [locality.code, localityText(locality)]));
+---
+
+<BaseLayout title={AUDIT_LOG_HEADING}>
+  <AuditLogList
+    list={list}
+    view={view}
+    localityFilter={localityFilter}
+    localityFilterLabel={FILTER_BY_LOCALITY}
+    localityNames={localityNames}
+    queueHref={queueLocalities(scope).length > 0 ? queuePath() : null}
+    cardLocalities={scope.cards}
+  />
+</BaseLayout>

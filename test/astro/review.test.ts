@@ -23,6 +23,7 @@
 // test/e2e/admin.spec.ts.
 import { experimental_AstroContainer as AstroContainer } from "astro/container";
 import { beforeAll, describe, expect, it } from "vite-plus/test";
+import type { AuditPage, AuditRow } from "../../src/core/review/audit-log.ts";
 import type { ListPage, ListRow } from "../../src/core/review/businesses.ts";
 import { comparedFields, type EditDetail as EditData } from "../../src/core/review/edit.ts";
 import type { BusinessesView } from "../../src/core/review/paths.ts";
@@ -39,6 +40,7 @@ import type {
 import type { ReasonError } from "../../src/core/review/reason.ts";
 import type { ApprovalNotice } from "../../src/lib/review.ts";
 import ApprovalConfirmation from "../../src/components/admin/ApprovalConfirmation.astro";
+import AuditLogList from "../../src/components/admin/AuditLogList.astro";
 import ApproveForm from "../../src/components/admin/ApproveForm.astro";
 import BusinessesList from "../../src/components/admin/BusinessesList.astro";
 import DecisionScreen from "../../src/components/admin/DecisionScreen.astro";
@@ -143,6 +145,7 @@ interface QueueProps {
   localityFilter?: { text: string; href: string; current: boolean }[];
   localityNames?: Map<string, string> | null;
   listHref?: string | null;
+  auditLogHref?: string | null;
 }
 
 function renderQueue(props: QueueProps = {}) {
@@ -217,6 +220,12 @@ describe("Review queue with the pending registrations, oldest first", () => {
       "/admin/negocios",
     ]);
     expect(linksNamed(await renderQueue({ listHref: null }), "Ver todos los negocios")).toEqual([]);
+  });
+
+  it("the queue has its entry to the bitácora, and none without the permission", async () => {
+    const html = await renderQueue({ auditLogHref: "/admin/bitacora" });
+    expect(linksNamed(html, "Ver la bitácora").map((a) => a.href)).toEqual(["/admin/bitacora"]);
+    expect(linksNamed(await renderQueue({ auditLogHref: null }), "Ver la bitácora")).toEqual([]);
   });
 
   it("offers nothing but links: no form or button, and every link measures 44px", async () => {
@@ -618,9 +627,17 @@ function renderRegistration(
   detail: Partial<Registration> = {},
   reports: PendingReport[] | null = [],
   zone: string | null = "Huicalco",
+  auditEntries: AuditRow[] | null = null,
 ) {
   return container.renderToString(RegistrationDetail, {
-    props: { detail: { ...REGISTRATION, ...detail }, zone, reports, now: NOW, queueHref: "/admin" },
+    props: {
+      detail: { ...REGISTRATION, ...detail },
+      zone,
+      reports,
+      auditEntries,
+      now: NOW,
+      queueHref: "/admin",
+    },
   });
 }
 
@@ -1396,4 +1413,243 @@ it("offers rectification and the data copy only with links authorized by its pag
   const without = await renderRegistration();
   expect(linksNamed(without, "Editar ficha")).toEqual([]);
   expect(linksNamed(without, "Mandar copia de sus datos por WhatsApp")).toEqual([]);
+});
+
+// ---------------------------------------------------------------- the audit log
+
+const auditRow = (overrides: Partial<AuditRow> = {}): AuditRow => ({
+  id: 1,
+  occurredAt: new Date("2026-09-04T05:30:00Z"),
+  localityCode: "13069",
+  timeZone: ZONE,
+  actor: "ana@enmirumbo.test",
+  action: "reject",
+  previousStatus: "in_review",
+  businessId: "aaaaaaaaaa",
+  cardExists: true,
+  ...overrides,
+});
+
+function renderAudit(
+  list: Partial<AuditPage> = {},
+  view: { locality: string | null; page: number } = { locality: null, page: 1 },
+  queueHref: string | null = "/admin",
+  cardLocalities: readonly string[] = [],
+) {
+  return container.renderToString(AuditLogList, {
+    props: {
+      list: { rows: [], total: 0, pages: 1, beyond: false, ...list },
+      view,
+      localityFilter: [],
+      localityFilterLabel: "Filtrar por municipio",
+      localityNames: null,
+      queueHref,
+      cardLocalities,
+    },
+  });
+}
+
+describe("The panel shows the audit log, read-only (v2)", () => {
+  it("each row: the action in Spanish, its moment in its locality, who, the previous status and the card", async () => {
+    const html = await renderAudit(
+      {
+        rows: [
+          auditRow({
+            action: "reject",
+            businessId: "aaaaaaaaaa",
+            occurredAt: new Date("2026-09-04T05:30:00Z"),
+          }),
+          auditRow({
+            id: 2,
+            action: "unpublish",
+            businessId: "bbbbbbbbbb",
+            previousStatus: "published",
+            actor: "luis@enmirumbo.test",
+          }),
+          auditRow({
+            id: 3,
+            action: "delete",
+            businessId: "cccccccccc",
+            previousStatus: "rejected",
+          }),
+          auditRow({
+            id: 4,
+            action: "purge",
+            businessId: "dddddddddd",
+            previousStatus: "rejected",
+            actor: "scheduled-job",
+          }),
+          auditRow({
+            id: 5,
+            action: "edit_contact",
+            businessId: "eeeeeeeeee",
+            previousStatus: "published",
+          }),
+        ],
+        total: 5,
+      },
+      { locality: null, page: 1 },
+      "/admin",
+      ["13069"],
+    );
+    const text = visibleText(html);
+
+    expect(html).toMatch(/<h1\b[^>]*>Bitácora<\/h1>/);
+    expect(text).toContain("5 movimientos en la bitácora");
+    expect(text).toContain(
+      "Rechazo\nCuándo\n3 de septiembre de 2026, 23:30\nQuién\nana@enmirumbo.test\nEstado anterior\nEn revisión\nFicha\naaaaaaaaaa",
+    );
+    expect(text).toContain(
+      "Despublicación\nCuándo\n3 de septiembre de 2026, 23:30\nQuién\nluis@enmirumbo.test\nEstado anterior\nPublicado\nFicha\nbbbbbbbbbb",
+    );
+    expect(text).toContain("Borrado definitivo");
+    expect(text).toContain("Purga");
+    expect(text).toContain("Trabajo programado");
+    expect(text).toContain("Edición de datos de contacto");
+    expect(linksNamed(html, "aaaaaaaaaa").map((a) => a.href)).toEqual([
+      "/admin/registros/aaaaaaaaaa",
+    ]);
+    expect(html).not.toMatch(/<form\b|<button\b|<script\b/);
+    expectPhoneReady(html);
+  });
+
+  it("a deleted card shows only its identifier, marked, and no link", async () => {
+    const html = await renderAudit(
+      {
+        rows: [auditRow({ action: "delete", businessId: "aaaaaaaaaa", cardExists: false })],
+        total: 1,
+      },
+      { locality: null, page: 1 },
+      "/admin",
+      ["13069"],
+    );
+    const text = visibleText(html);
+
+    expect(text).toContain("Ficha\naaaaaaaaaa\nFicha borrada");
+    expect(linksNamed(html, "aaaaaaaaaa")).toEqual([]);
+    expect(text).not.toMatch(/Plomería|771999|wa\.me/);
+  });
+
+  it("links the card only where the user may open its detail, and shows it as text otherwise", async () => {
+    const rows = [auditRow({ action: "unpublish", businessId: "aaaaaaaaaa" })];
+    const allowed = await renderAudit({ rows, total: 1 }, { locality: null, page: 1 }, "/admin", [
+      "13069",
+    ]);
+    expect(linksNamed(allowed, "aaaaaaaaaa").map((a) => a.href)).toEqual([
+      "/admin/registros/aaaaaaaaaa",
+    ]);
+
+    // Only audit_log.view in that locality: the identifier is plain text.
+    const refused = await renderAudit(
+      { rows, total: 1 },
+      { locality: null, page: 1 },
+      "/admin",
+      [],
+    );
+    expect(linksNamed(refused, "aaaaaaaaaa")).toEqual([]);
+    expect(visibleText(refused)).toContain("Ficha\naaaaaaaaaa");
+    expect(visibleText(refused)).not.toContain("Ficha borrada");
+    expectPhoneReady(refused);
+
+    // Another locality's card permission does not open this one's detail.
+    const elsewhere = await renderAudit({ rows, total: 1 }, { locality: null, page: 1 }, "/admin", [
+      "13070",
+    ]);
+    expect(linksNamed(elsewhere, "aaaaaaaaaa")).toEqual([]);
+  });
+
+  it("the detail's section links the card, since the user reached the detail", async () => {
+    const rows = [auditRow({ action: "unpublish", businessId: "aaaaaaaaaa" })];
+    const detail = await renderRegistration({}, [], "Huicalco", rows);
+    expect(linksNamed(detail, "aaaaaaaaaa").map((a) => a.href)).toEqual([
+      "/admin/registros/aaaaaaaaaa",
+    ]);
+  });
+
+  it("an empty log says so instead of an empty list", async () => {
+    const html = await renderAudit();
+    const text = visibleText(html);
+
+    expect(text).toContain("0 movimientos en la bitácora");
+    expect(text).toContain("Todavía no hay movimientos en la bitácora.");
+    expect(html).not.toContain('data-testid="audit-log"');
+  });
+
+  it("25 a page, with Página n de m, Ver más antiguos and Ver más nuevos", async () => {
+    const first = await renderAudit({
+      rows: [auditRow()],
+      total: 30,
+      pages: 2,
+    });
+    const firstText = visibleText(first);
+    expect(firstText).toContain("Página 1 de 2");
+    expect(linksNamed(first, "Ver más antiguos").map((a) => a.href)).toEqual([
+      "/admin/bitacora?pagina=2",
+    ]);
+    expect(linksNamed(first, "Ver más nuevos")).toEqual([]);
+
+    const second = await renderAudit(
+      { rows: [auditRow()], total: 30, pages: 2 },
+      { locality: "13069", page: 2 },
+    );
+    expect(visibleText(second)).toContain("Página 2 de 2");
+    expect(linksNamed(second, "Ver más antiguos")).toEqual([]);
+    expect(linksNamed(second, "Ver más nuevos").map((a) => a.href)).toEqual([
+      "/admin/bitacora?localidad=13069",
+    ]);
+  });
+
+  it("the locality filter and the locality of each row, only while there are two", async () => {
+    const html = await renderAudit(
+      { rows: [auditRow({ localityCode: "13069" })], total: 1 },
+      { locality: null, page: 1 },
+      "/admin",
+    );
+    expect(visibleText(html)).not.toContain("Filtrar por municipio");
+    expect(visibleText(html)).not.toContain("Tizayuca, Hidalgo");
+
+    const filtered = await container.renderToString(AuditLogList, {
+      props: {
+        list: { rows: [auditRow({ localityCode: "13069" })], total: 1, pages: 1, beyond: false },
+        view: { locality: null, page: 1 },
+        localityFilter: [
+          { text: "Todos", href: "/admin/bitacora", current: true },
+          { text: "Tizayuca, Hidalgo", href: "/admin/bitacora?localidad=13069", current: false },
+        ],
+        localityFilterLabel: "Filtrar por municipio",
+        localityNames: new Map([["13069", "Tizayuca, Hidalgo"]]),
+        queueHref: "/admin",
+        cardLocalities: ["13069"],
+      },
+    });
+    const text = visibleText(filtered);
+    expect(text).toContain("Filtrar por municipio");
+    expect(text).toContain("Tizayuca, Hidalgo\nCuándo");
+    expect(
+      anchors(filtered)
+        .filter((a) => a.text === "Todos" || a.text === "Tizayuca, Hidalgo")
+        .map((a) => [a.text, a.href]),
+    ).toEqual([
+      ["Todos", "/admin/bitacora"],
+      ["Tizayuca, Hidalgo", "/admin/bitacora?localidad=13069"],
+    ]);
+  });
+
+  it("the log and a card's detail show the same rows, and the section is absent without permission", async () => {
+    const rows = [
+      auditRow({ action: "unpublish", previousStatus: "published", businessId: "aaaaaaaaaa" }),
+    ];
+    const detail = await renderRegistration({}, [], "Huicalco", rows);
+    const text = visibleText(detail);
+    expect(text).toContain("Bitácora de esta ficha");
+    expect(text).toContain("Despublicación");
+    expect(text).toContain("Publicado");
+    expect(text).toContain("aaaaaaaaaa");
+    expect(linksNamed(detail, "Volver a la cola").map((a) => a.href)).toEqual(["/admin"]);
+
+    expect(visibleText(await renderRegistration())).not.toContain("Bitácora de esta ficha");
+    expect(visibleText(await renderRegistration({}, [], "Huicalco", []))).not.toContain(
+      "Bitácora de esta ficha",
+    );
+  });
 });
