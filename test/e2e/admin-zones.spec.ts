@@ -30,7 +30,11 @@ const TOUCHED = {
   huicalco: "Huicalco",
   "ampliacion-el-carmen": "Ampliación el Carmen",
 } as const;
-const ADDED = { name: "Los Pinos de Mentiras", slug: "los-pinos-de-mentiras" } as const;
+const ADDED = {
+  name: "Los Pinos de Mentiras",
+  slug: "los-pinos-de-mentiras",
+  postalCode: "43815",
+} as const;
 /** A role of this file, which reviews registrations and manages no zone. */
 const NO_ZONES = "e2e_no_zones";
 
@@ -61,12 +65,18 @@ const rowOf = (page: Page, name: string): Locator =>
     .getByRole("listitem")
     .filter({ has: page.getByRole("heading", { name, exact: true }) });
 
-/** The zones the registration form of Tizayuca suggests. */
-async function suggestions(page: Page): Promise<string[]> {
+/** The zones the registration form of Tizayuca offers, as "C.P. <code>: <name>" for `withPostalCode`. */
+async function suggestions(page: Page, withPostalCode = false): Promise<string[]> {
   const html = await (await page.request.get(FORM)).text();
-  const list = /<datalist\b[^>]*>([\s\S]*?)<\/datalist>/.exec(html)?.[1] ?? "";
-  return [...list.matchAll(/<option value="([^"]*)"/g)].map(([, value = ""]) =>
-    value.replace(/&amp;/g, "&"),
+  const select = /<select\b[^>]*name="zone"[\s\S]*?<\/select>/.exec(html)?.[0] ?? "";
+  return [...select.matchAll(/<optgroup label="([^"]*)"[^>]*>([\s\S]*?)<\/optgroup>/g)].flatMap(
+    ([, group = "", options = ""]) =>
+      [...options.matchAll(/<option value="[^"]*"[^>]*>([^<]*)<\/option>/g)].map(
+        ([, name = ""]) => {
+          const text = name.replace(/&amp;/g, "&");
+          return withPostalCode ? `${group}: ${text}` : text;
+        },
+      ),
   );
 }
 
@@ -109,6 +119,8 @@ test.describe("the zones screen", () => {
     await expect(rowOf(page, "El Carmen (Fraccionamiento)")).toContainText(
       "En la URL: fraccionamiento-el-carmen",
     );
+    await expect(rowOf(page, "El Carmen (Fraccionamiento)")).toContainText("Código postal: 43815");
+    await expect(rowOf(page, "Tizayuca Centro")).toContainText("Código postal: 43800");
     await expect(page.locator("script")).toHaveCount(0);
     await expectPhoneReady(page);
   });
@@ -206,20 +218,24 @@ test.describe("The admin can add a zone to a locality (v2)", () => {
     await page.goto(SCREEN);
     await page.getByLabel("Nombre", { exact: true }).fill(ADDED.name);
     await page.getByLabel("Tipo", { exact: true }).selectOption("Fraccionamiento");
+    await page.getByLabel("Código postal", { exact: true }).fill(ADDED.postalCode);
     await page.getByRole("button", { name: "Agregar colonia" }).click();
 
     await expect(page).toHaveURL(/listo=\d+#colonia-\d+$/);
     const row = rowOf(page, ADDED.name);
     await expect(row).toContainText("Tipo: Fraccionamiento");
+    await expect(row).toContainText(`Código postal: ${ADDED.postalCode}`);
     await expect(row).toContainText(`En la URL: ${ADDED.slug}`);
     await expect(row.getByRole("status")).toHaveText(`✓ ${DELAY}`);
     await expect(page.getByTestId("zones-count")).toHaveText("106 colonias");
-    expect(await suggestions(page)).toContain(ADDED.name);
+    // Offered at once, under its postal code.
+    expect(await suggestions(page, true)).toContain(`C.P. ${ADDED.postalCode}: ${ADDED.name}`);
     expect((await page.request.get(`/hidalgo/tizayuca/plomeria-${ADDED.slug}`)).status()).toBe(200);
 
     // The same name again takes a URL that is already taken.
     await page.getByLabel("Nombre", { exact: true }).fill(ADDED.name);
     await page.getByLabel("Tipo", { exact: true }).selectOption("Colonia");
+    await page.getByLabel("Código postal", { exact: true }).fill(ADDED.postalCode);
     await page.getByRole("button", { name: "Agregar colonia" }).click();
     await expect(page.locator("#add-zone-name-error")).toHaveText(
       `⚠ Ya hay una colonia con esa misma URL (${ADDED.slug}): «${ADDED.name}». Si es la misma, búscala en la lista para mostrarla o cambiarle el nombre; si es otra, ponle un nombre distinto.`,
@@ -233,12 +249,13 @@ test.describe("The admin can add a zone to a locality (v2)", () => {
     await expect(rowOf(page, "Los Pinos de Mentiras II")).toContainText(`En la URL: ${ADDED.slug}`);
   });
 
-  test("a name that takes a page of the site, or a form without name and type, comes back with its errors", async ({
+  test("a name that takes a page of the site, or a form without name, type and postal code, comes back with its errors", async ({
     page,
   }) => {
     await page.goto(SCREEN);
     await page.getByLabel("Nombre", { exact: true }).fill("Registro");
     await page.getByLabel("Tipo", { exact: true }).selectOption("Colonia");
+    await page.getByLabel("Código postal", { exact: true }).fill("4381");
     const refused = page.waitForResponse((r) => r.request().method() === "POST");
     await page.getByRole("button", { name: "Agregar colonia" }).click();
 
@@ -246,16 +263,24 @@ test.describe("The admin can add a zone to a locality (v2)", () => {
     await expect(page.locator("#add-zone-name-error")).toHaveText(
       "⚠ Con ese nombre, la URL «registro» se confundiría con una página propia del sitio. Ponle otro nombre; por ejemplo, con su tipo adelante: «Colonia Registro».",
     );
+    await expect(page.locator("#add-zone-postal-code-error")).toHaveText(
+      "⚠ El código postal son 5 números, sin espacios.",
+    );
     await expect(page.getByLabel("Nombre", { exact: true })).toHaveValue("Registro");
     await expect(page.getByLabel("Tipo", { exact: true })).toHaveValue("Colonia");
+    await expect(page.getByLabel("Código postal", { exact: true })).toHaveValue("4381");
 
     await page.getByLabel("Nombre", { exact: true }).fill("");
     await page.getByLabel("Tipo", { exact: true }).selectOption("");
+    await page.getByLabel("Código postal", { exact: true }).fill("");
     await page.getByRole("button", { name: "Agregar colonia" }).click();
     await expect(page.locator("#add-zone-name-error")).toHaveText(
       "⚠ Escribe el nombre de la colonia.",
     );
     await expect(page.locator("#add-zone-type-error")).toHaveText("⚠ Elige el tipo de la colonia.");
+    await expect(page.locator("#add-zone-postal-code-error")).toHaveText(
+      "⚠ Escribe el código postal de la colonia.",
+    );
     await expect(rowOf(page, "Registro")).toHaveCount(0);
   });
 });

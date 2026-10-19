@@ -764,21 +764,21 @@ Nothing the owner writes in the registration —business name, WhatsApp, phone, 
 
 ### Requirement: The zone options come from the active locality (v2)
 
-Added in v2 — source: ADR 0006, PRD §3 (Flow A). Amended on 2026-10-18 by EMR-39 and the decision of the product owner of that date: the field that offers the zones is designed ("The zone is typed with the locality's zones as suggestions, and a name that is none of them is kept as "Otra" (v2)"): the zones are suggestions of a text field, there is no option "Otra" to choose, and a submission names a zone by its name, so a zone of another locality is kept as free text instead of being an error.
+Added in v2 — source: ADR 0006, PRD §3 (Flow A). Amended on 2026-10-18 by EMR-39 and the decision of the product owner of that date: the field that offers the zones is designed ("The zone is typed with the locality's zones as suggestions, and a name that is none of them is kept as "Otra" (v2)"): the zones are suggestions of a text field, there is no option "Otra" to choose, and a submission names a zone by its name, so a zone of another locality is kept as free text instead of being an error. Amended on 2026-10-18 (EMR-74) by decision of the product owner: the zones are the options of a select, grouped by postal code and narrowed by the postal code the business types ("The zone is chosen from the zones of the postal code the business types, or written when it does not appear (v2)"), and a submission names a zone by its slug, so a zone of another locality, or a hidden one, is again no zone the form offers, and an error.
 
 The registration page of a locality MUST offer as zones the visible zones of that locality, and nothing else: no zone of another locality and no hidden zone. A business MUST be created in the locality of the page where it registered.
 
-This replaces the zones of the scenario "closed catalogue lists" of "Required and optional form fields": the list is not the prototype's 21 zones but the visible zones of the locality (Tizayuca has 105, from SEPOMEX), offered as the suggestions of the zone field.
+This replaces the zones of the scenario "closed catalogue lists" of "Required and optional form fields": the list is not the prototype's 21 zones but the visible zones of the locality (Tizayuca has 105, from SEPOMEX), offered as the options of the zone select, grouped by postal code.
 
 #### Scenario: options
 
 - **WHEN** an owner opens the registration page of Tizayuca
-- **THEN** the zone suggestions are the visible zones of Tizayuca, and no zone of another locality or hidden zone
+- **THEN** the zone select offers the visible zones of Tizayuca, grouped by postal code, and no zone of another locality or hidden zone
 
 #### Scenario: a zone of another locality
 
-- **WHEN** a submission to the registration of Tizayuca carries the name of a zone of another locality, or of a hidden zone of Tizayuca
-- **THEN** no catalogue zone is linked to the business: it is saved with that name as the free text of "Otra", pending the admin's normalization
+- **WHEN** a submission to the registration of Tizayuca carries the slug of a zone of another locality, or of a hidden zone of Tizayuca, or a zone's identifier
+- **THEN** nothing is saved, and the zone says "Elige tu colonia"
 
 #### Scenario: the locality of the new business
 
@@ -937,6 +937,8 @@ While Turnstile's switch is on, the form needs client JavaScript ("Without JavaS
 
 ### Requirement: The zone is typed with the locality's zones as suggestions, and a name that is none of them is kept as "Otra" (v2)
 
+Superseded in v2 by The zone is chosen from the zones of the postal code the business types, or written when it does not appear (v2) — source: decision of the product owner, 2026-10-18 (EMR-74).
+
 Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-39); ADR 0006. With 105 zones in Tizayuca, a list to scroll is no way to find one's own. It takes the place of "Zone "Otra" with free text pending normalization", and in "Required and optional form fields" of the zone as "closed catalogue list with an "Otra" option + free text" and of "Otra" at the end of the zones in the scenario "closed catalogue lists"; and in "The server validates every field and returns per-field errors in Spanish", of the zone outside the catalogue as a rejection, and of the literal "Elige tu colonia", which no field shows any more.
 
 The zone MUST be one text field, labelled "¿En qué colonia estás?", whose suggestions are the browser's own (a `datalist`, with no JavaScript of the site): the visible zones of the locality ("The zone options come from the active locality (v2)"), each by the name the directory shows it with (`public-directory`, "A zone whose name repeats in its locality is shown with its settlement type (v2)"), in alphabetical order. Typing part of a name offers the zones that contain it: typing "hacien" offers "Haciendas de Tizayuca". Below the field, the literal help line MUST always be visible: "Empieza a escribirla y elígela de la lista. Si no aparece, escríbela completa y nosotros la acomodamos." There is no option "Otra" to choose and no second field for it.
@@ -968,13 +970,80 @@ The server MUST decide the zone from the text that arrives, compared as the site
 - **WHEN** an owner sends the form with the zone empty
 - **THEN** nothing is saved and they see "Escribe el nombre de tu colonia" next to the field
 
+### Requirement: The zone is chosen from the zones of the postal code the business types, or written when it does not appear (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-74); ADR 0006. Typing the zone with the browser's suggestions turned out uncomfortable to use, so the zone is a classic select again, made short by the postal code. It takes the place of "The zone is typed with the locality's zones as suggestions, and a name that is none of them is kept as "Otra" (v2)", and brings back, in "Required and optional form fields", the zone as a "closed catalogue list with an "Otra" option + free text", whose "Otra" reads "Mi colonia no aparece", and, in "The server validates every field and returns per-field errors in Spanish", the literal "Elige tu colonia" and a zone outside the catalogue as a rejection. It amends "Required and optional form fields" with one more required field, the postal code.
+
+**The fields.** Right before the zone, the form MUST ask for the business's postal code: a text field labelled "Código postal", of at most 5 characters, with the numeric keyboard and the browser's postal-code autofill, and below it, always visible, the literal help line "Si no te lo sabes, viene en tu recibo de luz o de agua." The zone MUST be a classic select labelled "¿En qué colonia estás?" whose first option, "Elige tu colonia", is none; then the zones the form offers ("The zone options come from the active locality (v2)"), each by the name the directory shows it with (`public-directory`, "A zone whose name repeats in its locality is shown with its settlement type (v2)"), grouped by postal code: one group per postal code, in ascending order, labelled "C.P. <código postal>", each with its zones in alphabetical order, and the zones without a postal code (only one the admin added before zones had one, `data-model`) in a last group, "Otras colonias"; and last, the option "Mi colonia no aparece". Below the select, always visible: "Si tu colonia no aparece en la lista, elige “Mi colonia no aparece” y escríbela abajo." After it comes a text field labelled "Si tu colonia no aparece, escribe cómo se llama", of at most 80 characters.
+
+**With JavaScript**, the page's own bundled script narrows the select: once the postal code has five digits, the select keeps only that postal code's group (and "Otras colonias", if there is one), with "Elige tu colonia" first and "Mi colonia no aparece" last; a zone chosen that is no longer there is unchosen; with fewer digits every group is back. When five digits name no group, the form says, under the postal code and announced as a status, "No tenemos colonias con ese código postal. Revisa que esté bien o elige “Mi colonia no aparece”.", and the select offers only "Mi colonia no aparece". The field for the name of a zone is shown only while "Mi colonia no aparece" is chosen. What the script needs travels in the markup, each group carrying its postal code, never in an inline script or a `style` attribute (`deployment`, "Every response carries the security headers and the content security policy (v2)"); the script takes whole groups out and puts them back, never hiding options one by one, which a phone's select may still show. **Without JavaScript**, which is possible only while Turnstile's switch is off ("Without JavaScript the registration says so and cannot be sent while Turnstile is on (v2)"), the select shows every group and the field for the name is always visible.
+
+**On the server.** The postal code MUST NOT be empty ("Escribe tu código postal") and MUST be exactly five digits once trimmed ("Revisa tu código postal: deben ser 5 dígitos"). The select sends the slug of a zone or the value of "Mi colonia no aparece", never an identifier: no zone chosen, or a slug that is not of a zone the form offers (another locality's, a hidden one), MUST NOT be saved and shows "Elige tu colonia" next to the select. Once the postal code is valid, a zone whose postal code is another is refused with "Esa colonia no es de ese código postal. Revisa el código o elige otra colonia." next to the select; a zone without a postal code goes with any. With "Mi colonia no aparece", the name is required ("Escribe el nombre de tu colonia"), at most 80 characters ("Deja esto en 80 caracteres o menos"), and is saved trimmed, exactly as written, as the free text of "Otra", with no catalogue zone, for the admin to normalize (PRD §6.3, Appendix A; `data-model`, "The zone allows "Otra" with free text pending normalization"); the server does not match it against the zones. With it, any five digits are a postal code, even one that no zone of the locality has: a new housing development may have one that SEPOMEX does not list yet, the admin verifies every card by WhatsApp before publishing it, and the postal code is not shown to anyone else. A catalogue zone with a name written too keeps only the zone.
+
+**What is kept.** The postal code is saved with the card, and an edit saves it in its pending edit, with the rest of its full content (`data-model`, "A business and its pending edit store the postal code the owner typed (v2)"); the panel shows it in the detail of a card and compares it in the detail of an edit (`admin-review`). No public page shows it: whether the public card shows the postal code is not decided. The edit form is prefilled with the card's postal code, or, for a card registered before the form asked for it, with the postal code of its catalogue zone, so a zone left as it was stays valid; a card whose zone is "Otra" opens with "Mi colonia no aparece" chosen and its free text written (the scenario "business with an unnormalized zone "Otra"" of "The management link opens the card in edit mode with the same prefilled form").
+
+#### Scenario: the postal code narrows the zones
+
+- **WHEN** an owner of Tizayuca types "43808" in "Código postal", with JavaScript
+- **THEN** the select offers "Elige tu colonia", the zones of 43808 ("Arboledas", "Atempa", "Campestre", "Huicalco", "Quinta Esperanza", "Quintas de Tizayuca", "Real de San Jerónimo") and "Mi colonia no aparece", and nothing else
+
+#### Scenario: another postal code unchooses the zone
+
+- **WHEN** an owner who chose "Huicalco" changes the postal code to "43815"
+- **THEN** the select offers the zones of 43815, "Huicalco" is not among them, and no zone is chosen
+
+#### Scenario: a postal code no zone has
+
+- **WHEN** an owner types "43899"
+- **THEN** the form says "No tenemos colonias con ese código postal. Revisa que esté bien o elige “Mi colonia no aparece”." and the select offers only "Mi colonia no aparece"
+
+#### Scenario: without JavaScript
+
+- **WHEN** Turnstile's switch is off and an owner opens the registration of Tizayuca without JavaScript
+- **THEN** the select lists the 105 zones of Tizayuca under 15 groups, from "C.P. 43800" to "C.P. 43825", and the field "Si tu colonia no aparece, escribe cómo se llama" is in view
+
+#### Scenario: registration with zone "Otra"
+
+- **WHEN** an owner types "43899", chooses "Mi colonia no aparece" and writes "Rinconada del Venado"
+- **THEN** the business is saved with the postal code 43899, that free text and no catalogue zone, pending normalization
+
+#### Scenario: a zone of another postal code
+
+- **WHEN** an owner types "43808" and chooses "Haciendas de Tizayuca", of 43815, with JavaScript disabled
+- **THEN** nothing is saved and the select says "Esa colonia no es de ese código postal. Revisa el código o elige otra colonia."
+
+#### Scenario: a postal code that is not one
+
+- **WHEN** an owner sends "4381" or "43 815" as the postal code
+- **THEN** nothing is saved and the field says "Revisa tu código postal: deben ser 5 dígitos"
+
+#### Scenario: no zone
+
+- **WHEN** an owner sends the form with "Elige tu colonia" chosen
+- **THEN** nothing is saved and the select says "Elige tu colonia"
+
+#### Scenario: "Mi colonia no aparece" without its name
+
+- **WHEN** an owner chooses "Mi colonia no aparece" and leaves its name empty
+- **THEN** nothing is saved and the field says "Escribe el nombre de tu colonia"
+
+#### Scenario: the postal code stays inside
+
+- **WHEN** a card registered with the postal code 43808 is published
+- **THEN** the panel shows "Código postal" 43808 in its detail, and no public page shows it
+
+#### Scenario: a card from before the postal code
+
+- **WHEN** the owner of a card registered before the form asked for the postal code, in "Huicalco", opens their management link
+- **THEN** "Código postal" says 43808, the postal code of Huicalco, and "Huicalco" is chosen
+
 ### Requirement: Every check of the registration form is the server's, with fixed limits (v2)
 
-Added in v2 — source: EMR-39. It settles what "The server validates every field and returns per-field errors in Spanish", "The server normalizes and validates the WhatsApp to 10 digits", "Consent with a visible simplified notice and a consent record" and "Form states and registration accessibility" leave open.
+Added in v2 — source: EMR-39. It settles what "The server validates every field and returns per-field errors in Spanish", "The server normalizes and validates the WhatsApp to 10 digits", "Consent with a visible simplified notice and a consent record" and "Form states and registration accessibility" leave open. Amended on 2026-10-18 (EMR-74) by decision of the product owner: the zone is a select, so its 80 characters are those of the name of a zone that does not appear, the postal code has 5, and the page's own script also narrows the zone select by the postal code ("The zone is chosen from the zones of the postal code the business types, or written when it does not appear (v2)").
 
-The form MUST leave every check to the server (`novalidate`), so that each error is its literal Spanish message next to its field and never a browser's tooltip, while the required fields keep `required` for screen readers and every field keeps the type and keyboard of its kind. Each free-text field has a limit, the same for the browser (`maxlength`) and the server, counted as `maxlength` counts (a line break counts once): the name 80 characters, the zone 80, "¿Qué ofreces?" 200, the landline 20, the address or references 200, the opening hours 100 and the Facebook link 300; past it the field shows "Deja esto en <límite> caracteres o menos" (for "¿Qué ofreces?", the literal "Deja esto en 200 caracteres o menos"). A WhatsApp of more than 30 characters, or with any character other than digits, spaces, hyphens, dots, brackets and `+` (a letter, "no tengo"), is the WhatsApp error. The Facebook link MUST start with `http://` or `https://`, parse as such and carry no credentials (`https://facebook.com@evil.example` leads elsewhere), and it is saved in its canonical form. The category is sent as its slug and MUST be one of the catalogue. The checkboxes count as checked only with what a browser sends for them (`on`): `consent=false` or `consent=yes` is no consent. The form carries the version of the notice it was rendered with in a hidden field, `noticeVersion`, which only detects a mismatch. Every field is read once, its first value, and a field that is not text is empty.
+The form MUST leave every check to the server (`novalidate`), so that each error is its literal Spanish message next to its field and never a browser's tooltip, while the required fields keep `required` for screen readers and every field keeps the type and keyboard of its kind. Each free-text field has a limit, the same for the browser (`maxlength`) and the server, counted as `maxlength` counts (a line break counts once): the name 80 characters, the postal code 5, the name of a zone that does not appear 80, "¿Qué ofreces?" 200, the landline 20, the address or references 200, the opening hours 100 and the Facebook link 300; past it the field shows "Deja esto en <límite> caracteres o menos" (for "¿Qué ofreces?", the literal "Deja esto en 200 caracteres o menos"). A WhatsApp of more than 30 characters, or with any character other than digits, spaces, hyphens, dots, brackets and `+` (a letter, "no tengo"), is the WhatsApp error. The Facebook link MUST start with `http://` or `https://`, parse as such and carry no credentials (`https://facebook.com@evil.example` leads elsewhere), and it is saved in its canonical form. The category is sent as its slug and MUST be one of the catalogue, and so is the zone (or the value of "Mi colonia no aparece"). The checkboxes count as checked only with what a browser sends for them (`on`): `consent=false` or `consent=yes` is no consent. The form carries the version of the notice it was rendered with in a hidden field, `noticeVersion`, which only detects a mismatch. Every field is read once, its first value, and a field that is not text is empty.
 
-When the form comes back, the first field with an error, in the order of the screen, MUST take the focus (`autofocus`, which needs no JavaScript), every field with an error MUST be marked invalid and point to its message, and what was written MUST be shown bounded to each field's limit, as text. The page's own client JavaScript is one bundled file of the site, never inline (`deployment`, "Every response carries the security headers and the content security policy (v2)"), and does only the two things "Registration works without client JavaScript" allows: the example of "¿Qué ofreces?", and "Enviando..." on the disabled button; while Turnstile is on, the widget adds a second bundled file of its own ("Turnstile is checked on the server, fails closed and has a switch in the database (v2)"). When the form comes back with a category chosen, the server already writes that category's example.
+When the form comes back, the first field with an error, in the order of the screen, MUST take the focus (`autofocus`, which needs no JavaScript), every field with an error MUST be marked invalid and point to its message, and what was written MUST be shown bounded to each field's limit, as text. The page's own client JavaScript is one bundled file of the site, never inline (`deployment`, "Every response carries the security headers and the content security policy (v2)"), and does only the two things "Registration works without client JavaScript" allows, the example of "¿Qué ofreces?" and "Enviando..." on the disabled button, and what "The zone is chosen from the zones of the postal code the business types, or written when it does not appear (v2)" adds: narrowing the zone select by the postal code and showing the field for the name of a zone that does not appear; while Turnstile is on, the widget adds a second bundled file of its own ("Turnstile is checked on the server, fails closed and has a switch in the database (v2)"). When the form comes back with a category chosen, the server already writes that category's example.
 
 #### Scenario: a link without its scheme
 

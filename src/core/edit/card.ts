@@ -25,6 +25,7 @@ function formColumns(table: typeof businesses | typeof pendingEdits) {
     name: table.name,
     categoryId: table.categoryId,
     whatsapp: table.whatsapp,
+    postalCode: table.postalCode,
     zoneId: table.zoneId,
     zoneOther: table.zoneOther,
     whatYouOffer: table.whatYouOffer,

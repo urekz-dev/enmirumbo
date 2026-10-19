@@ -117,7 +117,8 @@ async function fillRequired(page: Page, whatsapp: string, name = "Fotos de Prueb
   await byLabel(page, "¿Cómo se llama tu negocio?").fill(name);
   await byLabel(page, "¿A qué se dedica?").selectOption({ label: "Talleres" });
   await byLabel(page, "Tu WhatsApp (10 dígitos)").fill(whatsapp);
-  await byLabel(page, "¿En qué colonia estás?").fill("Huicalco");
+  await byLabel(page, "Código postal").fill("43808");
+  await byLabel(page, "¿En qué colonia estás?").selectOption({ label: "Huicalco" });
   await byLabel(
     page,
     "Acepto el aviso de privacidad y confirmo que este negocio es mío o que tengo permiso para registrarlo.",
@@ -266,7 +267,7 @@ test.describe("Registering with a photo", () => {
       await expect(photoMessage(page)).toHaveText(`⚠ ${message}`);
       await expect(photoField(page)).toHaveAttribute("aria-invalid", "true");
       await expect(photoField(page)).toBeFocused();
-      await expect(byLabel(page, "¿En qué colonia estás?")).toHaveValue("Huicalco");
+      await expect(byLabel(page, "¿En qué colonia estás?")).toHaveValue("huicalco");
     }
     expect(await businessesOf("7719993004")).toEqual([]);
   });

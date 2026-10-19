@@ -234,6 +234,7 @@ async function edit(businessId: string, overrides: Partial<NewEdit> = {}): Promi
         name: current.name,
         categoryId: current.categoryId,
         whatsapp: current.whatsapp,
+        postalCode: current.postalCode,
         zoneId: current.zoneId,
         zoneOther: current.zoneOther,
         whatYouOffer: current.whatYouOffer,
@@ -490,6 +491,7 @@ describe("Applying the pending edit updates the published card and only that", (
       address: "Calle Dos",
       openingHours: "De 10 a 6",
       facebookUrl: "https://facebook.com/tacos-de-mentiras",
+      postalCode: "43815",
     });
 
     expect(await apply(editId)).toEqual({ kind: "applied" });
@@ -499,6 +501,7 @@ describe("Applying the pending edit updates the published card and only that", (
       name: "Tacos del Güero Renovados de Mentiras",
       categoryId: otherCategoryId,
       whatsapp: newNumber,
+      postalCode: "43815",
       zoneId: f.zoneA,
       zoneOther: null,
       whatYouOffer: "Tacos al pastor y de suadero",
@@ -524,6 +527,26 @@ describe("Applying the pending edit updates the published card and only that", (
       reviewQueue(tx, { review: [], edits: [f.localityA] }, new Date()),
     );
     expect(queue.map((r) => r.editId)).not.toContain(editId);
+  });
+
+  // data-model, "A business and its pending edit store the postal code the owner typed (v2)"
+  it("the postal code of the edit reaches the card; an edit from before it leaves the card's", async () => {
+    const id = await card({ postalCode: f.postalCodeA });
+    expect(await apply(await edit(id, { postalCode: "43899" }))).toEqual({ kind: "applied" });
+    expect((await row(id)).postalCode).toBe("43899");
+
+    expect(await apply(await edit(id, { postalCode: null, openingHours: "De 7 a 3" }))).toEqual({
+      kind: "applied",
+    });
+    expect(await row(id)).toMatchObject({ postalCode: "43899", openingHours: "De 7 a 3" });
+
+    // A card from before the postal code takes the one of its first edit.
+    const old = await card();
+    expect((await row(old)).postalCode).toBeNull();
+    expect(await apply(await edit(old, { postalCode: f.postalCodeA }))).toEqual({
+      kind: "applied",
+    });
+    expect((await row(old)).postalCode).toBe(f.postalCodeA);
   });
 
   it("the edited card can still be found: the database derives its search columns again", async () => {
@@ -996,6 +1019,7 @@ describe("A pending edit is resolved only once and only if it is still the lates
             name: current.name,
             categoryId: current.categoryId,
             whatsapp: current.whatsapp,
+            postalCode: f.postalCodeA,
             zoneId: current.zoneId,
             zoneOther: null,
             whatYouOffer: null,

@@ -1,6 +1,8 @@
 // docs/specs/data-model.md, requirements "The database holds only the
 // reference data of the localities it serves (v2)" and "Zones belong to a
-// locality, and Tizayuca's come from the SEPOMEX postal catalogue (v2)": the
+// locality, and Tizayuca's come from the SEPOMEX postal catalogue (v2)" and
+// "Each zone has its postal code, and Tizayuca's come from the SEPOMEX postal
+// catalogue (v2)": the
 // data migrations of Tizayuca are the record of where its data came from, so
 // they credit their sources, and the one that trims INEGI's catalogue says
 // why. What they leave in the database is tested in test/worker/locality.test.ts
@@ -62,9 +64,32 @@ describe("Zones belong to a locality, and Tizayuca's come from the SEPOMEX posta
     );
   });
 
-  it("postal codes are not stored", () => {
+  it("the zones' migration holds no postal code: they ship in their own", () => {
     const values = sql.slice(sql.indexOf("VALUES"));
     // The only five digits are the locality's code.
     expect(new Set(values.match(/[0-9]{5}/g))).toEqual(new Set(["13069"]));
+  });
+});
+
+describe("Each zone has its postal code, and Tizayuca's come from the SEPOMEX postal catalogue (v2)", () => {
+  const sql = migration("0016_zone_postal_codes.sql");
+
+  it("the migration credits SEPOMEX, with the date of the catalogue's last update", () => {
+    expect(sql).toContain(
+      "-- Fuente: Servicio Postal Mexicano (Correos de México), Catálogo Nacional de Códigos Postales, última actualización 2026-10-17.\n",
+    );
+    expect(sql).toContain(
+      "-- https://www.correosdemexico.gob.mx/SSLServicios/ConsultaCP/CodigoPostal_Exportar.aspx\n",
+    );
+  });
+
+  it("it names the 105 zones of Tizayuca by slug, each with one postal code, and is additive", () => {
+    const pairs = [...sql.matchAll(/\('([a-z0-9-]+)', '([0-9]{5})'\)/g)];
+    expect(pairs).toHaveLength(105);
+    expect(new Set(pairs.map(([, slug]) => slug)).size).toBe(105);
+    expect(pairs.filter(([, , code]) => !code?.startsWith("438"))).toEqual([]);
+    expect(sql).toContain(`WHERE "zones"."locality_code" = '13069'`);
+    expect(checkMigration(sql)).toEqual({ ok: true, overridden: null });
+    expect(sql).not.toContain(MARKER);
   });
 });

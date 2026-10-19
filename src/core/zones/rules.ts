@@ -20,6 +20,8 @@
 //   name (`zoneDisplayNames`, compared as the site compares zone names), or
 //   a resident could not tell them apart and the registration could not
 //   choose between them.
+// - A new zone has a postal code of five digits, which the registration
+//   narrows its zones by.
 import { MAX_SEGMENT_LENGTH } from "../catalogue/pages.ts";
 import {
   type CatalogueEntry,
@@ -29,6 +31,7 @@ import {
 } from "../catalogue/root-urls.ts";
 import { slugOf } from "../catalogue/slug.ts";
 import { type TypedZone, zoneDisplayNames } from "../catalogue/zone-names.ts";
+import { isPostalCode } from "../catalogue/postal-code.ts";
 import { normalizeText } from "../search/normalize.ts";
 
 /** The longest name of a zone, as the registration bounds the zone a business types. */
@@ -58,6 +61,8 @@ export interface ZoneFormErrors {
   name?: NameProblem;
   /** The settlement type of a new zone: none, or one the locality does not use. */
   type?: { kind: "required" };
+  /** The postal code of a new zone: none, or not five digits. */
+  postalCode?: { kind: "required" | "invalid" };
 }
 
 /** A zone as these checks see it. */
@@ -189,7 +194,7 @@ export interface NewZoneContext {
 
 /** A new zone that passed every check, or the errors of its form. */
 export type NewZoneCheck =
-  | { ok: true; zone: { name: string; type: string; slug: string } }
+  | { ok: true; zone: { name: string; type: string; slug: string; postalCode: string } }
   | { ok: false; errors: ZoneFormErrors };
 
 /** What is wrong with the name of a new zone, after its own rules. */
@@ -226,15 +231,26 @@ function newNameProblem(name: string, context: NewZoneContext, type: string | nu
   return clash === null ? { slug } : { problem: clash };
 }
 
-/** The checks of a new zone, named `name` with the settlement type `type`. */
-export function checkNewZone(name: string, type: string, context: NewZoneContext): NewZoneCheck {
+/**
+ * The checks of a new zone, named `name` with the settlement type `type` and
+ * the postal code `postalCode`, trimmed. Any five digits are a postal code:
+ * a new housing development may have one SEPOMEX does not list yet.
+ */
+export function checkNewZone(
+  name: string,
+  type: string,
+  postalCode: string,
+  context: NewZoneContext,
+): NewZoneCheck {
   const validType = context.types.includes(type) ? type : null;
   const named = newNameProblem(name, context, validType);
   const errors: ZoneFormErrors = {};
   if ("problem" in named) errors.name = named.problem;
   if (validType === null) errors.type = { kind: "required" };
-  if ("slug" in named && validType !== null) {
-    return { ok: true, zone: { name, type: validType, slug: named.slug } };
+  if (postalCode === "") errors.postalCode = { kind: "required" };
+  else if (!isPostalCode(postalCode)) errors.postalCode = { kind: "invalid" };
+  if ("slug" in named && validType !== null && errors.postalCode === undefined) {
+    return { ok: true, zone: { name, type: validType, slug: named.slug, postalCode } };
   }
   return { ok: false, errors };
 }
@@ -255,7 +271,7 @@ export function checkRename(
 
 /** A form of the zones screen that comes back with its errors, and what it had. */
 export type ZonesFailure =
-  | { form: "add"; errors: ZoneFormErrors; name: string; type: string }
+  | { form: "add"; errors: ZoneFormErrors; name: string; type: string; postalCode: string }
   | { form: "rename"; zoneId: number; errors: ZoneFormErrors; name: string }
   /** A submission the screen could not save for a reason of its own. */
   | { form: "general" };

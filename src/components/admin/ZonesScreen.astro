@@ -6,15 +6,17 @@
 // filter is hidden while there is one (v2)" and "The panel is operated from
 // the phone and without unnecessary client JavaScript").
 //
-// Above, the form to add a zone; below, every zone of the locality, hidden
-// ones included, by the name the public pages show it with: its type, the
-// slug of its URLs, "Oculta" when it is hidden, "Ocultar" or "Mostrar", and
+// Above, the form to add a zone, with its name, type and postal code; below,
+// every zone of the locality, hidden ones included, by the name the public
+// pages show it with: its type, its postal code, the slug of its URLs,
+// "Oculta" when it is hidden, "Ocultar" or "Mostrar", and
 // "Cambiarle el nombre", a disclosure with the rename form. Each form posts
 // to the screen of its locality with its action; a saved change comes back
 // as the row of its zone saying "Listo. …", and a form with errors as the
 // form again, open, with each error next to its field and what was typed.
 // Every control measures at least 44px. No client JavaScript: the
 // disclosure is the browser's own `details`.
+import { POSTAL_CODE_LENGTH } from "../../core/catalogue/postal-code.ts";
 import type { PanelZone } from "../../core/zones/manage.ts";
 import { zoneAnchor } from "../../core/zones/paths.ts";
 import { MAX_ZONE_NAME_LENGTH, type ZonesFailure } from "../../core/zones/rules.ts";
@@ -29,6 +31,11 @@ import {
   NAME_LABEL,
   nameProblemText,
   NEW_NAME_LABEL,
+  POSTAL_CODE_HELP,
+  POSTAL_CODE_INVALID,
+  POSTAL_CODE_LABEL,
+  POSTAL_CODE_REQUIRED,
+  postalCodeText,
   RENAME_BUTTON,
   RENAME_SUMMARY,
   SHOW_BUTTON,
@@ -98,6 +105,11 @@ const addNameError = added?.errors.name
   ? nameProblemText(added.errors.name, added.name, types.includes(added.type) ? added.type : null)
   : null;
 const addTypeError = added?.errors.type ? TYPE_REQUIRED : null;
+const addPostalCodeError = added?.errors.postalCode
+  ? added.errors.postalCode.kind === "required"
+    ? POSTAL_CODE_REQUIRED
+    : POSTAL_CODE_INVALID
+  : null;
 ---
 
 <section class="flex flex-col gap-6">
@@ -193,6 +205,37 @@ const addTypeError = added?.errors.type ? TYPE_REQUIRED : null;
           </p>
         )}
       </div>
+      <div class="flex flex-col gap-1.5">
+        <label for="add-zone-postal-code" class="text-sm font-semibold text-ink">
+          {POSTAL_CODE_LABEL}
+        </label>
+        <input
+          type="text"
+          id="add-zone-postal-code"
+          name="postalCode"
+          value={added?.postalCode ?? ""}
+          maxlength={POSTAL_CODE_LENGTH}
+          required
+          inputmode="numeric"
+          autocomplete="off"
+          aria-invalid={addPostalCodeError ? "true" : undefined}
+          aria-describedby={
+            addPostalCodeError
+              ? "add-zone-postal-code-error add-zone-postal-code-help"
+              : "add-zone-postal-code-help"
+          }
+          class={`${field} ${fieldBorder(addPostalCodeError !== null)}`}
+        />
+        <p id="add-zone-postal-code-help" class="text-sm text-ink-muted">
+          {POSTAL_CODE_HELP}
+        </p>
+        {addPostalCodeError && (
+          <p id="add-zone-postal-code-error" role="alert" class="text-sm font-semibold text-ink">
+            <span aria-hidden="true">⚠ </span>
+            {addPostalCodeError}
+          </p>
+        )}
+      </div>
       <button type="submit" class={`${SECONDARY_BUTTON} w-full px-6 py-3 text-base sm:w-fit`}>
         {ADD_BUTTON}
       </button>
@@ -219,6 +262,7 @@ const addTypeError = added?.errors.type ? TYPE_REQUIRED : null;
             <article class="flex flex-col gap-2 rounded-xl border border-line bg-background p-4">
               <h3 class="font-semibold break-words text-ink">{zone.displayName}</h3>
               <p class="text-sm text-ink-muted">{typeText(zone.type)}</p>
+              <p class="text-sm text-ink-muted">{postalCodeText(zone.postalCode)}</p>
               <p class="text-sm break-all text-ink-muted">{slugText(zone.slug)}</p>
               {!zone.visible && (
                 <div class="flex flex-wrap gap-2">

@@ -1,20 +1,60 @@
-// The zone of a registration, from what the owner typed
-// (docs/specs/business-registration.md, "The zone is typed with the
-// locality's zones as suggestions, and a name that is none of them is kept as
-// "Otra" (v2)"). The field is a text input whose suggestions are the visible
-// zones of the locality by their display name (a `datalist`, with no
-// JavaScript of the site), so typing "hacien" offers "Haciendas de Tizayuca".
-// What arrives is text, never an identifier, so a submission can only ever
-// name a zone of the page's locality. Pure.
-import { normalizeText } from "../search/normalize.ts";
+// The postal code and the zone of a registration
+// (docs/specs/business-registration.md, "The zone is chosen from the zones of
+// the postal code the business types, or written when it does not appear
+// (v2)"). The form asks for the postal code first, then offers the visible
+// zones of the locality in a select, grouped by postal code, which its
+// script narrows to the postal code typed; the select ends with "Mi colonia
+// no aparece", which keeps the name the business writes as the free text of
+// "Otra", pending the admin's normalization. A submission names a zone by its
+// slug, and only a zone the form offers counts, so no submission can link a
+// business to a zone of another locality or to a hidden zone. Pure.
 
-/** A zone the registration offers: a visible zone of the locality. */
+/** A zone the registration offers: a visible zone of the locality (or the edit's own). */
 export interface ZoneOption {
   id: number;
+  /** What the select sends: unique in the locality, and it never changes. */
+  slug: string;
   /** Its name, as stored. */
   name: string;
   /** The name it is shown with (zoneDisplayNames): unique in the locality. */
   displayName: string;
+  /** Its postal code, or null for a zone the admin added before zones had one. */
+  postalCode: string | null;
+}
+
+/**
+ * What the select sends for "Mi colonia no aparece". It cannot be a slug
+ * (SLUG_PATTERN has no underscore), so no zone can take it.
+ */
+export const OTHER_ZONE = "_otra";
+
+/** The zones of one postal code, as the select groups them; null for those without one. */
+export interface PostalCodeGroup {
+  postalCode: string | null;
+  zones: ZoneOption[];
+}
+
+/**
+ * The zones grouped by postal code, in the order of the codes, each group in
+ * the order the zones came in (alphabetical, from registrationCatalogue);
+ * the zones without a postal code go last.
+ */
+export function postalCodeGroups(zones: readonly ZoneOption[]): PostalCodeGroup[] {
+  const groups = [...Map.groupBy(zones, (zone) => zone.postalCode)].map(([postalCode, list]) => ({
+    postalCode,
+    zones: list,
+  }));
+  return groups.toSorted((a, b) =>
+    a.postalCode === null ? 1 : b.postalCode === null ? -1 : a.postalCode < b.postalCode ? -1 : 1,
+  );
+}
+
+/**
+ * Whether `zone` is one of `postalCode`'s. A zone without a postal code
+ * cannot be checked, so it belongs to any.
+ */
+export function zoneHasPostalCode(zone: ZoneOption, postalCode: string): boolean {
+  return zone.postalCode === null || zone.postalCode === postalCode;
 }
 
 /**
@@ -24,31 +64,38 @@ export interface ZoneOption {
  */
 export type ZoneChoice = { zoneId: number; zoneOther: null } | { zoneId: null; zoneOther: string };
 
-/** The one zone whose `key`, normalized, is `typed`, or null for none or several. */
-function only(
-  zones: readonly ZoneOption[],
-  typed: string,
-  key: (zone: ZoneOption) => string,
-): ZoneOption | null {
-  const found = zones.filter((zone) => normalizeText(key(zone)) === typed);
-  return found.length === 1 ? (found[0] ?? null) : null;
-}
+/** Why the zone of a submission is not one. */
+export type ZoneProblem =
+  /** No zone chosen, or one the form does not offer. */
+  | { field: "zone"; code: "required" }
+  /** A zone of another postal code than the one typed. */
+  | { field: "zone"; code: "postal-code" }
+  /** "Mi colonia no aparece" without its name, or with one past its limit. */
+  | { field: "zoneOther"; code: "required" | "length" };
 
 /**
- * The zone `text` names among `zones`, compared as the site compares zone
- * names, ignoring case, accents and punctuation (normalizeText): first by
- * display name ("El Carmen (Fraccionamiento)"), then by name, when exactly
- * one zone has it, as when the zone that shares its name is hidden. A text
- * that names no zone, or several, is "Otra" with that text, trimmed, for the
- * admin to normalize. `text` is not empty.
+ * The zone a submission chose among `zones`: `value` is what the select
+ * sent, a slug or OTHER_ZONE; `other` the name written for "Mi colonia no
+ * aparece", trimmed; `postalCode` the postal code typed, when it is one, or
+ * null. A zone of another postal code is refused only once the postal code
+ * is one; the postal code's own error is the caller's.
  */
-export function chooseZone(text: string, zones: readonly ZoneOption[]): ZoneChoice {
-  const typed = normalizeText(text);
-  const zone =
-    typed === ""
-      ? null
-      : (only(zones, typed, (z) => z.displayName) ?? only(zones, typed, (z) => z.name));
-  return zone === null
-    ? { zoneId: null, zoneOther: text.trim() }
-    : { zoneId: zone.id, zoneOther: null };
+export function chooseZone(
+  value: string,
+  other: string,
+  postalCode: string | null,
+  zones: readonly ZoneOption[],
+  maxOtherLength: number,
+): ZoneChoice | ZoneProblem {
+  if (value === OTHER_ZONE) {
+    if (other === "") return { field: "zoneOther", code: "required" };
+    if (other.length > maxOtherLength) return { field: "zoneOther", code: "length" };
+    return { zoneId: null, zoneOther: other };
+  }
+  const zone = value === "" ? undefined : zones.find(({ slug }) => slug === value);
+  if (zone === undefined) return { field: "zone", code: "required" };
+  if (postalCode !== null && !zoneHasPostalCode(zone, postalCode)) {
+    return { field: "zone", code: "postal-code" };
+  }
+  return { zoneId: zone.id, zoneOther: null };
 }

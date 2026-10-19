@@ -3,7 +3,8 @@
 // add a zone to a locality (v2)"): what the zones screen lists, and its three
 // writes. Hiding and showing change only whether the registration and the
 // edit offer the zone; renaming changes only its name, never its slug; adding
-// creates a visible zone whose slug comes from its name and never changes.
+// creates a visible zone with its postal code, whose slug comes from its name
+// and never changes.
 // None of them touches a card, and none writes to the audit log, which
 // records only what is done to a card (data-model, "The audit log records the
 // destructive actions of the admin (v2)").
@@ -23,6 +24,8 @@ import { checkNewZone, checkRename, type ZoneFormErrors, type ZoneRow } from "./
 /** A zone as the screen lists it. */
 export interface PanelZone extends ZoneRow {
   visible: boolean;
+  /** Its postal code; null for a zone added before zones had one. */
+  postalCode: string | null;
   /** The name the public pages show it with, unique in its locality. */
   displayName: string;
 }
@@ -41,6 +44,7 @@ function localityZones(db: Db | Tx, localityCode: string) {
       name: zones.name,
       type: zones.type,
       visible: zones.visible,
+      postalCode: zones.postalCode,
     })
     .from(zones)
     .where(eq(zones.localityCode, localityCode));
@@ -146,14 +150,15 @@ export function renameZone(
 
 /**
  * Adds a visible zone to `localityCode`, named `name` (already clean) with
- * the settlement type `type`, after every check of src/core/zones/rules.ts
- * against the catalogues as they are.
+ * the settlement type `type` and the postal code `postalCode`, after every
+ * check of src/core/zones/rules.ts against the catalogues as they are.
  */
 export function addZone(
   db: Db,
   localityCode: string,
   name: string,
   type: string,
+  postalCode: string,
 ): Promise<ZoneWriteOutcome> {
   return db.transaction(async (tx) => {
     const localityName = await lockLocality(tx, localityCode);
@@ -166,7 +171,7 @@ export function addZone(
         .orderBy(asc(categories.id)),
       tx.select({ name: trades.name, slug: trades.slug }).from(trades).orderBy(asc(trades.id)),
     ]);
-    const check = checkNewZone(name, type, {
+    const check = checkNewZone(name, type, postalCode, {
       zones: rows,
       localityName,
       categories: categoryRows,

@@ -363,6 +363,67 @@ describe("The business stores the trace of its unpublishing", () => {
   });
 });
 
+describe("A business and its pending edit store the postal code the owner typed (v2)", () => {
+  it("is born null, and only five digits are accepted, on the card and on its edit", async () => {
+    const id = await insertBusiness(f);
+    expect((await getBusiness(id))?.postalCode).toBeNull();
+    await updateBusiness(id, { postalCode: "43815" });
+    expect((await getBusiness(id))?.postalCode).toBe("43815");
+    for (const postalCode of ["4381", "438155", "43 815", "4381a", ""]) {
+      expect(await pgErrorCode(() => updateBusiness(id, { postalCode })), postalCode).toBe(
+        PG.check,
+      );
+      expect(
+        await pgErrorCode(() =>
+          insertEdit(id, { postalCode, status: "superseded", resolvedAt: new Date() }),
+        ),
+        postalCode,
+      ).toBe(PG.check);
+    }
+    await insertEdit(id, { postalCode: "43899" });
+    const [edit] = await db((tx) =>
+      tx.select().from(pendingEdits).where(eq(pendingEdits.businessId, id)),
+    );
+    expect(edit?.postalCode).toBe("43899");
+    // An edit saved before the form asked for it has none.
+    await insertEdit(id, { status: "superseded", resolvedAt: new Date() });
+    expect(
+      await db((tx) =>
+        tx.$count(
+          pendingEdits,
+          and(eq(pendingEdits.businessId, id), sql`${pendingEdits.postalCode} IS NULL`),
+        ),
+      ),
+    ).toBe(1);
+  });
+});
+
+describe("Each zone has its postal code, and Tizayuca's come from the SEPOMEX postal catalogue (v2)", () => {
+  it("a zone without one is allowed, and only five digits are accepted", async () => {
+    const [row] = await db((tx) =>
+      tx
+        .insert(zones)
+        .values({
+          localityCode: f.localityA,
+          type: "Colonia",
+          name: "Sin Código",
+          slug: "sin-codigo",
+        })
+        .returning({ id: zones.id, postalCode: zones.postalCode }),
+    );
+    expect(row?.postalCode).toBeNull();
+    for (const postalCode of ["4381", "438155", "C.P. 43815", ""]) {
+      expect(
+        await pgErrorCode(() =>
+          db((tx) => tx.update(zones).set({ postalCode }).where(eq(zones.id, row!.id))),
+        ),
+        postalCode,
+      ).toBe(PG.check);
+    }
+    await db((tx) => tx.update(zones).set({ postalCode: "43815" }).where(eq(zones.id, row!.id)));
+  });
+});
+
 describe('The zone allows "Otra" with free text pending normalization', () => {
   it("registration with zone Otra, then normalization by the admin", async () => {
     const id = await insertBusiness(f, { zoneId: null, zoneOther: "Rinconada del Venado" });
@@ -553,6 +614,9 @@ describe("The migration tree applies in full and its constraints survive", () =>
         "admin_audit_log_previous_status_check",
         "businesses_pin_check",
         "localities_coordinates_check",
+        "zones_postal_code_check",
+        "businesses_postal_code_check",
+        "pending_edits_postal_code_check",
       ]),
     );
   });

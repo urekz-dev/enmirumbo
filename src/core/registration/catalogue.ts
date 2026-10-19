@@ -1,11 +1,13 @@
 // What the registration form of a locality offers, and what its submissions
 // are checked against (docs/specs/business-registration.md, "Required and
-// optional form fields" and "The zone options come from the active locality
-// (v2)"): the 8 categories of the catalogue, in catalogue order, and the
-// visible zones of the locality with their display names, in alphabetical
-// order, the order the browser suggests them in. A hidden zone is not
-// offered; its name still counts for the display names of the others, so
-// hiding a zone never renames another (zoneDisplayNames).
+// optional form fields", "The zone options come from the active locality
+// (v2)" and "The zone is chosen from the zones of the postal code the
+// business types, or written when it does not appear (v2)"): the 8
+// categories of the catalogue, in catalogue order, and the visible zones of
+// the locality with their display names and postal codes, in alphabetical
+// order, the order the form lists each postal code's zones in. A hidden zone
+// is not offered; its name still counts for the display names of the others,
+// so hiding a zone never renames another (zoneDisplayNames).
 //
 // Binding: the page reads it on HYPERDRIVE, the cached binding of public
 // reads; the action reads it on HYPERDRIVE_FRESH, in the connection it saves
@@ -37,14 +39,27 @@ const collator = new Intl.Collator("es-MX", { sensitivity: "base", numeric: true
  * offers the zone the card already has, so a field left as it was keeps it.
  */
 export function zoneOptions(
-  all: readonly { id: number; slug: string; name: string; type: string; visible: boolean }[],
+  all: readonly {
+    id: number;
+    slug: string;
+    name: string;
+    type: string;
+    visible: boolean;
+    postalCode: string | null;
+  }[],
   localityName: string,
   alsoZoneIds: readonly (number | null)[] = [],
 ): ZoneOption[] {
   const names = zoneDisplayNames(all, localityName);
   return all
     .filter((zone) => zone.visible || alsoZoneIds.includes(zone.id))
-    .map(({ id, slug, name }) => ({ id, name: name.trim(), displayName: names.get(slug) ?? name }))
+    .map(({ id, slug, name, postalCode }) => ({
+      id,
+      slug,
+      name: name.trim(),
+      displayName: names.get(slug) ?? name,
+      postalCode,
+    }))
     .toSorted((a, b) => collator.compare(a.displayName, b.displayName));
 }
 
@@ -69,6 +84,7 @@ export async function registrationCatalogue(
         name: zones.name,
         type: zones.type,
         visible: zones.visible,
+        postalCode: zones.postalCode,
       })
       .from(zones)
       .where(eq(zones.localityCode, locality.code)),

@@ -68,6 +68,7 @@ All notable changes to this product are documented here. Format: [Keep a Changel
 ### Changed
 
 - The registration form needs JavaScript while Turnstile is on, as ADR 0012 decided; with Turnstile off it still works without it.
+- The colonia of the registration and edit forms is chosen from a list again, after the postal code: typing the postal code leaves in the list only the colonias of that code, and "Mi colonia no aparece", at the end, asks for its name, which is kept for the admin to normalize. Without JavaScript the list shows every colonia grouped by postal code. The postal code is required, is saved with the card and with its pending changes, and the panel shows it in the detail of a card and of its changes; no public page shows it. Each of the 105 zones of Tizayuca has its postal code from SEPOMEX's catalogue, the zones screen shows it, and a colonia added there needs one.
 - The variable that names the hostname of the photos is `MEDIA_URL` (it was `PHOTOS_URL`), and the photo hostnames under `enmirumbo.com` are replaced, until that domain is on Cloudflare, by media hostnames under `urekz.com`. Cloud resources are named in English, with hostnames one level below their zone.
 - The brand is written enmirumbo, lowercase and in one word.
 - The smoke test after each deploy follows the redirect of the home page, which leads to the locality while only one is active.

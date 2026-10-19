@@ -710,6 +710,7 @@ describe("The business keeps the rejection its resubmission answered (v2)", () =
     name: "Reenvío Corregido",
     categoryId: f.categoryId,
     whatsapp,
+    postalCode: f.postalCodeA,
     zoneId: f.zoneA,
     zoneOther: null,
     whatYouOffer: null,

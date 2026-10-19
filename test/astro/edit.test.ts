@@ -49,8 +49,20 @@ const CATALOGUE: RegistrationCatalogue = {
     { id: 3, name: "Belleza", slug: "belleza" },
   ],
   zones: [
-    { id: 11, name: "El Carmen", displayName: "El Carmen (Colonia)" },
-    { id: 12, name: "Haciendas de Tizayuca", displayName: "Haciendas de Tizayuca" },
+    {
+      id: 11,
+      slug: "colonia-el-carmen",
+      name: "El Carmen",
+      displayName: "El Carmen (Colonia)",
+      postalCode: "43815",
+    },
+    {
+      id: 12,
+      slug: "haciendas-de-tizayuca",
+      name: "Haciendas de Tizayuca",
+      displayName: "Haciendas de Tizayuca",
+      postalCode: "43815",
+    },
   ],
 };
 
@@ -66,7 +78,9 @@ const CARD_DRAFT: RegistrationDraft = {
   name: "Plomería Güicho",
   category: "servicios-del-hogar",
   whatsapp: "7719990150",
-  zone: "Rinconada del Venado",
+  postalCode: "43899",
+  zone: "_otra",
+  zoneOther: "Rinconada del Venado",
   whatYouOffer: "destape de drenajes",
   homeDelivery: true,
   landline: "(775) 123-45-67",
@@ -210,7 +224,9 @@ describe("The management link opens the card in edit mode with the same prefille
       "¿Cómo se llama tu negocio?",
       "¿A qué se dedica?",
       "Tu WhatsApp (10 dígitos)",
+      "Código postal",
       "¿En qué colonia estás?",
+      "Si tu colonia no aparece, escribe cómo se llama",
       "¿Qué ofreces? (opcional)",
       "¿Haces entregas o vas a domicilio? (opcional)",
       "Teléfono fijo (opcional)",
@@ -228,7 +244,9 @@ describe("The management link opens the card in edit mode with the same prefille
       "name",
       "category",
       "whatsapp",
+      "postalCode",
       "zone",
+      "zoneOther",
       "whatYouOffer",
       "homeDelivery",
       "landline",
@@ -247,11 +265,13 @@ describe("The management link opens the card in edit mode with the same prefille
     expect(attribute(control(html, "whatYouOffer"), "maxlength")).toBe("200");
   });
 
-  it('every field is prefilled with the card, and a zone "Otra" with its free text', async () => {
+  it('every field is prefilled with the card, and a zone "Otra" as "Mi colonia no aparece" with its free text', async () => {
     const html = await render();
     expect(attribute(control(html, "name"), "value")).toBe("Plomería Güicho");
     expect(attribute(control(html, "whatsapp"), "value")).toBe("7719990150");
-    expect(attribute(control(html, "zone"), "value")).toBe("Rinconada del Venado");
+    expect(attribute(control(html, "postalCode"), "value")).toBe("43899");
+    expect(formOf(html)).toMatch(/<option value="_otra" selected/);
+    expect(attribute(control(html, "zoneOther"), "value")).toBe("Rinconada del Venado");
     expect(attribute(control(html, "landline"), "value")).toBe("(775) 123-45-67");
     expect(attribute(control(html, "openingHours"), "value")).toBe("Lunes a sábado de 9 a 7");
     expect(attribute(control(html, "facebookUrl"), "value")).toBe(
@@ -273,8 +293,9 @@ describe("The management link opens the card in edit mode with the same prefille
     expect(attribute(control(html, "whatYouOffer"), "placeholder")).toBe(
       "ej. plomería, destape de drenajes, bombas de agua",
     );
-    // The zone's suggestions are the locality's.
-    expect(form).toContain('<option value="El Carmen (Colonia)">');
+    // The zone's options are the locality's, by postal code.
+    expect(form).toContain('<optgroup label="C.P. 43815" data-postal-code="43815">');
+    expect(form).toContain('<option value="colonia-el-carmen">El Carmen (Colonia)</option>');
     expect(alerts(html)).toEqual([]);
   });
 

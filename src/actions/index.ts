@@ -48,6 +48,7 @@ import { siteOrigin } from "../lib/site-url.ts";
 import { turnstileVerifier } from "../lib/turnstile.ts";
 import {
   submittedName,
+  submittedPostalCode,
   submittedType,
   submittedVisibility,
   submittedZone,
@@ -400,7 +401,8 @@ export const server = {
       },
     }),
 
-    // Adds a zone to the locality, with a slug from its name that never changes.
+    // Adds a zone to the locality, with its postal code and a slug from its
+    // name that never changes.
     addZone: defineAction({
       accept: "form",
       handler: async (form, context) => {
@@ -409,8 +411,11 @@ export const server = {
         if (locality === null) throw new ActionError({ code: "NOT_FOUND" });
         const name = submittedName(form);
         const type = submittedType(form);
+        const postalCode = submittedPostalCode(form);
         return zoneActionData(
-          await withZonesOf(admin.email, locality, (db) => addZone(db, locality, name, type)),
+          await withZonesOf(admin.email, locality, (db) =>
+            addZone(db, locality, name, type, postalCode),
+          ),
         );
       },
     }),

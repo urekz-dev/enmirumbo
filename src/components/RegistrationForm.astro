@@ -5,11 +5,11 @@
 // per-field errors in Spanish", "Consent with a visible simplified notice and
 // a consent record", "Nobody consents to a notice version they did not have
 // in front of them", "Form states and registration accessibility", "The
-// zone is typed with the locality's zones as suggestions, and a name that is
-// none of them is kept as "Otra" (v2)" and "The photo field explains the PRD
-// §6.1 policy and opens the phone gallery"): the trap field, the five
-// required fields, the optional ones marked as such, the photo, the consent
-// block with the simplified notice and "Registrar mi negocio".
+// zone is chosen from the zones of the postal code the business types, or
+// written when it does not appear (v2)" and "The photo field explains the PRD
+// §6.1 policy and opens the phone gallery"): the trap field, the required
+// fields, the optional ones marked as such, the photo, the consent block with
+// the simplified notice and "Registrar mi negocio".
 //
 // It posts to the page it is on, with the action `register`, and the server
 // resolves and validates it. `novalidate`
@@ -21,8 +21,12 @@
 // the notice in view; Astro escapes every value. The first field with an
 // error takes the focus (`autofocus`), also without JavaScript.
 //
-// The zone is a text field with the visible zones of the locality as the
-// browser's own suggestions (`datalist`), by display name.
+// The postal code comes before the zone. The zone is a select of the visible
+// zones of the locality, by display name, grouped by postal code (an
+// `optgroup` each, whose `data-postal-code` is all the script needs), then
+// "Mi colonia no aparece", followed by the field to write the name of a
+// zone that does not appear. Without JavaScript, every group and that field
+// are always shown.
 //
 // The photo travels in the same submission (`multipart/form-data`), from a
 // file field that takes the JPEG, PNG and WebP images the server accepts,
@@ -52,9 +56,12 @@
 //
 // Its own script, bundled as a file of the site (the content security policy
 // allows no inline script), changes the example of "¿Qué ofreces?" with the
-// category and shows "Enviando..." on the disabled button while the form is
-// sent. Without it, the example is the generic one or the chosen category's,
-// and the button stays as it is.
+// category, narrows the zone select to the groups of the postal code typed
+// (and says so when no zone has it), shows the field for the name of a zone
+// only with "Mi colonia no aparece" chosen, and shows "Enviando..." on the
+// disabled button while the form is sent. Without it, the example is the
+// generic one or the chosen category's, the select lists every group, the
+// field is always there, and the button stays as it is.
 //
 import {
   EDIT_GENERAL_ERROR_MESSAGES,
@@ -76,15 +83,21 @@ import {
   type GeneralError,
   MAX_LENGTHS,
   NO_JAVASCRIPT_MESSAGE,
+  NO_POSTAL_CODE_GROUP,
+  OTHER_ZONE_LABEL,
   PHOTO_ACCEPT,
   PHOTO_NOT_KEPT_MESSAGE,
   PHOTO_POLICY,
+  postalCodeGroupLabel,
   REGISTRATION_FIELDS as F,
   REMOVE_PHOTO_LABEL,
   type RegistrationDraft,
   type RegistrationErrors,
   SENDING_TEXT,
+  UNKNOWN_POSTAL_CODE_HINT,
+  ZONE_PLACEHOLDER,
 } from "../core/registration/submission.ts";
+import { OTHER_ZONE, postalCodeGroups } from "../core/registration/zone.ts";
 import { PRIMARY_BUTTON } from "../lib/buttons.ts";
 import ConsentBlock from "./ConsentBlock.astro";
 import FieldError from "./FieldError.astro";
@@ -156,6 +169,9 @@ const checkboxLabel =
   "flex min-h-11 cursor-pointer items-center gap-3 text-sm font-semibold text-ink";
 
 const chosen = catalogue.categories.find(({ slug }) => slug === draft.category);
+const zoneGroups = postalCodeGroups(catalogue.zones);
+const chosenZone = catalogue.zones.find(({ slug }) => slug === draft.zone);
+const otherZone = chosenZone === undefined && draft.zone === OTHER_ZONE;
 /** What the photo field says: its error, or that the photo sent has to be chosen again. */
 const photoMessage = message("photo") ?? (draft.photo ? PHOTO_NOT_KEPT_MESSAGE : null);
 /** The edit's note that the new photo of the edit waiting stays, when nothing else is said of the photo. */
@@ -263,33 +279,97 @@ const keptPhotoNote =
   </div>
 
   <div class="flex flex-col gap-1.5">
-    <label for={id(F.zone)} class={label}>
-      ¿En qué colonia estás?
+    <label for={id(F.postalCode)} class={label}>
+      Código postal
     </label>
     <input
       type="text"
+      id={id(F.postalCode)}
+      name={F.postalCode}
+      value={draft.postalCode}
+      required
+      maxlength={MAX_LENGTHS.postalCode}
+      inputmode="numeric"
+      autocomplete="postal-code"
+      autofocus={first === "postalCode"}
+      aria-invalid={invalid("postalCode")}
+      aria-describedby={describedBy("postalCode", `${id(F.postalCode)}-help`)}
+      class={field("postalCode")}
+      data-postal-code-source
+    />
+    <div>
+      <p id={`${id(F.postalCode)}-help`} class={help}>
+        Si no te lo sabes, viene en tu recibo de luz o de agua.
+      </p>
+      <p
+        role="status"
+        class="pt-1 text-sm font-semibold text-ink empty:p-0"
+        data-postal-code-hint={UNKNOWN_POSTAL_CODE_HINT}
+      ></p>
+    </div>
+    <FieldError id={errorId("postalCode")} message={message("postalCode")} />
+  </div>
+
+  <div class="flex flex-col gap-1.5">
+    <label for={id(F.zone)} class={label}>
+      ¿En qué colonia estás?
+    </label>
+    <select
       id={id(F.zone)}
       name={F.zone}
-      value={draft.zone}
       required
-      maxlength={MAX_LENGTHS.zone}
-      list={`${id(F.zone)}-options`}
-      autocomplete="off"
       autofocus={first === "zone"}
       aria-invalid={invalid("zone")}
       aria-describedby={describedBy("zone", `${id(F.zone)}-help`)}
       class={field("zone")}
-    />
-    <datalist id={`${id(F.zone)}-options`}>
-      {catalogue.zones.map(({ displayName }) => (
-        <option value={displayName} />
+      data-zone-select
+    >
+      <option value="" selected={chosenZone === undefined && !otherZone}>
+        {ZONE_PLACEHOLDER}
+      </option>
+      {zoneGroups.map((group) => (
+        <optgroup
+          label={
+            group.postalCode === null
+              ? NO_POSTAL_CODE_GROUP
+              : postalCodeGroupLabel(group.postalCode)
+          }
+          data-postal-code={group.postalCode ?? ""}
+        >
+          {group.zones.map((zone) => (
+            <option value={zone.slug} selected={chosenZone?.slug === zone.slug}>
+              {zone.displayName}
+            </option>
+          ))}
+        </optgroup>
       ))}
-    </datalist>
+      <option value={OTHER_ZONE} selected={otherZone} data-other-zone>
+        {OTHER_ZONE_LABEL}
+      </option>
+    </select>
     <p id={`${id(F.zone)}-help`} class={help}>
-      Empieza a escribirla y elígela de la lista. Si no aparece, escríbela completa y nosotros la
-      acomodamos.
+      Si tu colonia no aparece en la lista, elige “Mi colonia no aparece” y escríbela abajo.
     </p>
     <FieldError id={errorId("zone")} message={message("zone")} />
+  </div>
+
+  <div class="flex flex-col gap-1.5" data-zone-other>
+    <label for={id(F.zoneOther)} class={label}>
+      Si tu colonia no aparece, escribe cómo se llama
+    </label>
+    <input
+      type="text"
+      id={id(F.zoneOther)}
+      name={F.zoneOther}
+      value={draft.zoneOther}
+      maxlength={MAX_LENGTHS.zoneOther}
+      autocomplete="off"
+      autofocus={first === "zoneOther"}
+      aria-invalid={invalid("zoneOther")}
+      aria-describedby={describedBy("zoneOther")}
+      class={field("zoneOther")}
+    />
+    <FieldError id={errorId("zoneOther")} message={message("zoneOther")} />
   </div>
 
   <div class="flex flex-col gap-1.5">
@@ -472,14 +552,61 @@ const keptPhotoNote =
 </form>
 
 <script>
-  // The two things the registration form does with JavaScript besides
-  // Turnstile (TurnstileWidget.astro), and nothing else: the example of
-  // "¿Qué ofreces?" follows the category, without touching what was written;
-  // and the submit button says "Enviando..." and stays disabled while the
-  // form is sent, so a second tap sends nothing. A page restored from the
-  // browser's history gets its button back (and, with Turnstile, the widget
-  // then holds it until it has a new token).
+  // What the registration form does with JavaScript besides Turnstile
+  // (TurnstileWidget.astro), and nothing else: the example of "¿Qué
+  // ofreces?" follows the category, without touching what was written; the
+  // zone select follows the postal code; and the submit button says
+  // "Enviando..." and stays disabled while the form is sent, so a second tap
+  // sends nothing. A page restored from the browser's history gets its button
+  // back (and, with Turnstile, the widget then holds it until it has a new
+  // token).
+  //
+  // The zone select comes from the server with every zone, one group per
+  // postal code. Once the postal code has five digits, the select keeps only
+  // that code's group (and the group of zones without a code, if any), with
+  // its first option and "Mi colonia no aparece"; a zone chosen that is no
+  // longer there is unchosen. When no group has the code, the form says so.
+  // With fewer digits, every group is back. The field for the name of a zone
+  // that does not appear is shown only while "Mi colonia no aparece" is
+  // chosen. Options are never hidden one by one: a phone's select may still
+  // show a hidden option, so whole groups are taken out and put back.
+  function followPostalCode(form: Element) {
+    const postalCode = form.querySelector("input[data-postal-code-source]");
+    const select = form.querySelector("select[data-zone-select]");
+    const hint = form.querySelector("[data-postal-code-hint]");
+    const other = form.querySelector("[data-zone-other]");
+    if (!(postalCode instanceof HTMLInputElement) || !(select instanceof HTMLSelectElement)) return;
+    const first = select.options[0];
+    const otherOption = select.querySelector("option[data-other-zone]");
+    const groups = [...select.querySelectorAll("optgroup")];
+    if (!first || !(otherOption instanceof HTMLOptionElement)) return;
+    const showOther = () => {
+      if (other instanceof HTMLElement) other.hidden = !otherOption.selected;
+    };
+    const narrow = () => {
+      const code = postalCode.value.trim();
+      const chosen = select.value;
+      const complete = /^[0-9]{5}$/.test(code);
+      const own = groups.filter((group) => group.dataset["postalCode"] === code);
+      const shown = complete
+        ? groups.filter((group) => own.includes(group) || group.dataset["postalCode"] === "")
+        : groups;
+      select.replaceChildren(first, ...shown, otherOption);
+      const still = [...select.options].some((option) => option.value === chosen);
+      select.value = still ? chosen : "";
+      if (hint instanceof HTMLElement) {
+        hint.textContent =
+          complete && own.length === 0 ? (hint.dataset["postalCodeHint"] ?? "") : "";
+      }
+      showOther();
+    };
+    postalCode.addEventListener("input", narrow);
+    select.addEventListener("change", showOther);
+    narrow();
+  }
+
   for (const form of document.querySelectorAll("form[data-registration-form]")) {
+    followPostalCode(form);
     const category = form.querySelector("select[data-example-source]");
     const offer = form.querySelector("textarea[data-generic-example]");
     if (category instanceof HTMLSelectElement && offer instanceof HTMLTextAreaElement) {

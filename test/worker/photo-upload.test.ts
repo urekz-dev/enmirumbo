@@ -344,7 +344,15 @@ describe("The server only accepts the photo if it is a real image of at most 5 M
     const valid = (file: File) =>
       validateRegistration(form({ ...required(), [F.photo]: file }), {
         categories: [{ id: f.categoryId, name: "x", slug: categorySlug }],
-        zones: [],
+        zones: [
+          {
+            id: f.zoneA,
+            slug: "centro",
+            name: "Centro",
+            displayName: "Centro",
+            postalCode: f.postalCodeA,
+          },
+        ],
       });
     const atLimit = valid(photoFile(new Uint8Array(MAX_PHOTO_BYTES)));
     expect(atLimit.kind).toBe("valid");
@@ -709,7 +717,8 @@ function required(overrides: Record<string, string | Blob | (string | Blob)[]> =
     [F.name]: "Fotos de Mentiras",
     [F.category]: categorySlug,
     [F.whatsapp]: newPhone(),
-    [F.zone]: "Centro",
+    [F.postalCode]: f.postalCodeA,
+    [F.zone]: "centro",
     [F.noticeVersion]: NOTICE_VERSION,
     [F.consent]: "on",
     ...overrides,

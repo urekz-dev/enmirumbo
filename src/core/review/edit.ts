@@ -40,6 +40,8 @@ export interface EditableCard {
   zoneSlug: string | null;
   zoneName: string | null;
   zoneOther: string | null;
+  /** Null on a card, or an edit, saved before the form asked for it. */
+  postalCode: string | null;
   whatYouOffer: string | null;
   homeDelivery: boolean;
   landline: string | null;
@@ -99,6 +101,7 @@ export async function editDetail(db: Db, id: number): Promise<EditDetail | null>
         zoneSlug: cardZones.slug,
         zoneName: cardZones.name,
         zoneOther: businesses.zoneOther,
+        postalCode: businesses.postalCode,
         whatYouOffer: businesses.whatYouOffer,
         homeDelivery: businesses.homeDelivery,
         landline: businesses.landline,
@@ -113,6 +116,7 @@ export async function editDetail(db: Db, id: number): Promise<EditDetail | null>
         zoneSlug: zones.slug,
         zoneName: zones.name,
         zoneOther: pendingEdits.zoneOther,
+        postalCode: pendingEdits.postalCode,
         whatYouOffer: pendingEdits.whatYouOffer,
         homeDelivery: pendingEdits.homeDelivery,
         landline: pendingEdits.landline,
@@ -158,6 +162,7 @@ export function comparedFields(
     ["name", FIELD_LABELS.name, (card) => card.name.trim()],
     ["categoryName", FIELD_LABELS.category, (card) => card.categoryName],
     ["whatsapp", FIELD_LABELS.whatsapp, (card) => card.whatsapp],
+    ["postalCode", FIELD_LABELS.postalCode, (card) => optional(card.postalCode)],
     ["zone", FIELD_LABELS.zone, (card) => zoneText(card, names) ?? NOT_CAPTURED],
     ["whatYouOffer", FIELD_LABELS.whatYouOffer, (card) => optional(card.whatYouOffer)],
     ["homeDelivery", FIELD_LABELS.homeDelivery, (card) => yesNo(card.homeDelivery)],

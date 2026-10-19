@@ -21,7 +21,14 @@ import {
 } from "drizzle-orm/pg-core";
 import { BUSINESS_ID_PATTERN } from "../../business/id.ts";
 import { PHOTO_KEY_PATTERN as SERVER_PHOTO_KEY_PATTERN } from "../../photos/photo.ts";
-import { coordinates, matches, oneOf, PHONE_PATTERN, together } from "./checks.ts";
+import {
+  coordinates,
+  matches,
+  oneOf,
+  PHONE_PATTERN,
+  POSTAL_CODE_PATTERN,
+  together,
+} from "./checks.ts";
 import { categories, trades } from "./catalogue.ts";
 import { localities, zones } from "./locality.ts";
 
@@ -73,6 +80,10 @@ export const businesses = pgTable(
     // with free text is pending normalization by the admin.
     zoneId: integer("zone_id"),
     zoneOther: text("zone_other"),
+    // The postal code the business typed, which narrows the zones the form
+    // offers. Null only on cards registered before it was asked. Never shown
+    // on a public page.
+    postalCode: text("postal_code"),
     // The consent record (LFPDPPP): when, and against which notice version.
     // The version is null only on cards from before versioning.
     consentedToNoticeAt: timestamptz("consented_to_notice_at").notNull(),
@@ -144,6 +155,7 @@ export const businesses = pgTable(
     check("businesses_origin_check", oneOf(t.origin, BUSINESS_ORIGINS)),
     check("businesses_whatsapp_check", matches(t.whatsapp, PHONE_PATTERN)),
     check("businesses_zone_check", sql`${t.zoneId} IS NOT NULL OR ${t.zoneOther} IS NOT NULL`),
+    check("businesses_postal_code_check", matches(t.postalCode, POSTAL_CODE_PATTERN)),
     check(
       "businesses_reconsent_check",
       together(t.reconsentedToNoticeAt, t.reconsentedToNoticeVersion),
@@ -217,6 +229,8 @@ export const pendingEdits = pgTable(
     whatsapp: text("whatsapp").notNull(),
     zoneId: integer("zone_id"),
     zoneOther: text("zone_other"),
+    // Null only on edits saved before the form asked for it.
+    postalCode: text("postal_code"),
     whatYouOffer: text("what_you_offer"),
     homeDelivery: boolean("home_delivery").notNull().default(false),
     landline: text("landline"),
@@ -250,6 +264,7 @@ export const pendingEdits = pgTable(
     check("pending_edits_status_check", oneOf(t.status, PENDING_EDIT_STATUSES)),
     check("pending_edits_whatsapp_check", matches(t.whatsapp, PHONE_PATTERN)),
     check("pending_edits_zone_check", sql`${t.zoneId} IS NOT NULL OR ${t.zoneOther} IS NOT NULL`),
+    check("pending_edits_postal_code_check", matches(t.postalCode, POSTAL_CODE_PATTERN)),
     check("pending_edits_photo_change_check", oneOf(t.photoChange, PENDING_EDIT_PHOTO_CHANGES)),
     // A new photo key only when the edit replaces the photo, always while it
     // waits, and only one the server generates. A superseded edit gives its

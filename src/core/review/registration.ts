@@ -43,6 +43,8 @@ export interface RegistrationDetail extends ShowsZone {
   whatsapp: string;
   /** The free text of "Otra" while no catalogue zone was chosen; null otherwise. */
   zoneOther: string | null;
+  /** The postal code it typed; null on a card registered before the form asked for it. */
+  postalCode: string | null;
   whatYouOffer: string | null;
   homeDelivery: boolean;
   landline: string | null;
@@ -91,6 +93,7 @@ export async function registrationDetail(db: Db, id: string): Promise<Registrati
       zoneSlug: zones.slug,
       zoneName: zones.name,
       zoneOther: businesses.zoneOther,
+      postalCode: businesses.postalCode,
       whatYouOffer: businesses.whatYouOffer,
       homeDelivery: businesses.homeDelivery,
       landline: businesses.landline,

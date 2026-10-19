@@ -24,6 +24,7 @@ import {
   type RegistrationValidation,
   validateBusinessFields,
 } from "../registration/submission.ts";
+import { OTHER_ZONE } from "../registration/zone.ts";
 import { TURNSTILE_FAILED_MESSAGE } from "../turnstile/keys.ts";
 
 /** The heading of the edit page, its only `h1`, and its title. */
@@ -106,8 +107,12 @@ export function validateEdit(
   return validateBusinessFields(form, catalogue);
 }
 
-/** The fields a form is prefilled with: a published card, or the edit it has waiting. */
-export type EditableFields = NewRegistration;
+/**
+ * The fields a form is prefilled with: a published card, or the edit it has
+ * waiting. A card registered, or an edit saved, before the form asked for
+ * the postal code has none.
+ */
+export type EditableFields = Omit<NewRegistration, "postalCode"> & { postalCode: string | null };
 
 /** What an edit waiting for review proposes: its fields and what it asks of the photo. */
 export interface WaitingEditFields extends EditableFields {
@@ -116,10 +121,12 @@ export interface WaitingEditFields extends EditableFields {
 
 /**
  * The form prefilled with `fields`: the category by its slug, the zone by
- * the name it is shown with, or the free text of "Otra" as it was written,
- * and the optional fields as they are, empty when they are null. No photo was
- * sent from it, and "Dejar mi ficha sin foto" is checked only when
- * `removePhoto`.
+ * its slug, or "Mi colonia no aparece" with the free text of "Otra" as it
+ * was written, the postal code, and the optional fields as they are, empty
+ * when they are null. A card from before the form asked for the postal code
+ * is prefilled with its zone's, when it has a catalogue zone with one, so a
+ * zone left as it was stays valid. No photo was sent from it, and "Dejar mi
+ * ficha sin foto" is checked only when `removePhoto`.
  */
 function draftOf(
   fields: EditableFields,
@@ -128,15 +135,15 @@ function draftOf(
 ): RegistrationDraft {
   const category = catalogue.categories.find(({ id }) => id === fields.categoryId);
   const zone =
-    fields.zoneId === null
-      ? (fields.zoneOther ?? "")
-      : (catalogue.zones.find(({ id }) => id === fields.zoneId)?.displayName ?? "");
+    fields.zoneId === null ? undefined : catalogue.zones.find(({ id }) => id === fields.zoneId);
   return {
     ...EMPTY_REGISTRATION_DRAFT,
     name: fields.name,
     category: category?.slug ?? "",
     whatsapp: fields.whatsapp,
-    zone,
+    postalCode: fields.postalCode ?? zone?.postalCode ?? "",
+    zone: fields.zoneId === null ? OTHER_ZONE : (zone?.slug ?? ""),
+    zoneOther: fields.zoneId === null ? (fields.zoneOther ?? "") : "",
     whatYouOffer: fields.whatYouOffer ?? "",
     homeDelivery: fields.homeDelivery,
     landline: fields.landline ?? "",
