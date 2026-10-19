@@ -16,9 +16,10 @@
 // "The registration and edit forms are protected by quotas, honeypot and
 // Turnstile (v2)", "The registration and edit forms require JavaScript for
 // the anti-bot check and say so (v2)", "Turnstile is checked on the server,
-// fails closed and has a switch in the database (v2)" and "Without
+// fails closed and has a switch in the database (v2)", "Without
 // JavaScript the registration says so and cannot be sent while Turnstile is
-// on (v2)".
+// on (v2)" and, for the addresses of the two screens, "No form data travels
+// to the measurement".
 // The form is rendered state by state in test/astro/registration.test.ts,
 // and the submission is tested with the database in
 // test/worker/registration.test.ts; the layout rules of the registration
@@ -271,11 +272,18 @@ test.describe("Registering without JavaScript while Turnstile's switch is off, f
     await expect(field(page, "openingHours")).toHaveValue("Lunes a sábado de 9 a 7");
     // The consent has to be checked again.
     await expect(field(page, "consent")).not.toBeChecked();
-    // What was written stays in neither the address nor a cookie.
+    // What was written stays in neither the address nor a cookie: the errors
+    // come back at the form's own path, whose only query is the name of the
+    // action, which the measurement leaves out (business-registration, "No
+    // form data travels to the measurement"; the script's tag is tested in
+    // test/astro/registration.test.ts).
     expect(decodeURIComponent(page.url())).not.toMatch(/Güicho|tallerguicho|haciendas/);
+    const answered = new URL(page.url());
+    expect(answered.pathname).toBe(FORM);
+    expect([...answered.searchParams]).toEqual([["_action", "register"]]);
     expect(await businessesOf("7719994001")).toEqual([]);
 
-    // Corrected: the thank-you page.
+    // Corrected: the thank-you page, at its address with no query.
     await fill(page, {
       whatsapp: "+52 771 999 4001",
       landline: "(775) 123-45-67",

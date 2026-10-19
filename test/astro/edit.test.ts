@@ -477,13 +477,39 @@ describe("A token that is not exactly the current one opens nothing and gives no
   });
 
   // Scenario: the edit route does not travel to any third party
-  it.for(["edit", "thanks"] as const)(
+  it.for(["edit", "edit with errors", "thanks"] as const)(
     "in production with a Website ID, the %s page loads no measurement and carries no event",
     async (which) => {
       Object.assign(env, { ENVIRONMENT: "prod", UMAMI_WEBSITE_ID: WEBSITE_ID });
-      const html = which === "edit" ? await render() : await renderThanks();
+      const html =
+        which === "thanks"
+          ? await renderThanks()
+          : await render(which === "edit" ? {} : { errors: { whatsapp: "invalid" } });
       expect(html).not.toContain("umami");
       expect(html).not.toContain("data-umami");
+    },
+  );
+
+  // base-layout, "The admin panel and the edit mode stay out of the
+  // measurement by where they live (v2)", scenario: the edit mode (its 404)
+  it.for(["/hidalgo/tizayuca/editar", "/hidalgo/tizayuca/editar/x", `${PATH}/x`])(
+    "in production with a Website ID, the not-found page at %s loads no measurement",
+    async (path) => {
+      Object.assign(env, { ENVIRONMENT: "prod", UMAMI_WEBSITE_ID: WEBSITE_ID });
+      const html = await container.renderToString(NotFoundPage, {
+        partial: false,
+        request: new Request(`https://enmirumbo.urekz.workers.dev${path}`),
+        locals: { locality: TIZAYUCA } as App.Locals,
+      });
+      expect(readable(mainOf(html))).toContain("No encontramos esta página");
+      expect(html).not.toContain("umami");
+      // The site's 404 elsewhere is measured, so the exclusion is the edit mode's.
+      const elsewhere = await container.renderToString(NotFoundPage, {
+        partial: false,
+        request: new Request(`https://enmirumbo.urekz.workers.dev/hidalgo/tizayuca/negocio/x`),
+        locals: { locality: TIZAYUCA } as App.Locals,
+      });
+      expect(elsewhere).toContain("https://cloud.umami.is/script.js");
     },
   );
 

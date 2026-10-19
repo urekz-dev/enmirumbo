@@ -9,7 +9,7 @@
 // LocalBusiness", "The listing card brings the essentials and WhatsApp without
 // extra taps", "Heading levels never skip (v2)" and "Only the WhatsApp buttons
 // of the card and the listing card are measured (v2)", with docs/specs/
-// base-layout.md, "Three product events and the no-results tag are recorded,
+// base-layout.md, "Two product events and the no-results tag are recorded,
 // only in production (v2)". The page that reads the card from the database is tested end to end
 // (test/e2e/business-card.spec.ts).
 import { experimental_AstroContainer as AstroContainer } from "astro/container";
@@ -364,7 +364,7 @@ describe("The prefilled WhatsApp message names the directory with the current br
 });
 
 describe("Only the WhatsApp buttons of the card and the listing card are measured (v2): the card", () => {
-  // base-layout, "Three product events and the no-results tag are recorded,
+  // base-layout, "Two product events and the no-results tag are recorded,
   // only in production (v2)", scenario: other environments and excluded screens
   it("with the measurement off, no element carries an event attribute", async () => {
     expect(await renderCard(complete())).not.toContain("data-umami");
@@ -678,7 +678,7 @@ describe("The listing card and the card show the photo the server generated", ()
 });
 
 describe("Only the WhatsApp buttons of the card and the listing card are measured (v2): the listing card", () => {
-  // base-layout, "Three product events and the no-results tag are recorded,
+  // base-layout, "Two product events and the no-results tag are recorded,
   // only in production (v2)", scenario: other environments and excluded
   // screens; "The listing card brings the essentials", scenario: the button
   // behaves the same without measurement

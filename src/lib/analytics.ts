@@ -1,6 +1,6 @@
 // Cookieless measurement with Umami Cloud (ADR 0014; docs/specs/base-layout.md,
 // "Cookieless measurement is loaded only in production and only when
-// configured (v2)" and "Three product events and the no-results tag are
+// configured (v2)" and "Two product events and the no-results tag are
 // recorded, only in production (v2)").
 //
 // The only configuration is the Website ID of the site at Umami Cloud, the
@@ -107,15 +107,18 @@ export function pageAnalytics(
 }
 
 /**
- * The three product events (PRD §6.4, ADR 0014, amended on 2026-10-15), the
- * only names any page may send: the WhatsApp button of a listing card and of
- * a card (D3), kept apart so that the card's clicks over its views stay a
- * metric of their own, and the registration submitted (E).
+ * The two product events (PRD §6.4, ADR 0014, amended on 2026-10-15 and on
+ * 2026-10-18), the only names any page may send: the WhatsApp button of a
+ * listing card and of a card (D3), kept apart so that the card's clicks over
+ * its views stay a metric of their own. The registration has no event (ADR
+ * 0014, amended on 2026-10-18 by EMR-45): Umami sends an event on a click, and
+ * a click on its button also counts a submission that comes back with errors.
+ * Its funnel is the page views of the registration page and its thank-you
+ * page, and the exact count of registrations is the database's.
  */
 export const ANALYTICS_EVENTS = {
   whatsappListing: "whatsapp-listing",
   whatsappCard: "whatsapp-card",
-  registrationSubmitted: "registration-submitted",
 } as const;
 
 export type AnalyticsEvent = (typeof ANALYTICS_EVENTS)[keyof typeof ANALYTICS_EVENTS];
@@ -138,16 +141,16 @@ export type AnalyticsTag = (typeof ANALYTICS_TAGS)[keyof typeof ANALYTICS_TAGS];
 export interface EventProperties {
   /** The locality of the page; its value is `{estado}/{municipio}`, its slugs. */
   locality: LocalityRef;
-  /** The slug of the category, when the event has one. */
-  category?: string | null | undefined;
+  /** The slug of the business's own category. */
+  category: string;
 }
 
 /**
  * The attributes that declare an event on an element, for Umami to send when
  * it is clicked: the event name and its only two properties, the locality
- * (its slugs) and the category (its slug). Nothing typed by a person ever
- * goes in them. With the measurement off (null) there are none, so the event
- * exists only where the script does.
+ * (its slugs) and the category (its slug), which every event carries. Nothing
+ * typed by a person ever goes in them. With the measurement off (null) there
+ * are none, so the event exists only where the script does.
  */
 export function eventAttributes(
   analytics: Analytics | null,
@@ -158,6 +161,6 @@ export function eventAttributes(
   return {
     "data-umami-event": event,
     "data-umami-event-locality": localityPath(locality).slice(1),
-    ...(category ? { "data-umami-event-category": category } : {}),
+    "data-umami-event-category": category,
   };
 }

@@ -1,6 +1,6 @@
 // Scenarios of docs/specs/base-layout.md, requirements "Cookieless measurement
 // is loaded only in production and only when configured (v2)", "The admin
-// panel and edit mode stay out of the measurement" and "Three product events
+// panel and edit mode stay out of the measurement" and "Two product events
 // and the no-results tag are recorded, only in production (v2)": the
 // decisions of src/lib/analytics.ts. The script tag in the layout, with its
 // tag, is tested with the Container API (test/astro/layout.test.ts and
@@ -101,18 +101,16 @@ describe("The admin panel and edit mode stay out of the measurement", () => {
   });
 });
 
-describe("Three product events and the no-results tag are recorded, only in production (v2)", () => {
-  it("three event names and one tag, read from one place", () => {
-    expect(Object.values(ANALYTICS_EVENTS)).toEqual([
-      "whatsapp-listing",
-      "whatsapp-card",
-      "registration-submitted",
-    ]);
+describe("Two product events and the no-results tag are recorded, only in production (v2)", () => {
+  // Scenario: a registration is measured by its page views: it has no event
+  // (ADR 0014, amended on 2026-10-18 by EMR-45).
+  it("two event names and one tag, read from one place", () => {
+    expect(Object.values(ANALYTICS_EVENTS)).toEqual(["whatsapp-listing", "whatsapp-card"]);
     // Scenario: search with no results. A tag of the page view, not an event.
     expect(Object.values(ANALYTICS_TAGS)).toEqual(["search-no-results"]);
   });
 
-  // Scenarios: WhatsApp click; registration submitted (the properties)
+  // Scenario: WhatsApp click (the properties)
   it("an event carries the locality and the category, and nothing else", () => {
     const analytics = readAnalytics({ ENVIRONMENT: "prod", UMAMI_WEBSITE_ID: WEBSITE_ID });
     expect(
@@ -127,20 +125,10 @@ describe("Three product events and the no-results tag are recorded, only in prod
     });
   });
 
-  it("an event without a category carries the locality alone", () => {
-    const analytics = readAnalytics({ ENVIRONMENT: "prod", UMAMI_WEBSITE_ID: WEBSITE_ID });
-    expect(
-      eventAttributes(analytics, ANALYTICS_EVENTS.registrationSubmitted, { locality: TIZAYUCA }),
-    ).toEqual({
-      "data-umami-event": "registration-submitted",
-      "data-umami-event-locality": "hidalgo/tizayuca",
-    });
-  });
-
   // Scenario: other environments and excluded screens
   it("with the measurement off, there are no event attributes", () => {
     expect(
-      eventAttributes(null, ANALYTICS_EVENTS.registrationSubmitted, {
+      eventAttributes(null, ANALYTICS_EVENTS.whatsappListing, {
         locality: TIZAYUCA,
         category: "servicios-del-hogar",
       }),

@@ -7,7 +7,7 @@
 // (v2)", "Directory lists show 20 cards per page, with "Ver más" to the next (v2)", "Heading
 // levels never skip (v2)" and "Every text that names the locality reads it
 // from the locality record (v2)" (base-layout); and of docs/specs/
-// base-layout.md, "Three product events and the no-results tag are recorded,
+// base-layout.md, "Two product events and the no-results tag are recorded,
 // only in production (v2)" and "The measurement carries no personal data or
 // text typed by people". The page that decides the state, with the database
 // and the quota, is served in test/e2e/search.spec.ts.
@@ -365,7 +365,7 @@ describe("The results page is not indexable", () => {
   });
 });
 
-describe("Three product events and the no-results tag are recorded, only in production (v2)", () => {
+describe("Two product events and the no-results tag are recorded, only in production (v2)", () => {
   // Scenario: search with no results
   it("with measurement on, a search with no results tags its view, and nothing else", async () => {
     measured();
