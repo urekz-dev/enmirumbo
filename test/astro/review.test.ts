@@ -31,9 +31,21 @@ import type {
   PendingReport,
   RegistrationDetail as Registration,
 } from "../../src/core/review/registration.ts";
+import type {
+  ApprovalCatalogue,
+  ApprovalDraft,
+  ApprovalErrors,
+} from "../../src/core/review/approval.ts";
+import type { ReasonError } from "../../src/core/review/reason.ts";
+import type { ApprovalNotice } from "../../src/lib/review.ts";
+import ApprovalConfirmation from "../../src/components/admin/ApprovalConfirmation.astro";
+import ApproveForm from "../../src/components/admin/ApproveForm.astro";
 import BusinessesList from "../../src/components/admin/BusinessesList.astro";
+import DecisionScreen from "../../src/components/admin/DecisionScreen.astro";
 import EditDetail from "../../src/components/admin/EditDetail.astro";
 import RegistrationDetail from "../../src/components/admin/RegistrationDetail.astro";
+import RejectForm from "../../src/components/admin/RejectForm.astro";
+import RejectionConfirmation from "../../src/components/admin/RejectionConfirmation.astro";
 import ReviewQueue from "../../src/components/admin/ReviewQueue.astro";
 import BaseLayout from "../../src/layouts/BaseLayout.astro";
 import { collapseProblems } from "../responsive-rules.ts";
@@ -121,6 +133,7 @@ const row = (overrides: Partial<QueueRow>): QueueRow => ({
   since: hoursAgo(3),
   overdue: false,
   unpublished: false,
+  resubmitted: false,
   ...overrides,
 });
 
@@ -589,6 +602,8 @@ const REGISTRATION: Registration = {
   publishedAt: new Date("2026-09-05T16:00:00Z"),
   rejectedAt: null,
   rejectionReason: null,
+  previousRejectedAt: null,
+  previousRejectionReason: null,
   unpublishedAt: null,
   unpublishReason: null,
   consentedToNoticeAt: new Date("2026-09-04T05:30:00Z"),
@@ -1013,4 +1028,330 @@ describe("The panel is not indexed nor linked from the public site", () => {
       expect(html).toContain("<title>Registros por revisar — enmirumbo</title>");
     },
   );
+});
+
+// ------------------------------------------------- the decisions of a detail
+//
+// "Approving assigns trades, normalizes the zone, marks the origin and
+// publishes the card", "On approving, an offer is made to notify the business
+// by WhatsApp with its card link and its management link", "Rejecting
+// requires a reason, stores it with its date and offers to notify by
+// WhatsApp", "A transition is only applied to a registration that is still in
+// review", "The detail offers the actions that correspond to the status, with
+// the context in sight", "A rejection reason is never silently trimmed (v2)",
+// "A failed approval repaints exactly the trades the admin selected (v2)",
+// "The panel says that a change takes up to a minute to reach the site (v2)"
+// and "The queue labels the resubmission of a rejected card, and its detail
+// says why it was rejected before (v2)". The data comes from the database in
+// test/worker/review-decisions.test.ts.
+
+const CATALOGUE: ApprovalCatalogue = {
+  trades: [
+    { id: 1, slug: "plomeria", name: "Plomería" },
+    { id: 2, slug: "electricidad", name: "Electricidad" },
+    { id: 3, slug: "carpinteria", name: "Carpintería" },
+    { id: 4, slug: "albanileria", name: "Albañilería" },
+  ],
+  zones: [
+    { id: 10, slug: "centro", displayName: "Centro", hidden: false },
+    {
+      id: 11,
+      slug: "el-carmen-fraccionamiento",
+      displayName: "El Carmen (Fraccionamiento)",
+      hidden: false,
+    },
+    { id: 12, slug: "nacozari", displayName: "Nacozari", hidden: true },
+  ],
+};
+
+interface ApproveProps {
+  draft?: Partial<ApprovalDraft>;
+  errors?: ApprovalErrors;
+  needsZone?: boolean;
+  zoneOther?: string | null;
+}
+
+function renderApprove(props: ApproveProps = {}) {
+  return container.renderToString(ApproveForm, {
+    props: {
+      action: "?_action=admin.approve",
+      catalogue: CATALOGUE,
+      draft: { trades: [], zone: "", origin: "organic", ...props.draft },
+      errors: props.errors ?? {},
+      needsZone: props.needsZone ?? false,
+      zoneOther: props.zoneOther ?? null,
+    },
+  });
+}
+
+const checkedValues = (html: string, type: string) =>
+  (html.match(new RegExp(`<input\\b[^>]*type="${type}"[^>]*>`, "g")) ?? [])
+    .filter((tag) => /\bchecked\b/.test(tag))
+    .map((tag) => attribute(tag, "value"));
+
+describe("Approving assigns trades, normalizes the zone, marks the origin and publishes the card", () => {
+  it("the form: the trades, the origin and Aprobar y publicar, posted to the detail without JavaScript", async () => {
+    const html = await renderApprove();
+    const text = visibleText(html);
+
+    const [form = ""] = html.match(/<form\b[^>]*>/) ?? [];
+    expect(attribute(form, "method")).toBe("post");
+    expect(attribute(form, "action")).toBe("?_action=admin.approve");
+    expect(form).toMatch(/\bnovalidate\b/);
+    for (const line of [
+      "Aprobar",
+      "Giros (de 1 a 3, o ninguno si no embona)",
+      "Plomería",
+      "Albañilería",
+      "¿De dónde salió?",
+      "Se registró solo",
+      "Lo sembramos nosotros",
+      "Aprobar y publicar",
+    ]) {
+      expect(text, line).toContain(line);
+    }
+    const trades = html.match(/<input\b[^>]*type="checkbox"[^>]*>/g) ?? [];
+    expect(trades.map((tag) => [attribute(tag, "name"), attribute(tag, "value")])).toEqual(
+      CATALOGUE.trades.map((trade) => ["giro", trade.slug]),
+    );
+    expect(checkedValues(html, "radio")).toEqual(["organic"]);
+    // A zone from the catalogue is not asked for.
+    expect(html).not.toMatch(/<select\b|¿En qué colonia está\?/);
+    expect(html).not.toMatch(/<script\b|\brequired\b/);
+    expectPhoneReady(html);
+    // Every trade and origin is tapped through its label, at least 44px tall.
+    for (const label of html.match(/<label\b[^>]*>(?=\s*<input)/g) ?? []) {
+      expect(label).toMatch(/\bmin-h-11\b/);
+    }
+  });
+
+  it('"Otra": the text as the business wrote it, and every zone by its display name, a hidden one marked', async () => {
+    const html = await renderApprove({ needsZone: true, zoneOther: "Rinconada del Venado" });
+    const text = visibleText(html);
+
+    expect(text).toContain('El negocio escribió su colonia como "Otra": Rinconada del Venado');
+    expect(text).toContain("¿En qué colonia está?");
+    const options = [...html.matchAll(/<option\b([^>]*)>([^<]*)<\/option>/g)].map(
+      ([, attributes = "", label = ""]) => [attribute(attributes, "value"), label.trim()],
+    );
+    expect(options).toEqual([
+      ["", "Elige la colonia"],
+      ["centro", "Centro"],
+      ["el-carmen-fraccionamiento", "El Carmen (Fraccionamiento)"],
+      ["nacozari", "Nacozari (oculta)"],
+    ]);
+    expect(attribute(html.match(/<select\b[^>]*>/)?.[0] ?? "", "name")).toBe("colonia");
+  });
+
+  it("a failed approval comes back with exactly what the admin chose, and each error next to its field", async () => {
+    const html = await renderApprove({
+      draft: {
+        trades: ["plomeria", "electricidad", "carpinteria", "albanileria"],
+        zone: "el-carmen-fraccionamiento",
+        origin: "seeded",
+      },
+      errors: { trades: "too-many", zone: "required" },
+      needsZone: true,
+      zoneOther: "Por allá",
+    });
+    const text = visibleText(html);
+
+    expect(text).toContain("Elige máximo 3 giros");
+    expect(text).toContain("Elige la colonia de este negocio");
+    expect(checkedValues(html, "checkbox")).toEqual([
+      "plomeria",
+      "electricidad",
+      "carpinteria",
+      "albanileria",
+    ]);
+    expect(checkedValues(html, "radio")).toEqual(["seeded"]);
+    expect(html).toMatch(/<option\b[^>]*value="el-carmen-fraccionamiento"[^>]*selected/);
+    expect(html.match(/role="alert"/g)).toHaveLength(2);
+  });
+
+  it("with every trade unticked, the form comes back with none ticked", async () => {
+    const html = await renderApprove({
+      draft: { trades: [] },
+      errors: { zone: "required" },
+      needsZone: true,
+    });
+    expect(checkedValues(html, "checkbox")).toEqual([]);
+  });
+
+  it("republishing: the trades the card had arrive ticked", async () => {
+    const html = await renderApprove({
+      draft: { trades: ["electricidad", "plomeria"], origin: "seeded" },
+    });
+    expect(checkedValues(html, "checkbox")).toEqual(["plomeria", "electricidad"]);
+    expect(checkedValues(html, "radio")).toEqual(["seeded"]);
+  });
+});
+
+function renderReject(reason = "", error: ReasonError | null = null) {
+  return container.renderToString(RejectForm, {
+    props: { action: "?_action=admin.reject", reason, error },
+  });
+}
+
+describe("Rejecting requires a reason, stores it with its date and offers to notify by WhatsApp", () => {
+  it("the form: ¿Por qué lo rechazas? and Rechazar, posted to the detail, with no maxlength", async () => {
+    const html = await renderReject();
+    const text = visibleText(html);
+
+    expect(text).toContain("Rechazar\n¿Por qué lo rechazas?");
+    expect(attribute(html.match(/<form\b[^>]*>/)?.[0] ?? "", "action")).toBe(
+      "?_action=admin.reject",
+    );
+    const [textarea = ""] = html.match(/<textarea\b[^>]*>/) ?? [];
+    expect(attribute(textarea, "name")).toBe("motivo");
+    expect(textarea).not.toMatch(/maxlength|required/);
+    expect(html).toMatch(/<button\b[^>]*type="submit"[^>]*>\s*Rechazar\s*<\/button>/);
+    expectPhoneReady(html);
+  });
+
+  it("without a reason, and over 500 characters, the error says so and the reason comes back whole", async () => {
+    expect(visibleText(await renderReject("", "required"))).toContain(
+      "Escribe por qué lo rechazas",
+    );
+
+    const long = `${"Motivo <b>largo</b> ".repeat(30)}fin`;
+    const html = await renderReject(long, "too-long");
+    expect(visibleText(html)).toContain(
+      "El motivo no puede pasar de 500 caracteres. Recórtalo un poco: así, completo, es como le va a llegar al negocio.",
+    );
+    expect(decode(/<textarea\b[^>]*>([\s\S]*?)<\/textarea>/.exec(html)?.[1] ?? "")).toBe(long);
+    expect(html).not.toContain("<b>largo</b>");
+  });
+});
+
+const NOTICE: ApprovalNotice = {
+  name: "Estética Lupita",
+  whatsapp: "7719990202",
+  cardUrl: "https://enmirumbo.example/hidalgo/tizayuca/negocio/estetica-lupita-b5q68b2e72",
+  managementUrl: `https://enmirumbo.example/hidalgo/tizayuca/editar/${"T".repeat(43)}`,
+};
+
+describe("On approving, an offer is made to notify the business by WhatsApp with its card link and its management link", () => {
+  it("Ya quedó publicado., the minute it takes, and Avisarle por WhatsApp with both links", async () => {
+    const html = await container.renderToString(ApprovalConfirmation, {
+      props: { notice: NOTICE, queueHref: "/admin" },
+    });
+    const text = visibleText(html);
+
+    expect(html).toMatch(/<h1\b[^>]*>Ya quedó publicado\.<\/h1>/);
+    expect(text).toContain("Listo. El cambio puede tardar hasta un minuto en verse en el sitio.");
+    // Right before the notice, that the link is shown only here.
+    expect(text).toContain(
+      "Mándale el mensaje ahora: este enlace solo se ve aquí.\nAvisarle por WhatsApp",
+    );
+    const [button] = linksNamed(html, "Avisarle por WhatsApp");
+    const message = `¡Listo! Ya quedó publicado «Estética Lupita» en enmirumbo. Esta es tu ficha: ${NOTICE.cardUrl} — compártela con tus clientes. Y este es tu enlace para editarla: ${NOTICE.managementUrl} — guarda este mensaje (puedes destacarlo con la estrella), con ese enlace actualizas tus datos cuando quieras.`;
+    expect(button?.href).toBe(`https://wa.me/527719990202?text=${encodeURIComponent(message)}`);
+    expect(attribute(button?.tag ?? "", "target")).toBe("_blank");
+    expect(attribute(button?.tag ?? "", "rel")).toBe("noopener noreferrer");
+    expect(linksNamed(html, "Volver a la cola").map((a) => a.href)).toEqual(["/admin"]);
+    // The management link is in the notice and nowhere else of the screen.
+    expect(html.split("T".repeat(43))).toHaveLength(2);
+    expect(html).not.toMatch(/<form\b|<script\b/);
+    expectPhoneReady(html);
+  });
+
+  it("without a public origin, it says the card is published and offers no broken notice", async () => {
+    const html = await container.renderToString(ApprovalConfirmation, {
+      props: { notice: { ...NOTICE, cardUrl: null, managementUrl: null }, queueHref: "/admin" },
+    });
+
+    expect(visibleText(html)).toContain(
+      "No se pudo armar el link de la ficha porque falta configurar la dirección pública del sitio. El negocio ya quedó publicado; avísale cuando esté configurada.",
+    );
+    expect(html).not.toContain("wa.me");
+    expect(visibleText(html)).not.toContain("este enlace solo se ve aquí");
+  });
+});
+
+describe("Rejecting confirms with the notice, and changes nothing public", () => {
+  it("Registro rechazado. and Avisarle por WhatsApp with the reason, without the minute's notice", async () => {
+    const html = await container.renderToString(RejectionConfirmation, {
+      props: {
+        name: "Préstamos Rápidos",
+        whatsapp: "7719990303",
+        reason: "No publicamos préstamos informales",
+        queueHref: "/admin",
+      },
+    });
+
+    expect(html).toMatch(/<h1\b[^>]*>Registro rechazado\.<\/h1>/);
+    const [button] = linksNamed(html, "Avisarle por WhatsApp");
+    expect(decodeURIComponent(button?.href ?? "")).toBe(
+      "https://wa.me/527719990303?text=Hola, revisamos el registro de «Préstamos Rápidos» en enmirumbo y por ahora no lo pudimos publicar: No publicamos préstamos informales. Si lo corriges, lo puedes volver a enviar desde el mismo formulario con este mismo número.",
+    );
+    expect(visibleText(html)).not.toContain("tardar hasta un minuto");
+    expectPhoneReady(html);
+  });
+
+  it("a number that is not ten digits is shown as stored, without a button", async () => {
+    const html = await container.renderToString(RejectionConfirmation, {
+      props: { name: "X", whatsapp: "12345", reason: "Y", queueHref: null },
+    });
+    expect(html).not.toContain("wa.me");
+    expect(visibleText(html)).toContain(
+      "WhatsApp registrado: 12345 (no se pudo generar el enlace)",
+    );
+    expect(linksNamed(html, "Volver a la cola")).toEqual([]);
+  });
+});
+
+describe("A transition is only applied to a registration that is still in review", () => {
+  it("a decision on a card already resolved says so, with the way back to the queue", async () => {
+    const html = await container.renderToString(DecisionScreen, {
+      props: { heading: "Este registro ya lo habías resuelto.", queueHref: "/admin" },
+    });
+    expect(html).toMatch(/<h1\b[^>]*>Este registro ya lo habías resuelto\.<\/h1>/);
+    expect(linksNamed(html, "Volver a la cola").map((a) => a.href)).toEqual(["/admin"]);
+    expect(html).not.toContain("wa.me");
+  });
+});
+
+describe("The detail offers the actions that correspond to the status, with the context in sight", () => {
+  it("the actions go after the data, the reports and the verification button", async () => {
+    const html = await container.renderToString(RegistrationDetail, {
+      props: {
+        detail: { ...REGISTRATION, status: "in_review" },
+        zone: "Huicalco",
+        reports: [{ id: 1, reason: "closed", comment: null, createdAt: hoursAgo(2) }],
+        now: NOW,
+        queueHref: "/admin",
+      },
+      slots: { default: '<form data-testid="approve-form"></form>' },
+    });
+    const at = (needle: string) => html.indexOf(needle);
+
+    expect(at("Reportes sin atender")).toBeGreaterThan(at("Datos internos del panel"));
+    expect(at("Escribirle por WhatsApp")).toBeGreaterThan(at("Reportes sin atender"));
+    expect(at('data-testid="approve-form"')).toBeGreaterThan(at("Escribirle por WhatsApp"));
+  });
+});
+
+describe("The queue labels the resubmission of a rejected card, and its detail says why it was rejected before (v2)", () => {
+  it("a resubmitted card is a Reenvío, not an Alta nueva", async () => {
+    const text = visibleText(
+      await renderQueue({ rows: [row({ name: "Corregida", resubmitted: true })] }),
+    );
+    expect(text).toContain("Corregida\nHuicalco\nHace 3 horas\nReenvío");
+    expect(text).not.toContain("Alta nueva");
+  });
+
+  it("its detail says why it was rejected before, and when; a card never resubmitted says nothing", async () => {
+    const text = visibleText(
+      await renderRegistration({
+        status: "in_review",
+        previousRejectedAt: new Date("2026-09-06T15:00:00Z"),
+        previousRejectionReason: "La foto tenía personas",
+      }),
+    );
+    expect(text).toContain(
+      "La rechazaste antes por: La foto tenía personas\nFue el 6 de septiembre de 2026, 09:00.",
+    );
+    expect(visibleText(await renderRegistration())).not.toContain("La rechazaste antes");
+  });
 });

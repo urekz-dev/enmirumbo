@@ -17,7 +17,17 @@
 // `local` (v2)", "Inside the panel, a user can do only what their roles allow
 // (v2)", "Each review screen checks its permission in the locality of what it
 // shows (v2)", "The panel shows the photos it reviews from the media hostname
-// (v2)" and "The detail of a pending edit shows the photo it proposes (v2)".
+// (v2)", "The detail of a pending edit shows the photo it proposes (v2)",
+// "Approving assigns trades, normalizes the zone, marks the origin and
+// publishes the card", "Approving a registration generates its management
+// link, unique and unrepeatable", "On approving, an offer is made to notify
+// the business by WhatsApp with its card link and its management link",
+// "Rejecting requires a reason, stores it with its date and offers to notify
+// by WhatsApp", "A transition is only applied to a registration that is still
+// in review", "Approving and rejecting are forms of the detail, and their
+// action checks everything again (v2)", "The management link is shown only in
+// the answer to the approval (v2)" and "The queue labels the resubmission of
+// a rejected card, and its detail says why it was rejected before (v2)".
 //
 // `astro preview` runs with the local vars of wrangler.jsonc (ENVIRONMENT
 // local) on localhost, so every request carries the fixed local identity,
@@ -25,15 +35,19 @@
 // roles narrow it for a while and give it back. This file adds fictitious
 // cards to Tizayuca, one of them published, and to a fictitious, inactive
 // locality of its own (state 79), with numbers of the 7719996xxx series and
-// photos in the local media bucket, and removes all of it before and after.
+// photos in the local media bucket; its decisions publish some and reject
+// others, writing entries of the audit log. It removes all of it before and
+// after.
 // It runs alone, in its own project of playwright.config.ts ("phone,
 // admin"), so no other file sees them.
 import { expect, type Page, test } from "@playwright/test";
-import { eq, like } from "drizzle-orm";
+import { eq, inArray, like } from "drizzle-orm";
 import { withLocalMediaBucket } from "../../scripts/seed-media.ts";
 import { newBusinessId } from "../../src/core/business/id.ts";
 import { seedPhotoObjects } from "../../src/core/db/seed/photos.ts";
 import {
+  adminAuditLog,
+  businessTrades,
   businesses,
   categories,
   localities,
@@ -48,6 +62,7 @@ import {
 import { newPhotoKey, photoObjectKeys } from "../../src/core/photos/photo.ts";
 import { withDatabase } from "./database.ts";
 import { ensureLocalSuperAdmin, setLocalAdminRoles } from "./local-admin.ts";
+import { stubTurnstile } from "./turnstile.ts";
 
 const TIZAYUCA = "13069";
 const PHONES = "7719996";
@@ -68,9 +83,21 @@ const NAMES = {
   unpublished: "Despublicada del Panel de Mentiras",
   reported: "Reportada del Panel de Mentiras",
   elsewhere: "Alta de Otro Pueblo de Mentiras",
+  toApprove: "Por Aprobar del Panel de Mentiras",
+  toReject: "Por Rechazar del Panel de Mentiras",
+  resubmitted: "Reenviada del Panel de Mentiras",
+  approveNoJs: "Aprobada Sin JavaScript de Mentiras",
+  rejectNoJs: "Rechazada Sin JavaScript de Mentiras",
 } as const;
 
-const PHOTOS = { old: newPhotoKey(), edited: newPhotoKey(), proposed: newPhotoKey() };
+const PHOTOS = {
+  old: newPhotoKey(),
+  edited: newPhotoKey(),
+  proposed: newPhotoKey(),
+  toApprove: newPhotoKey(),
+};
+/** The reason the resubmitted card was rejected for. */
+const PREVIOUS_REASON = "La foto tenía personas (motivo de mentira)";
 /** A role of this file, which only attends reports. */
 const REPORTS_ONLY = "e2e_reports_only";
 const FILLERS = 12;
@@ -81,11 +108,17 @@ const ids = {
   unpublished: newBusinessId(),
   reported: newBusinessId(),
   elsewhere: newBusinessId(),
+  toApprove: newBusinessId(),
+  toReject: newBusinessId(),
+  resubmitted: newBusinessId(),
+  approveNoJs: newBusinessId(),
+  rejectNoJs: newBusinessId(),
 };
 let editId = 0;
 
 async function removeData(): Promise<void> {
   await withDatabase(async (db) => {
+    await db.delete(adminAuditLog).where(inArray(adminAuditLog.businessId, Object.values(ids)));
     await db.delete(businesses).where(like(businesses.whatsapp, `${PHONES}%`));
     await db.delete(localities).where(eq(localities.code, ELSEWHERE.code));
     await db.delete(municipalities).where(eq(municipalities.code, ELSEWHERE.code));
@@ -183,6 +216,51 @@ test.beforeAll(async () => {
         consentedToNoticeVersion: "2",
         registeredAt: ago(2 * HOUR),
       },
+      {
+        ...base,
+        id: ids.toApprove,
+        name: NAMES.toApprove,
+        whatsapp: `${PHONES}021`,
+        zoneId: null,
+        zoneOther: "Colonia Inventada del Panel",
+        photoKey: PHOTOS.toApprove,
+        registeredAt: ago(3 * HOUR),
+        consentedToNoticeAt: ago(3 * HOUR),
+      },
+      {
+        ...base,
+        id: ids.toReject,
+        name: NAMES.toReject,
+        whatsapp: `${PHONES}022`,
+        registeredAt: ago(5 * HOUR),
+        consentedToNoticeAt: ago(5 * HOUR),
+      },
+      {
+        ...base,
+        id: ids.resubmitted,
+        name: NAMES.resubmitted,
+        whatsapp: `${PHONES}023`,
+        previousRejectedAt: ago(3 * DAY),
+        previousRejectionReason: PREVIOUS_REASON,
+        registeredAt: ago(2 * HOUR),
+        consentedToNoticeAt: ago(10 * DAY),
+      },
+      {
+        ...base,
+        id: ids.approveNoJs,
+        name: NAMES.approveNoJs,
+        whatsapp: `${PHONES}024`,
+        registeredAt: ago(6 * HOUR),
+        consentedToNoticeAt: ago(6 * HOUR),
+      },
+      {
+        ...base,
+        id: ids.rejectNoJs,
+        name: NAMES.rejectNoJs,
+        whatsapp: `${PHONES}025`,
+        registeredAt: ago(7 * HOUR),
+        consentedToNoticeAt: ago(7 * HOUR),
+      },
       ...Array.from({ length: FILLERS }, (_, index) => ({
         ...base,
         id: newBusinessId(),
@@ -245,6 +323,7 @@ test.beforeAll(async () => {
       { name: NAMES.old, photoKey: PHOTOS.old, shade: 1 },
       { name: NAMES.edited, photoKey: PHOTOS.edited, shade: 2 },
       { name: "Foto Nueva de Mentiras", photoKey: PHOTOS.proposed, shade: 3 },
+      { name: NAMES.toApprove, photoKey: PHOTOS.toApprove, shade: 4 },
     ]);
     for (const { key, body, contentType, cacheControl } of objects) {
       await bucket.put(key, body, { httpMetadata: { contentType, cacheControl } });
@@ -284,9 +363,18 @@ async function expectPhoneReady(page: Page): Promise<void> {
     clientWidth: document.documentElement.clientWidth,
   }));
   expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
-  for (const control of await page.getByRole("main").locator("a, button, input").all()) {
-    if ((await control.getAttribute("type")) === "hidden") continue;
-    const box = await control.boundingBox();
+  const controls = page.getByRole("main").locator("a, button, input, select, textarea");
+  for (const control of await controls.all()) {
+    const type = await control.getAttribute("type");
+    if (type === "hidden") continue;
+    // A checkbox or a radio is tapped through its label.
+    const target =
+      type === "checkbox" || type === "radio"
+        ? control.locator("xpath=ancestor::label[1]")
+        : control;
+    // A control inside a list that scrolls by itself is measured once in view.
+    await target.scrollIntoViewIfNeeded();
+    const box = await target.boundingBox();
     const label = `${page.url()} "${await control.innerText()}"`;
     expect.soft(box, label).not.toBeNull();
     if (box) expect.soft(Math.min(box.width, box.height), label).toBeGreaterThanOrEqual(44);
@@ -575,6 +663,285 @@ test.describe("Todos los negocios, without JavaScript", () => {
   });
 });
 
+/** The text of the WhatsApp message a wa.me link opens with. */
+function whatsappText(href: string | null): string {
+  return new URL(href ?? "").searchParams.get("text") ?? "";
+}
+
+/** The path of the absolute address in `text` that contains `segment`. */
+function pathIn(text: string, segment: string): string {
+  const url = text.split(/\s+/).find((word) => word.includes(segment));
+  if (url === undefined) throw new Error(`e2e: no address with ${segment} in the message`);
+  return new URL(url).pathname;
+}
+
+async function statusOf(id: string): Promise<string | undefined> {
+  let status: string | undefined;
+  await withDatabase(async (db) => {
+    const [row] = await db
+      .select({ status: businesses.status })
+      .from(businesses)
+      .where(eq(businesses.id, id));
+    status = row?.status;
+  });
+  return status;
+}
+
+async function auditEntries(id: string): Promise<number> {
+  let count = 0;
+  await withDatabase(async (db) => {
+    count = (await db.select().from(adminAuditLog).where(eq(adminAuditLog.businessId, id))).length;
+  });
+  return count;
+}
+
+test.describe("deciding on a registration in review", () => {
+  test("approving: the trades, the zone of an Otra, the origin, and the notice with both links, once", async ({
+    page,
+    baseURL,
+  }) => {
+    await page.goto(`/admin/registros/${ids.toApprove}`);
+    const approveForm = page.getByTestId("approve-form");
+    await expect(approveForm.getByText("Giros (de 1 a 3, o ninguno si no embona)")).toBeVisible();
+    await expect(
+      approveForm.getByText(
+        'El negocio escribió su colonia como "Otra": Colonia Inventada del Panel',
+      ),
+    ).toBeVisible();
+    await expect(page.getByTestId("reject-form")).toBeVisible();
+    await expectPhoneReady(page);
+
+    // Four trades and no zone: nothing is published, and what was chosen comes back.
+    for (const trade of ["Plomería", "Herrería", "Electricidad", "Pintura"]) {
+      await approveForm.getByLabel(trade, { exact: true }).check();
+    }
+    await approveForm.getByLabel("Lo sembramos nosotros").check();
+    await approveForm.getByRole("button", { name: "Aprobar y publicar" }).click();
+    await expect(page.getByText("Elige máximo 3 giros")).toBeVisible();
+    await expect(page.getByText("Elige la colonia de este negocio")).toBeVisible();
+    for (const trade of ["Plomería", "Herrería", "Electricidad", "Pintura"]) {
+      await expect(
+        page.getByTestId("approve-form").getByLabel(trade, { exact: true }),
+      ).toBeChecked();
+    }
+    await expect(
+      page.getByTestId("approve-form").getByLabel("Lo sembramos nosotros"),
+    ).toBeChecked();
+    expect(await statusOf(ids.toApprove)).toBe("in_review");
+
+    // Two trades, a catalogue zone and the origin: published, with its notice.
+    const form = page.getByTestId("approve-form");
+    await form.getByLabel("Electricidad", { exact: true }).uncheck();
+    await form.getByLabel("Pintura", { exact: true }).uncheck();
+    await form.getByLabel("¿En qué colonia está?").selectOption({ label: "Huicalco" });
+    const answer = page.waitForResponse((response) => response.request().method() === "POST");
+    await form.getByRole("button", { name: "Aprobar y publicar" }).click();
+    const response = await answer;
+
+    expect(response.status()).toBe(200);
+    expect(response.headers()["cache-control"]).toBe("no-store");
+    expect(response.headers()["set-cookie"]).toBeUndefined();
+    expect(response.url()).toBe(
+      new URL(`/admin/registros/${ids.toApprove}?_action=admin.approve`, page.url()).href,
+    );
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Ya quedó publicado.");
+    await expect(
+      page.getByText("Listo. El cambio puede tardar hasta un minuto en verse en el sitio."),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Mándale el mensaje ahora: este enlace solo se ve aquí."),
+    ).toBeVisible();
+    const notify = page.getByRole("link", { name: "Avisarle por WhatsApp" });
+    await expect(notify).toHaveAttribute(
+      "href",
+      new RegExp(`^https://wa\\.me/52${PHONES}021\\?text=`),
+    );
+    await expect(notify).toHaveAttribute("rel", "noopener noreferrer");
+    const message = whatsappText(await notify.getAttribute("href"));
+    expect(message).toMatch(
+      new RegExp(
+        `^¡Listo! Ya quedó publicado «${NAMES.toApprove}» en enmirumbo\\. Esta es tu ficha: `,
+      ),
+    );
+    expect(message).toContain("guarda este mensaje (puedes destacarlo con la estrella)");
+    const cardPath = pathIn(message, "/negocio/");
+    const editPath = pathIn(message, "/editar/");
+    expect(cardPath).toBe(
+      `/hidalgo/tizayuca/negocio/por-aprobar-del-panel-de-mentiras-${ids.toApprove}`,
+    );
+    // The management link is in the notice and nowhere else of the page.
+    const token = editPath.split("/").at(-1) ?? "";
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect((await page.content()).split(token)).toHaveLength(2);
+
+    await withDatabase(async (db) => {
+      const [card] = await db.select().from(businesses).where(eq(businesses.id, ids.toApprove));
+      expect(card).toMatchObject({
+        status: "published",
+        origin: "seeded",
+        zoneOther: "Colonia Inventada del Panel",
+      });
+      expect(card?.zoneId).not.toBeNull();
+      expect(card?.managementTokenHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(JSON.stringify(card)).not.toContain(token);
+      const assigned = await db
+        .select()
+        .from(businessTrades)
+        .where(eq(businessTrades.businessId, ids.toApprove));
+      expect(assigned).toHaveLength(2);
+    });
+
+    // Sending the same approval again (a reload, a tab left open): already resolved, no link.
+    const again = await page.request.post(
+      `/admin/registros/${ids.toApprove}?_action=admin.approve`,
+      {
+        form: { giro: "plomeria", origen: "organic" },
+        headers: { Origin: new URL(baseURL ?? "http://localhost:4321").origin },
+      },
+    );
+    expect(again.status()).toBe(409);
+    const body = await again.text();
+    expect(body).toContain("Este registro ya lo habías resuelto.");
+    expect(body).not.toMatch(/\/editar\/|wa\.me/);
+
+    // Back on the detail, the link is no longer anywhere; only that it has one.
+    await page.goto(`/admin/registros/${ids.toApprove}`);
+    await expect(page.getByText(/^Tiene enlace de gestión, generado el /)).toBeVisible();
+    expect(await page.content()).not.toContain(token);
+    await expect(page.getByTestId("approve-form")).toHaveCount(0);
+    await expect(page.getByTestId("reject-form")).toHaveCount(0);
+
+    // The card answers on its public address, with its photo and its trades,
+    // and the management link opens its edit mode.
+    const publicCard = await page.goto(cardPath);
+    expect(publicCard?.status()).toBe(200);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(NAMES.toApprove);
+    await expect(page.getByRole("main")).toContainText("Plomería");
+    await expect(page.locator(`img[src*="${PHOTOS.toApprove}/full.webp"]`)).toHaveCount(1);
+    await stubTurnstile(page.context());
+    const edit = await page.goto(editPath);
+    expect(edit?.status()).toBe(200);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Edita tu ficha");
+  });
+
+  test("rejecting: the reason is required and never trimmed, and the notice carries it", async ({
+    page,
+  }) => {
+    await page.goto(`/admin/registros/${ids.toReject}`);
+    const reject = page.getByTestId("reject-form");
+
+    await reject.getByRole("button", { name: "Rechazar" }).click();
+    await expect(page.getByText("Escribe por qué lo rechazas")).toBeVisible();
+
+    const long = `${"Este motivo es demasiado largo para el aviso. ".repeat(11)}Fin.`;
+    expect(long.length).toBeGreaterThan(500);
+    await page.getByLabel("¿Por qué lo rechazas?").fill(long);
+    await page.getByTestId("reject-form").getByRole("button", { name: "Rechazar" }).click();
+    await expect(
+      page.getByText(
+        "El motivo no puede pasar de 500 caracteres. Recórtalo un poco: así, completo, es como le va a llegar al negocio.",
+      ),
+    ).toBeVisible();
+    await expect(page.getByLabel("¿Por qué lo rechazas?")).toHaveValue(long);
+    expect(await statusOf(ids.toReject)).toBe("in_review");
+
+    const reason = "No publicamos préstamos informales (motivo de mentira)";
+    await page.getByLabel("¿Por qué lo rechazas?").fill(reason);
+    await page.getByTestId("reject-form").getByRole("button", { name: "Rechazar" }).click();
+
+    await expect(page).toHaveURL(`/admin/registros/${ids.toReject}/rechazado`);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Registro rechazado.");
+    await expect(page.getByText("tardar hasta un minuto")).toHaveCount(0);
+    const notify = page.getByRole("link", { name: "Avisarle por WhatsApp" });
+    expect(whatsappText(await notify.getAttribute("href"))).toBe(
+      `Hola, revisamos el registro de «${NAMES.toReject}» en enmirumbo y por ahora no lo pudimos publicar: ${reason}. Si lo corriges, lo puedes volver a enviar desde el mismo formulario con este mismo número.`,
+    );
+    expect(await statusOf(ids.toReject)).toBe("rejected");
+    expect(await auditEntries(ids.toReject)).toBe(1);
+
+    // Reloading the confirmation rejects nothing again.
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Registro rechazado.");
+    expect(await auditEntries(ids.toReject)).toBe(1);
+
+    // The detail shows the rejection, offers no decision, and the card is no public page.
+    await page.goto(`/admin/registros/${ids.toReject}`);
+    await expect(page.getByRole("main")).toContainText(reason);
+    await expect(page.getByTestId("approve-form")).toHaveCount(0);
+    const publicCard = await page.goto(
+      `/hidalgo/tizayuca/negocio/por-rechazar-del-panel-de-mentiras-${ids.toReject}`,
+    );
+    expect(publicCard?.status()).toBe(404);
+
+    // The confirmation of a card that is not rejected goes back to its detail.
+    await page.goto(`/admin/registros/${ids.old}/rechazado`);
+    await expect(page).toHaveURL(`/admin/registros/${ids.old}`);
+  });
+
+  test("a resubmission is a Reenvío in the queue, and its detail says why it was rejected before", async ({
+    page,
+  }) => {
+    await page.goto("/admin");
+    const row = rowOf(page, "queue", NAMES.resubmitted);
+    await expect(row).toContainText("Reenvío");
+    await expect(row).not.toContainText("Alta nueva");
+    await expect(rowOf(page, "queue", NAMES.old)).toContainText("Alta nueva");
+
+    await page.getByRole("link", { name: `Revisar: ${NAMES.resubmitted}` }).click();
+    await expect(page.getByTestId("previous-rejection")).toContainText(
+      `La rechazaste antes por: ${PREVIOUS_REASON}`,
+    );
+    await expect(page.getByTestId("previous-rejection")).toContainText(
+      /Fue el \d{1,2} de [a-z]+ de \d{4}, \d{2}:\d{2}\./,
+    );
+  });
+
+  test("a decision posted from another page, or to /_actions/, decides nothing", async ({
+    page,
+    baseURL,
+  }) => {
+    const origin = new URL(baseURL ?? "http://localhost:4321").origin;
+    for (const [path, status] of [
+      // The queue answers as it would, with the action's 404, and decides nothing.
+      [`/admin?_action=admin.approve`, 404],
+      [`/admin/negocios?_action=admin.reject`, 405],
+      [`/_actions/admin.approve`, 404],
+      [`/_actions/admin.reject`, 404],
+    ] as const) {
+      const response = await page.request.post(path, {
+        form: { motivo: "Desde otro lado", origen: "organic" },
+        headers: { Origin: origin },
+      });
+      expect(response.status(), path).toBe(status);
+      expect(await response.text(), path).not.toMatch(
+        /\/editar\/|Ya quedó publicado|Registro rechazado/,
+      );
+    }
+    expect(await statusOf(ids.resubmitted)).toBe("in_review");
+    expect(await auditEntries(ids.resubmitted)).toBe(0);
+  });
+});
+
+test.describe("deciding without JavaScript", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("approving and rejecting are plain form submissions", async ({ page }) => {
+    await page.goto(`/admin/registros/${ids.approveNoJs}`);
+    await page
+      .getByTestId("approve-form")
+      .getByRole("button", { name: "Aprobar y publicar" })
+      .click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Ya quedó publicado.");
+    expect(await statusOf(ids.approveNoJs)).toBe("published");
+
+    await page.goto(`/admin/registros/${ids.rejectNoJs}`);
+    await page.getByLabel("¿Por qué lo rechazas?").fill("Sin JavaScript (motivo de mentira)");
+    await page.getByTestId("reject-form").getByRole("button", { name: "Rechazar" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Registro rechazado.");
+    expect(await statusOf(ids.rejectNoJs)).toBe("rejected");
+  });
+});
+
 test.describe("each user sees only the localities and parts their roles allow", () => {
   test.afterEach(async () => {
     await withDatabase(async (db) => {
@@ -645,5 +1012,17 @@ test.describe("each user sees only the localities and parts their roles allow", 
     await page.getByRole("link", { name: `Ver reportes: ${NAMES.reported}` }).click();
     await expect(page.getByTestId("pending-reports").getByRole("listitem")).toHaveCount(2);
     expect((await page.goto(`/admin/ediciones/${editId}`))?.status()).toBe(403);
+
+    // It opens the detail of a card in review, without its decisions, and may not decide.
+    expect((await page.goto(`/admin/registros/${ids.old}`))?.status()).toBe(200);
+    await expect(page.getByTestId("approve-form")).toHaveCount(0);
+    await expect(page.getByTestId("reject-form")).toHaveCount(0);
+    const decision = await page.request.post(`/admin/registros/${ids.old}?_action=admin.reject`, {
+      form: { motivo: "Sin permiso (motivo de mentira)" },
+      headers: { Origin: new URL(page.url()).origin },
+    });
+    expect(decision.status()).toBe(403);
+    expect(await decision.text()).not.toContain(NAMES.old);
+    expect(await statusOf(ids.old)).toBe("in_review");
   });
 });

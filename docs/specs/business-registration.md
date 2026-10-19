@@ -1388,3 +1388,14 @@ When the edit is not saved (another card's number, a link that stopped opening t
 
 - **WHEN** Images fails on the photo of an edit
 - **THEN** nothing is saved and the field says "No pudimos procesar tu foto. Intenta con otra o envía tus cambios sin cambiar la foto.", with everything else the owner wrote
+
+### Requirement: A resubmission keeps the rejection it answers for the panel (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-47); `data-model`, "The business keeps the rejection its resubmission answered (v2)"; `admin-review`, "The queue labels the resubmission of a rejected card, and its detail says why it was rejected before (v2)". It amends "One card per WhatsApp number", whose resubmission sets the date and reason of the rejection to null.
+
+The resubmission of a rejected card MUST still set the date and the reason of its rejection to null, so the 90-day purge of rejected registrations no longer reads them, and in the same write MUST keep them as the card's previous rejection, which only the panel shows. Nothing of it reaches the owner: the thank-you page is the same as for a new registration, and no public page names the rejection or its reason.
+
+#### Scenario: the panel knows it was rejected before
+
+- **WHEN** the owner corrects a rejected card and sends it again
+- **THEN** the card is back in review with no rejection, its previous rejection holds the date and the reason it had, and the owner sees the usual thank-you page

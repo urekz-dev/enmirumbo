@@ -13,14 +13,16 @@
 //   text (`name_normalized`, `what_you_offer_normalized`).
 // - A number whose card was rejected is a resubmission: that same card takes
 //   the new data and goes back to `in_review`, its rejection trace is
-//   cleared and its wait restarts (`registered_at`), and its consent record
-//   is kept whole. When the notice in force is later than the record's, the
-//   re-acceptance is noted beside it. Its origin, trades, management link,
-//   publication date and unpublishing trace do not change. Its photo is
-//   replaced by the one just stored, removed ("Dejar mi ficha sin foto") or
-//   kept, as the submission asks; the photo it no longer names is given back
-//   so its objects are deleted once the card is saved (business-registration,
-//   "Resubmission after a rejection allows changing or removing the photo").
+//   cleared and kept as its previous rejection (data-model, "The business
+//   keeps the rejection its resubmission answered (v2)"), its wait restarts
+//   (`registered_at`), and its consent record is kept whole. When the notice
+//   in force is later than the record's, the re-acceptance is noted beside
+//   it. Its origin, trades, management link, publication date and
+//   unpublishing trace do not change. Its photo is replaced by the one just
+//   stored, removed ("Dejar mi ficha sin foto") or kept, as the submission
+//   asks; the photo it no longer names is given back so its objects are
+//   deleted once the card is saved (business-registration, "Resubmission
+//   after a rejection allows changing or removing the photo").
 // - A number whose card is in review or published is a duplicate, and
 //   nothing changes.
 //
@@ -155,6 +157,13 @@ export async function saveRegistration(
         ...reconsent,
         ...photoChange,
         status: "in_review",
+        // The rejection this resubmission answers moves to the previous
+        // rejection, which the panel shows ("Reenvío", "La rechazaste antes
+        // por: …"); the rejection itself is cleared, so the 90-day purge of
+        // rejected registrations no longer reads it. Each SET reads the row
+        // as it was, and a rejection without its pair keeps the earlier one.
+        previousRejectedAt: sql`coalesce(${businesses.rejectedAt}, ${businesses.previousRejectedAt})`,
+        previousRejectionReason: sql`coalesce(${businesses.rejectionReason}, ${businesses.previousRejectionReason})`,
         rejectedAt: null,
         rejectionReason: null,
         // The wait of the review queue counts from the resubmission.

@@ -11,6 +11,8 @@ import { type Db, withDb } from "../core/db/client.ts";
 import { submitEdit } from "../core/edit/submit.ts";
 import { submitRegistration } from "../core/registration/submit.ts";
 import { submitReport } from "../core/report/submit.ts";
+import { submitApproval } from "../core/review/approval.ts";
+import { submitRejection } from "../core/review/rejection.ts";
 import {
   addZone,
   renameZone,
@@ -22,6 +24,12 @@ import { editActionError, editTarget } from "../lib/edit.ts";
 import { takeQuota } from "../lib/quota/quota.ts";
 import { registrationActionError, registrationLocality } from "../lib/registration.ts";
 import { reportActionError, reportTarget } from "../lib/report.ts";
+import {
+  approvalActionError,
+  approvalNotice,
+  rejectionActionError,
+  reviewTarget,
+} from "../lib/review.ts";
 import { turnstileVerifier } from "../lib/turnstile.ts";
 import {
   submittedName,
@@ -123,7 +131,59 @@ export const server = {
     },
   }),
 
+  // The actions of the admin panel. Each starts with requireAdmin, which
+  // verifies the request's own Access token, posts to a page under /admin
+  // (Access adds its token only there) and checks its own permission in the
+  // locality of what it touches (the decisions on a card in
+  // src/core/review/decision.ts, the zones with withZonesOf). Reads and
+  // writes go through HYPERDRIVE_FRESH.
   admin: {
+    // Approving a registration from its detail, /admin/registros/<id>
+    // (docs/specs/admin-review.md, the approval requirements): trades, the
+    // zone of an "Otra", the origin, the publication and the management link,
+    // in one transaction only while the card is in review
+    // (src/core/review/approval.ts), with `businesses.review` in its
+    // locality. The card is the one of the page's address (reviewTarget).
+    // It answers the page with the notice of its confirmation, which carries
+    // the management link: the page shows it in that one answer, and it is
+    // never logged or stored (src/lib/review.ts).
+    approve: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        const businessId = reviewTarget(context);
+        if (businessId === null) throw new ActionError({ code: "NOT_FOUND" });
+        const outcome = await submitApproval(
+          form,
+          { email: admin.email, businessId },
+          { useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run) },
+        );
+        if (outcome.kind === "approved") return approvalNotice(env, outcome);
+        throw approvalActionError(outcome) ?? new ActionError({ code: "INTERNAL_SERVER_ERROR" });
+      },
+    }),
+
+    // Rejecting a registration from its detail, with a reason of up to 500
+    // characters that is never trimmed, only while the card is in review,
+    // writing its entry of the audit log with the Access email in the same
+    // transaction (src/core/review/rejection.ts), with `businesses.review`
+    // in its locality. The page then answers a 303 to its confirmation.
+    reject: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        const businessId = reviewTarget(context);
+        if (businessId === null) throw new ActionError({ code: "NOT_FOUND" });
+        const outcome = await submitRejection(
+          form,
+          { email: admin.email, businessId },
+          { useDb: (run) => withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, run) },
+        );
+        const error = rejectionActionError(outcome);
+        if (error !== null) throw error;
+      },
+    }),
+
     // The zones screen of the panel (docs/specs/admin-review.md, "The admin
     // can hide and rename the zones of a locality (v2)" and "The admin can
     // add a zone to a locality (v2)"), posted by the forms of

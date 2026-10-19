@@ -4,64 +4,173 @@
 // "The business detail lists its unattended reports", "Verification button
 // that opens WhatsApp with a prefilled message", "Dates in the panel use the
 // time zone of the locality (v2)", "The panel shows the photos it reviews
-// from the media hostname (v2)" and "Each review screen checks its
-// permission in the locality of what it shows (v2)"). Read-only for now: the
-// actions of F2, F3 and F4 add their forms after what it shows.
+// from the media hostname (v2)", "Each review screen checks its permission
+// in the locality of what it shows (v2)", "The detail offers the actions that
+// correspond to the status, with the context in sight", "Approving assigns
+// trades, normalizes the zone, marks the origin and publishes the card", "On
+// approving, an offer is made to notify the business by WhatsApp with its
+// card link and its management link", "Rejecting requires a reason, stores it
+// with its date and offers to notify by WhatsApp" and "A transition is only
+// applied to a registration that is still in review"). The actions of F3 and
+// F4 add their forms after these.
 //
 // Behind the same Access check, headers and layout rules as the rest of the
-// panel (see src/pages/admin/index.astro). Then:
+// panel (see src/pages/admin/index.astro). The forms of a card in review
+// post here with the actions `admin.approve` and `admin.reject`
+// (src/actions/index.ts), which Astro runs before this page
+// (src/lib/review.ts). Then:
 //
-// 1. A user who may open no card anywhere, or who is not a panel user, gets
-//    the panel's 403 before the card is read.
-// 2. The card is read by its identifier. One that does not exist, and one of
-//    a locality where the user holds no permission that opens a card's
-//    detail, answer the same 404, the site's 404 page, suggesting nothing.
-// 3. Its unattended reports are read and shown only for a user who attends
-//    reports in its locality.
+// 1. An approval answers here, in this one answer to its POST, with its
+//    confirmation: the notice that carries the management link. It is never
+//    redirected to an address of its own, which would put the token in the
+//    address and the history; every answer under /admin is `no-store`, and
+//    sending the form again finds the card resolved, with no new link.
+// 2. A rejection answers a 303 to its confirmation, which reads the stored
+//    reason, so a reload never sends it again.
+// 3. A card already resolved shows "Este registro ya lo habías resuelto." A
+//    card that does not exist, or that the user may not see, is the site's
+//    404; one the user sees but may not decide on, the panel's 403.
+// 4. Anything else renders the detail, as a GET does: a user who may open no
+//    card anywhere gets the 403 before the card is read; a card that does
+//    not exist, or of a locality where the user holds no permission that
+//    opens a card's detail, answers the same 404; its unattended reports
+//    only for who attends reports in its locality; and the approval and
+//    rejection forms only for a card in review and a user with
+//    `businesses.review` in its locality, again with what the admin sent and
+//    its errors after a failed decision. Any other POST is a 405.
+import { actions } from "astro:actions";
 import { env, waitUntil } from "cloudflare:workers";
+import ApprovalConfirmation from "../../../components/admin/ApprovalConfirmation.astro";
+import ApproveForm from "../../../components/admin/ApproveForm.astro";
+import DecisionScreen from "../../../components/admin/DecisionScreen.astro";
 import RegistrationDetail from "../../../components/admin/RegistrationDetail.astro";
+import RejectForm from "../../../components/admin/RejectForm.astro";
 import { permissionsOf } from "../../../core/access/queries.ts";
 import { withDb } from "../../../core/db/client.ts";
+import { formText } from "../../../core/forms/text.ts";
+import { approvalForm, readApproval } from "../../../core/review/approval.ts";
 import { panelLocalities, zoneNamesByLocality, zoneText } from "../../../core/review/localities.ts";
-import { queuePath } from "../../../core/review/paths.ts";
+import { queuePath, rejectedPath } from "../../../core/review/paths.ts";
 import { pendingReports, registrationDetail } from "../../../core/review/registration.ts";
+import { REJECTION_FIELD } from "../../../core/review/rejection.ts";
 import { opensCard, panelScope, queueLocalities } from "../../../core/review/scope.ts";
-import { REGISTRATION_TITLE } from "../../../core/review/texts.ts";
+import {
+  ALREADY_RESOLVED,
+  APPROVED,
+  REGISTRATION_TITLE,
+  SAVE_FAILED,
+} from "../../../core/review/texts.ts";
 import BaseLayout from "../../../layouts/BaseLayout.astro";
 import { forbiddenResponse } from "../../../lib/access/admin-gate.ts";
-import { notFound } from "../../../lib/locality.ts";
+import { notFound, seeOther } from "../../../lib/locality.ts";
+import { decisionFailure } from "../../../lib/review.ts";
 
 const admin = Astro.locals.admin;
 // Second line of defense: never render the panel without an identity.
 if (admin === undefined) return forbiddenResponse();
 
+const id = Astro.params.id ?? "";
+const approval = Astro.getActionResult(actions.admin.approve);
+const rejection = Astro.getActionResult(actions.admin.reject);
+if (rejection !== undefined && !rejection.error) return seeOther(rejectedPath(id));
+if (approval === undefined && rejection === undefined) {
+  if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD") {
+    return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+  }
+}
+
+const sent = approval !== undefined ? "approval" : rejection !== undefined ? "rejection" : null;
+const failure = approval?.error
+  ? decisionFailure(approval.error, "approval")
+  : rejection?.error
+    ? decisionFailure(rejection.error, "rejection")
+    : null;
+if (failure?.kind === "not-found") return notFound();
+if (failure?.kind === "forbidden") return forbiddenResponse();
+
+// Only a user who may decide on a card in review reaches a decision's
+// answer, and that permission always opens the queue.
+const notice = approval !== undefined && !approval.error ? approval.data : null;
+const resolved = failure?.kind === "resolved";
+
+/** What the admin sent with the decision that failed: shown again as it was. */
+const keepsDraft =
+  failure?.kind === "approval" ||
+  failure?.kind === "rejection" ||
+  (failure?.kind === "server" && failure.keepsDraft);
+const submission = keepsDraft ? await Astro.request.formData().catch(() => null) : null;
+
 const now = new Date();
-const result = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
-  const scope = await panelScope(db, admin.email);
-  if (scope.cards.length === 0) return "forbidden" as const;
-  const detail = await registrationDetail(db, Astro.params.id ?? "");
-  if (detail === null) return "not-found" as const;
-  const granted = await permissionsOf(db, admin.email, detail.localityCode);
-  if (!opensCard(granted)) return "not-found" as const;
-  const reports = granted.has("reports.manage") ? await pendingReports(db, detail.id) : null;
-  const [locality] = await panelLocalities(db, [detail.localityCode]);
-  const names = locality
-    ? (await zoneNamesByLocality(db, [locality])).get(locality.code)
-    : undefined;
-  return { scope, detail, reports, zone: zoneText(detail, names) };
-});
+const result =
+  notice !== null || resolved
+    ? null
+    : await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+        const scope = await panelScope(db, admin.email);
+        if (scope.cards.length === 0) return "forbidden" as const;
+        const detail = await registrationDetail(db, id);
+        if (detail === null) return "not-found" as const;
+        const granted = await permissionsOf(db, admin.email, detail.localityCode);
+        if (!opensCard(granted)) return "not-found" as const;
+        const reports = granted.has("reports.manage") ? await pendingReports(db, detail.id) : null;
+        const [locality] = await panelLocalities(db, [detail.localityCode]);
+        const names = locality
+          ? (await zoneNamesByLocality(db, [locality])).get(locality.code)
+          : undefined;
+        const decides = detail.status === "in_review" && granted.has("businesses.review");
+        const form = decides ? await approvalForm(db, detail) : null;
+        return { scope, detail, reports, zone: zoneText(detail, names), form };
+      });
 if (result === "forbidden") return forbiddenResponse();
 if (result === "not-found") return notFound();
 
-const { scope, detail, reports, zone } = result;
+const approvalDraft =
+  result?.form && sent === "approval" && submission !== null
+    ? readApproval(submission)
+    : result?.form?.draft;
+const reason =
+  sent === "rejection" && submission !== null ? formText(submission, REJECTION_FIELD) : "";
 ---
 
-<BaseLayout title={REGISTRATION_TITLE}>
-  <RegistrationDetail
-    detail={detail}
-    zone={zone}
-    reports={reports}
-    now={now}
-    queueHref={queueLocalities(scope).length > 0 ? queuePath() : null}
-  />
-</BaseLayout>
+{notice !== null ? (
+  <BaseLayout title={APPROVED}>
+    <ApprovalConfirmation notice={notice} queueHref={queuePath()} />
+  </BaseLayout>
+) : resolved || result === null ? (
+  <BaseLayout title={ALREADY_RESOLVED}>
+    <DecisionScreen heading={ALREADY_RESOLVED} queueHref={queuePath()} />
+  </BaseLayout>
+) : (
+  <BaseLayout title={REGISTRATION_TITLE}>
+    <RegistrationDetail
+      detail={result.detail}
+      zone={result.zone}
+      reports={result.reports}
+      now={now}
+      queueHref={queueLocalities(result.scope).length > 0 ? queuePath() : null}
+    >
+      {failure?.kind === "server" && (
+        <p role="alert" class="font-semibold text-ink">
+          <span aria-hidden="true">⚠ </span>
+          {SAVE_FAILED}
+        </p>
+      )}
+      {result.form && approvalDraft && (
+        <ApproveForm
+          action={actions.admin.approve.queryString}
+          catalogue={result.form.catalogue}
+          draft={approvalDraft}
+          errors={failure?.kind === "approval" ? failure.errors : {}}
+          needsZone={result.detail.zoneSlug === null}
+          zoneOther={result.detail.zoneOther}
+        />
+      )}
+      {result.form && (
+        <RejectForm
+          action={actions.admin.reject.queryString}
+          reason={reason}
+          error={failure?.kind === "rejection" ? failure.error : null}
+        />
+      )}
+    </RegistrationDetail>
+  </BaseLayout>
+)}

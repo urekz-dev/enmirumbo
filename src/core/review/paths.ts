@@ -4,7 +4,10 @@
 //
 //   /admin                      the review queue, the panel's main screen
 //   /admin/negocios             "Todos los negocios"
-//   /admin/registros/<id>       the detail of a card, by its identifier
+//   /admin/registros/<id>       the detail of a card, by its identifier, where
+//                               its decisions are posted
+//   /admin/registros/<id>/rechazado
+//                               the confirmation of a rejection
 //   /admin/ediciones/<id>       the detail of a pending edit, by its number
 //
 // The queue and the list carry their filters in the query: `localidad` (the
@@ -18,6 +21,11 @@ export const BUSINESSES_PATH = "/admin/negocios";
 /** The detail of a card. */
 export function registrationPath(businessId: string): string {
   return `/admin/registros/${encodeURIComponent(businessId)}`;
+}
+
+/** The confirmation of the rejection of a card, which a rejection answers with a 303. */
+export function rejectedPath(businessId: string): string {
+  return `${registrationPath(businessId)}/rechazado`;
 }
 
 /** The detail of a pending edit. */

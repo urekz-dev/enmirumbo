@@ -1,0 +1,32 @@
+---
+// The screen a decision on a registration lands on (docs/specs/admin-review.md,
+// "On approving, an offer is made to notify the business by WhatsApp with its
+// card link and its management link", "Rejecting requires a reason, stores it
+// with its date and offers to notify by WhatsApp" and "A transition is only
+// applied to a registration that is still in review"): what happened, in its
+// heading, then what the page puts in it (the notice to the business, and
+// after an approval that the site takes up to a minute to show it), and
+// "Volver a la cola" when the user may open the queue. No client JavaScript.
+import { BACK_TO_QUEUE } from "../../core/review/texts.ts";
+
+interface Props {
+  heading: string;
+  /** "Volver a la cola", when the user may open the queue. */
+  queueHref: string | null;
+}
+
+const { heading, queueHref } = Astro.props;
+---
+
+<section class="flex flex-col items-center gap-6 py-12 text-center" data-testid="decision">
+  <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{heading}</h1>
+  <slot />
+  {queueHref && (
+    <a
+      href={queueHref}
+      class="inline-flex min-h-11 items-center px-4 font-semibold text-action-strong underline underline-offset-4"
+    >
+      {BACK_TO_QUEUE}
+    </a>
+  )}
+</section>

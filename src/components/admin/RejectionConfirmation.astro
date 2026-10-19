@@ -1,0 +1,26 @@
+---
+// The confirmation of a rejection (docs/specs/admin-review.md, "Rejecting
+// requires a reason, stores it with its date and offers to notify by
+// WhatsApp"): "Registro rechazado." and "Avisarle por WhatsApp" with the
+// notice, whose reason is the one stored, whole. A rejection changes nothing
+// public, so it does not say that the site takes a minute to show it. No
+// client JavaScript.
+import { rejectedMessage } from "../../core/review/notices.ts";
+import { REJECTED } from "../../core/review/texts.ts";
+import DecisionScreen from "./DecisionScreen.astro";
+import NoticeButton from "./NoticeButton.astro";
+
+interface Props {
+  name: string;
+  whatsapp: string;
+  reason: string;
+  /** "Volver a la cola", when the user may open the queue. */
+  queueHref: string | null;
+}
+
+const { name, whatsapp, reason, queueHref } = Astro.props;
+---
+
+<DecisionScreen heading={REJECTED} queueHref={queueHref}>
+  <NoticeButton whatsapp={whatsapp} message={rejectedMessage(name, reason)} />
+</DecisionScreen>

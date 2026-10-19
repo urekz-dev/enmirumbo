@@ -1293,3 +1293,26 @@ A photo key that a waiting edit names is not an orphan: the orphan sweep MUST ke
 
 - **WHEN** the orphan sweep finds the objects of a photo that only a waiting edit names
 - **THEN** it keeps them
+
+### Requirement: The business keeps the rejection its resubmission answered (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-47): the queue labels a resubmitted card "Reenvío" and its detail says why it was rejected before (`admin-review`, "The queue labels the resubmission of a rejected card, and its detail says why it was rejected before (v2)"). It amends "Review status, origin and lifecycle timestamps", whose rejection trace goes back to null on a resubmission and is lost.
+
+The business MUST store a previous rejection: its moment and its reason as text, written together, both null while the card was never resubmitted after a rejection (a CHECK in the migration). When a rejected card is resubmitted, the same write that sets its rejection trace to null MUST copy that trace into the previous rejection, overwriting the one it held; a rejection without its moment leaves the earlier previous rejection as it was. Nothing else writes or clears it: approving, rejecting again, unpublishing and applying an edit keep it, so it always holds the rejection the last resubmission answered. The 90-day purge of rejected registrations reads only the rejection trace, never the previous rejection, so a card back in review is never purged for it.
+
+The previous rejection is internal data of the panel, of the same kind as the rejection reason: it MUST NOT appear on any public page, and it leaves the database only with its card, whose permanent deletion takes it. The migration that adds it MUST be additive: two nullable columns that every existing row meets.
+
+#### Scenario: a resubmission keeps the rejection
+
+- **WHEN** a business rejected with the reason "La foto tenía personas" corrects and resubmits its registration
+- **THEN** its rejection timestamp and reason are null, and its previous rejection holds that moment and "La foto tenía personas"
+
+#### Scenario: the last resubmission wins
+
+- **WHEN** that card is rejected again with another reason and resubmitted again
+- **THEN** its previous rejection holds the second rejection
+
+#### Scenario: written in pairs
+
+- **WHEN** a previous rejection is saved with a moment and no reason, or a reason and no moment
+- **THEN** the database rejects the write

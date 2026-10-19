@@ -1,0 +1,70 @@
+---
+// The rejection form of a registration in review (docs/specs/admin-review.md,
+// "Rejecting requires a reason, stores it with its date and offers to notify
+// by WhatsApp" and "A rejection reason is never silently trimmed (v2)"): the
+// reason, required, under "¿Por qué lo rechazas?", and "Rechazar". It posts
+// to the detail's own address with the action `admin.reject`. After an
+// error the reason comes back exactly as it was typed, next to its error.
+// The field has no `maxlength`: a browser cuts a pasted text at it without a
+// word, and the reason travels whole to the business, so the server refuses
+// one over 500 characters instead, and the admin shortens it. Every check is
+// the server's, so the form is `novalidate`. No client JavaScript.
+import { REJECTION_FIELD } from "../../core/review/rejection.ts";
+import { REASON_MAX_LENGTH, type ReasonError } from "../../core/review/reason.ts";
+import {
+  reasonTooLongText,
+  REJECT_BUTTON,
+  REJECT_HEADING,
+  REJECT_REASON_LABEL,
+  REJECT_REASON_REQUIRED,
+} from "../../core/review/texts.ts";
+import { SECONDARY_BUTTON } from "../../lib/buttons.ts";
+import FieldError from "../FieldError.astro";
+
+interface Props {
+  /** The address the form posts to: the detail with the action `admin.reject`. */
+  action: string;
+  /** The reason as it was typed in the last submission; empty otherwise. */
+  reason: string;
+  error: ReasonError | null;
+}
+
+const { action, reason, error } = Astro.props;
+const message =
+  error === "required"
+    ? REJECT_REASON_REQUIRED
+    : error === "too-long"
+      ? reasonTooLongText(REASON_MAX_LENGTH)
+      : null;
+const control =
+  "w-full rounded-lg bg-background px-4 py-3 text-base text-ink focus:ring-2 focus:ring-action-strong focus:outline-none";
+---
+
+<form
+  method="post"
+  action={action}
+  novalidate
+  class="flex flex-col gap-3 rounded-xl border border-line p-4"
+  data-testid="reject-form"
+>
+  <h2 class="font-semibold text-ink">{REJECT_HEADING}</h2>
+
+  <div class="flex flex-col gap-1.5">
+    <label for="reject-reason" class="text-sm font-semibold text-ink">
+      {REJECT_REASON_LABEL}
+    </label>
+    <textarea
+      id="reject-reason"
+      name={REJECTION_FIELD}
+      rows="3"
+      aria-invalid={error ? "true" : undefined}
+      aria-describedby={error ? "reject-reason-error" : undefined}
+      class={error ? `${control} border-2 border-ink` : `${control} border border-control`}
+    >{reason}</textarea>
+    <FieldError id="reject-reason-error" message={message} />
+  </div>
+
+  <button type="submit" class={`${SECONDARY_BUTTON} w-full px-4 text-base`}>
+    {REJECT_BUTTON}
+  </button>
+</form>
