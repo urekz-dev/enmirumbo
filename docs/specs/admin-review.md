@@ -1260,19 +1260,89 @@ The filter is a group of links under the literal label "Filtrar por municipio", 
 
 ### Requirement: The admin can hide and rename the zones of a locality (v2)
 
-Added in v2 — source: ADR 0006.
+Added in v2 — source: ADR 0006. Amended on 2026-10-18 by EMR-52 and the decision of the product owner of that date: where the zones screen lives and what it shows, who may use it, that a rename keeps the display names unambiguous, and that the screen does not normalize the zone "Otra" of a card; adding a zone is "The admin can add a zone to a locality (v2)".
 
 The panel MUST let the admin hide, show and rename the zones of a locality. Renaming does not change the slug (see "Catalogues of categories, zones and trades with stable slug").
+
+**The screen.** The zones of a locality live at `/admin/colonias`, under the panel's Access check, headers and no-indexing, and the queue leads there with the link "Administrar colonias", shown only to who may use it. Its heading is "Colonias de <municipio>", from the locality record. It lists every zone of the locality, hidden ones included, in alphabetical order of the name the public pages show it with (`public-directory`, "A zone whose name repeats in its locality is shown with its settlement type (v2)"), under the count "<n> colonias" (", <m> ocultas" while some are hidden), and each row says its name as shown, "Tipo: <type>", "En la URL: <slug>" and, when it is hidden, the label "Oculta" in words. Each row has the button "Ocultar" (or "Mostrar", for a hidden zone) and the disclosure "Cambiarle el nombre", which holds the field "Nombre nuevo", filled with the stored name, and the button "Guardar el nombre"; the disclosure is the browser's own, so the screen needs no client JavaScript. The screen reads and writes through the fresh connection to the database.
+
+**Its locality.** The screen shows one locality at a time: the one `?localidad=<INEGI code>` names among the localities where the user may manage zones, or else the first active one of them. "Filtrar por municipio" offers, as links, the active ones, with no "Todos" because a zone belongs to one locality, and only while there are two or more ("The panel filters by locality, and the filter is hidden while there is one (v2)"); a locality of the user that is not active opens only by its address, so a city can have its zones ready before it is turned on. The query carries only `localidad` and `listo`.
+
+**Who.** Hiding, showing, renaming and adding need `zones.manage` in the locality of the zone (`data-model`, "Panel users, roles and permissions live in the database (v2)"). A user who holds it in no locality, or who is not a panel user, gets the panel's 403 on the screen. Each form posts to the screen of its locality with its action, which checks the Access token and the permission again; the locality comes from the screen's address, never from a field, and a zone that is not of that locality, a locality where the user may not manage zones, or an action called from any other page answers the site's 404 and changes nothing.
+
+**Hiding** changes only whether the registration and the edit offer the zone (`business-registration`, "The zone options come from the active locality (v2)"); the edit still offers a card the zone it already has. **Renaming** changes only the name, which every surface reads from the zone, and never the slug or the URLs. A name is trimmed and its spaces collapsed; it MUST NOT be empty ("Escribe el nombre de la colonia."), longer than 80 characters ("Deja el nombre en 80 caracteres o menos.") or without a letter or a digit ("Escribe el nombre con letras o números."). Names may repeat in a locality only while the display names still tell the zones apart: a rename after which two zones of the locality, hidden ones included, would be shown with the same name, compared as the site compares zone names, is refused with "Ya hay otra colonia que se vería igual: «<nombre como se vería>». Ponle un nombre distinto." A rename to the name the zone already has changes nothing.
+
+**After a change.** A change saved answers a 303 to the screen of its locality with `listo=<zone id>` and the zone's row as the fragment, so a reload never sends the form again; that row says, as a status, "Listo. El cambio puede tardar hasta un minuto en verse en el sitio." ("The panel says that a change takes up to a minute to reach the site (v2)"). A form with errors comes back with a 400, open, with what was typed and each error next to its field. None of these changes writes to the audit log, which records only what is done to a card (`data-model`, "The audit log records the destructive actions of the admin (v2)").
+
+**"Otra".** The screen does not normalize the zone "Otra" of a card. By decision of the product owner (2026-10-18), that happens on approving a registration and on applying an owner's edit, as their requirements settle, so that a published card always has a catalogue zone.
 
 #### Scenario: hide
 
 - **WHEN** the admin hides a zone
 - **THEN** it is no longer offered in the registration form
 
+#### Scenario: hide, from the screen
+
+- **WHEN** the admin taps "Ocultar" on the row of "Nacozari" of Tizayuca
+- **THEN** the screen comes back with that row labelled "Oculta" and saying "Listo. El cambio puede tardar hasta un minuto en verse en el sitio.", the registration, and the edit of a card in another zone, no longer suggest "Nacozari", and "Mostrar" offers it again
+
 #### Scenario: rename
 
 - **WHEN** the admin renames a zone
 - **THEN** the new name is shown everywhere and its URLs do not change
+
+#### Scenario: a rename that two zones would show the same way
+
+- **WHEN** the admin renames the colonia "Ampliación el Carmen" to "El Carmen", while the colonia "El Carmen" is shown as "El Carmen (Colonia)"
+- **THEN** nothing changes, and the form comes back open with "El Carmen" and "Ya hay otra colonia que se vería igual: «El Carmen (Colonia)». Ponle un nombre distinto."
+
+#### Scenario: a user without the permission
+
+- **WHEN** a user whose roles do not grant `zones.manage` in any locality opens `/admin/colonias`, or posts one of its forms
+- **THEN** they get the panel's 403, the queue does not show them "Administrar colonias", and no zone changes
+
+### Requirement: The admin can add a zone to a locality (v2)
+
+Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-52): the locality grows with housing developments that SEPOMEX does not list yet, and approving a registration needs a catalogue zone. It amends `data-model`, "Zones belong to a locality, and Tizayuca's come from the SEPOMEX postal catalogue (v2)": the zones of SEPOMEX still ship in data migrations, and a zone the admin adds is data the panel writes.
+
+The zones screen ("The admin can hide and rename the zones of a locality (v2)") MUST let the admin add a zone to its locality, above the list, under "Agregar una colonia", with the fields "Nombre" and "Tipo" and the button "Agregar colonia". The type is one of the settlement types the zones of the locality already have, chosen from a list whose first option, "Elige el tipo", is none; without one, the form says "Elige el tipo de la colonia." The name follows the rules of a rename. The new zone is visible, and the registration and the edit offer it at once, the public pages within a minute.
+
+Its slug comes from its name with the slug rule of the catalogues (`data-model`, "Catalogues of categories, zones and trades with stable slug (v2)") and never changes afterwards, even when the zone is renamed. Before anything is saved, the panel MUST refuse a name:
+
+- whose letters cannot be written in a URL ("ß"): "Ese nombre tiene letras que no caben en una URL. Escríbelo con las letras del español, números y espacios.";
+- whose slug another zone of the locality has, hidden or renamed ones included: "Ya hay una colonia con esa misma URL (<slug>): «<nombre de esa colonia>». Si es la misma, búscala en la lista para mostrarla o cambiarle el nombre; si es otra, ponle un nombre distinto.";
+- whose slug makes a URL of the locality read in two ways, by the same check the tests run on the catalogues the migrations leave (`data-model`, "The slugs of the catalogues do not produce ambiguous URLs at the root of a locality (v2)"), with the same reserved segments: "Con ese nombre, la URL «<segmento>» se confundiría con <lo otro>. Ponle otro nombre; por ejemplo, con su tipo adelante: «<Tipo> <Nombre>».", where what else it would be is "una página propia del sitio", "la categoría «…»", "el giro «…»" or "la del giro «…» en «…»", and a segment of a trade in the new zone adds "(la del giro «…» en esta colonia)" after it;
+- after which two zones of the locality would be shown with the same name, as for a rename.
+
+#### Scenario: a new fraccionamiento
+
+- **WHEN** the admin adds "Los Pinos de Mentiras", of type "Fraccionamiento", to Tizayuca
+- **THEN** the zone is saved visible with the slug `los-pinos-de-mentiras`, its row says "En la URL: los-pinos-de-mentiras" and "Listo. El cambio puede tardar hasta un minuto en verse en el sitio.", the registration suggests it, a registration can name it and an approval can give it to a card
+
+#### Scenario: renamed, it keeps its URL
+
+- **WHEN** the admin renames a zone they added
+- **THEN** its slug, and so its URLs, stay the ones it was given
+
+#### Scenario: a URL that is already taken
+
+- **WHEN** the admin adds "Centro" to a locality that has a zone with the slug `centro`, visible or hidden, with that name or another
+- **THEN** nothing is saved and the form says that zone's name and the URL it already has
+
+#### Scenario: a reserved segment
+
+- **WHEN** the admin adds "Registro"
+- **THEN** nothing is saved and the form says "Con ese nombre, la URL «registro» se confundiría con una página propia del sitio. Ponle otro nombre; por ejemplo, con su tipo adelante: «Colonia Registro»." for the type "Colonia"
+
+#### Scenario: a URL with two readings
+
+- **WHEN** the admin adds a zone whose slug, after a trade, composes the slug of another trade or of another trade and zone pair
+- **THEN** nothing is saved and the form names the segment and what else it would be
+
+#### Scenario: a zone named like a trade
+
+- **WHEN** the admin adds a zone whose slug is a trade's
+- **THEN** it is saved: a zone alone is no page
 
 ### Requirement: Dates in the panel use the time zone of the locality (v2)
 
@@ -1340,9 +1410,9 @@ Cloudflare Access proves the email; the roles decide what it may do. After the A
 
 ### Requirement: The panel says that a change takes up to a minute to reach the site (v2)
 
-Added in v2 — source: ADR 0005, decision of 2026-10-14.
+Added in v2 — source: ADR 0005, decision of 2026-10-14. Amended on 2026-10-18 by EMR-52: adding a zone is one of those actions.
 
-The public pages may show a change up to a minute late (`public-directory`, "Public pages may show a change up to a minute late (v2)"). After every action that changes what the public pages show —approve, unpublish, permanently delete, apply a pending edit, edit a card, hide or rename a zone— the confirmation the panel shows MUST include the literal text "Listo. El cambio puede tardar hasta un minuto en verse en el sitio." Actions that change nothing public (reject a registration in review, discard a pending edit, generate a link, attend a report) MUST NOT show it.
+The public pages may show a change up to a minute late (`public-directory`, "Public pages may show a change up to a minute late (v2)"). After every action that changes what the public pages show —approve, unpublish, permanently delete, apply a pending edit, edit a card, hide, show, rename or add a zone— the confirmation the panel shows MUST include the literal text "Listo. El cambio puede tardar hasta un minuto en verse en el sitio." Actions that change nothing public (reject a registration in review, discard a pending edit, generate a link, attend a report) MUST NOT show it.
 
 #### Scenario: unpublishing
 

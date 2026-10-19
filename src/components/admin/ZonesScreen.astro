@@ -1,0 +1,293 @@
+---
+// The zones of a locality in the panel (docs/specs/admin-review.md, "The
+// admin can hide and rename the zones of a locality (v2)", "The admin can add
+// a zone to a locality (v2)", "The panel says that a change takes up to a
+// minute to reach the site (v2)", "The panel filters by locality, and the
+// filter is hidden while there is one (v2)" and "The panel is operated from
+// the phone and without unnecessary client JavaScript").
+//
+// Above, the form to add a zone; below, every zone of the locality, hidden
+// ones included, by the name the public pages show it with: its type, the
+// slug of its URLs, "Oculta" when it is hidden, "Ocultar" or "Mostrar", and
+// "Cambiarle el nombre", a disclosure with the rename form. Each form posts
+// to the screen of its locality with its action; a saved change comes back
+// as the row of its zone saying "Listo. …", and a form with errors as the
+// form again, open, with each error next to its field and what was typed.
+// Every control measures at least 44px. No client JavaScript: the
+// disclosure is the browser's own `details`.
+import type { PanelZone } from "../../core/zones/manage.ts";
+import { zoneAnchor } from "../../core/zones/paths.ts";
+import { MAX_ZONE_NAME_LENGTH, type ZonesFailure } from "../../core/zones/rules.ts";
+import {
+  ADD_BUTTON,
+  ADD_HEADING,
+  ADD_HELP,
+  GENERAL_ERROR,
+  HIDDEN_TAG,
+  HIDE_BUTTON,
+  LIST_HEADING,
+  NAME_LABEL,
+  nameProblemText,
+  NEW_NAME_LABEL,
+  PUBLIC_DELAY,
+  RENAME_BUTTON,
+  RENAME_SUMMARY,
+  SHOW_BUTTON,
+  slugText,
+  TYPE_LABEL,
+  TYPE_PLACEHOLDER,
+  TYPE_REQUIRED,
+  typeText,
+  ZONES_EMPTY,
+  zonesCountText,
+  zonesHeading,
+  ZONES_INTRO,
+} from "../../core/zones/texts.ts";
+import { SECONDARY_BUTTON } from "../../lib/buttons.ts";
+import FilterLinks from "./FilterLinks.astro";
+import PanelTag from "./PanelTag.astro";
+
+interface FilterOption {
+  text: string;
+  href: string;
+  current: boolean;
+}
+
+interface Props {
+  /** The municipality of the locality shown, from its record. */
+  localityName: string;
+  /** Every zone of the locality, hidden ones included, by display name. */
+  zones: readonly PanelZone[];
+  /** The settlement types a new zone may take. */
+  types: readonly string[];
+  /** The options of the locality filter; none hides it. */
+  localityFilter: readonly FilterOption[];
+  localityFilterLabel: string;
+  /** The zone a change was just saved for, whose row says so; null for none. */
+  done: number | null;
+  /** The form that came back with errors, or null. */
+  failure: ZonesFailure | null;
+  /** Where each form posts. */
+  actions: { visibility: string; rename: string; add: string };
+  /** "Volver a la cola", when the user may open the queue. */
+  queueHref: string | null;
+  /** The label of that link. */
+  queueText: string;
+}
+
+const {
+  localityName,
+  zones,
+  types,
+  localityFilter,
+  localityFilterLabel,
+  done,
+  failure,
+  actions,
+  queueHref,
+  queueText,
+} = Astro.props;
+
+const added = failure?.form === "add" ? failure : null;
+const renamed = failure?.form === "rename" ? failure : null;
+const hidden = zones.filter((zone) => !zone.visible).length;
+const field =
+  "min-h-11 w-full min-w-0 rounded-lg bg-background px-4 text-base text-ink focus:ring-2 focus:ring-action-strong focus:outline-none";
+const fieldBorder = (error: boolean) => (error ? "border-2 border-ink" : "border border-control");
+const addNameError = added?.errors.name
+  ? nameProblemText(added.errors.name, added.name, types.includes(added.type) ? added.type : null)
+  : null;
+const addTypeError = added?.errors.type ? TYPE_REQUIRED : null;
+---
+
+<section class="flex flex-col gap-6">
+  <h1 class="text-2xl font-bold tracking-tight break-words sm:text-3xl">
+    {zonesHeading(localityName)}
+  </h1>
+
+  {queueHref && (
+    <a
+      href={queueHref}
+      class="inline-flex min-h-11 w-fit items-center font-semibold text-action-strong underline underline-offset-4"
+    >
+      {queueText}
+    </a>
+  )}
+
+  {localityFilter.length > 0 && (
+    <FilterLinks label={localityFilterLabel} options={localityFilter} />
+  )}
+
+  <p class="text-ink-muted">{ZONES_INTRO}</p>
+
+  {failure?.form === "general" && (
+    <p role="alert" class="font-semibold text-ink">
+      <span aria-hidden="true">⚠ </span>
+      {GENERAL_ERROR}
+    </p>
+  )}
+
+  <section
+    class="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4"
+    aria-labelledby="add-zone-heading"
+  >
+    <h2 id="add-zone-heading" class="text-lg font-bold tracking-tight text-ink">
+      {ADD_HEADING}
+    </h2>
+    <p id="add-zone-help" class="text-sm text-ink-muted">
+      {ADD_HELP}
+    </p>
+    <form method="post" action={actions.add} novalidate class="flex flex-col gap-4">
+      <div class="flex flex-col gap-1.5">
+        <label for="add-zone-name" class="text-sm font-semibold text-ink">
+          {NAME_LABEL}
+        </label>
+        <input
+          type="text"
+          id="add-zone-name"
+          name="name"
+          value={added?.name ?? ""}
+          maxlength={MAX_ZONE_NAME_LENGTH}
+          required
+          autocomplete="off"
+          aria-invalid={addNameError ? "true" : undefined}
+          aria-describedby={addNameError ? "add-zone-name-error add-zone-help" : "add-zone-help"}
+          class={`${field} ${fieldBorder(addNameError !== null)}`}
+        />
+        {addNameError && (
+          <p
+            id="add-zone-name-error"
+            role="alert"
+            class="text-sm font-semibold break-words text-ink"
+          >
+            <span aria-hidden="true">⚠ </span>
+            {addNameError}
+          </p>
+        )}
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <label for="add-zone-type" class="text-sm font-semibold text-ink">
+          {TYPE_LABEL}
+        </label>
+        <select
+          id="add-zone-type"
+          name="type"
+          required
+          aria-invalid={addTypeError ? "true" : undefined}
+          aria-describedby={addTypeError ? "add-zone-type-error" : undefined}
+          class={`${field} ${fieldBorder(addTypeError !== null)}`}
+        >
+          <option value="" selected={!added || !types.includes(added.type)}>
+            {TYPE_PLACEHOLDER}
+          </option>
+          {types.map((type) => (
+            <option value={type} selected={added?.type === type}>
+              {type}
+            </option>
+          ))}
+        </select>
+        {addTypeError && (
+          <p id="add-zone-type-error" role="alert" class="text-sm font-semibold text-ink">
+            <span aria-hidden="true">⚠ </span>
+            {addTypeError}
+          </p>
+        )}
+      </div>
+      <button type="submit" class={`${SECONDARY_BUTTON} w-full px-6 py-3 text-base sm:w-fit`}>
+        {ADD_BUTTON}
+      </button>
+    </form>
+  </section>
+
+  <section class="flex flex-col gap-3" aria-labelledby="zones-heading">
+    <h2 id="zones-heading" class="text-lg font-bold tracking-tight text-ink">
+      {LIST_HEADING}
+    </h2>
+    <p class="text-sm font-semibold text-ink-muted" data-testid="zones-count">
+      {zonesCountText(zones.length, hidden)}
+    </p>
+    {zones.length === 0 && <p class="text-ink-muted">{ZONES_EMPTY}</p>}
+    <ul class="flex flex-col gap-3" data-testid="zones">
+      {zones.map((zone) => {
+        const failed = renamed?.zoneId === zone.id ? renamed : null;
+        const renameError = failed?.errors.name
+          ? nameProblemText(failed.errors.name, failed.name, null)
+          : null;
+        const inputId = `rename-zone-${zone.id}`;
+        return (
+          <li id={zoneAnchor(zone.id)}>
+            <article class="flex flex-col gap-2 rounded-xl border border-line bg-background p-4">
+              <h3 class="font-semibold break-words text-ink">{zone.displayName}</h3>
+              <p class="text-sm text-ink-muted">{typeText(zone.type)}</p>
+              <p class="text-sm break-all text-ink-muted">{slugText(zone.slug)}</p>
+              {!zone.visible && (
+                <div class="flex flex-wrap gap-2">
+                  <PanelTag text={HIDDEN_TAG} strong />
+                </div>
+              )}
+              {done === zone.id && (
+                <p role="status" class="font-semibold text-ink">
+                  <span aria-hidden="true">✓ </span>
+                  {PUBLIC_DELAY}
+                </p>
+              )}
+              <form method="post" action={actions.visibility}>
+                <input type="hidden" name="zone" value={String(zone.id)} />
+                <input type="hidden" name="visible" value={zone.visible ? "false" : "true"} />
+                <button
+                  type="submit"
+                  aria-label={`${zone.visible ? HIDE_BUTTON : SHOW_BUTTON}: ${zone.displayName}`}
+                  class={`${SECONDARY_BUTTON} px-4 text-base`}
+                >
+                  {zone.visible ? HIDE_BUTTON : SHOW_BUTTON}
+                </button>
+              </form>
+              <details open={failed !== null}>
+                <summary class="inline-flex min-h-11 w-fit cursor-pointer items-center font-semibold text-action-strong underline underline-offset-4">
+                  {RENAME_SUMMARY}
+                  <span class="sr-only">: {zone.displayName}</span>
+                </summary>
+                <form
+                  method="post"
+                  action={actions.rename}
+                  novalidate
+                  class="mt-2 flex flex-col gap-2"
+                >
+                  <input type="hidden" name="zone" value={String(zone.id)} />
+                  <label for={inputId} class="text-sm font-semibold text-ink">
+                    {NEW_NAME_LABEL}
+                  </label>
+                  <input
+                    type="text"
+                    id={inputId}
+                    name="name"
+                    value={failed?.name ?? zone.name}
+                    maxlength={MAX_ZONE_NAME_LENGTH}
+                    required
+                    autocomplete="off"
+                    aria-invalid={renameError ? "true" : undefined}
+                    aria-describedby={renameError ? `${inputId}-error` : undefined}
+                    class={`${field} ${fieldBorder(renameError !== null)}`}
+                  />
+                  {renameError && (
+                    <p
+                      id={`${inputId}-error`}
+                      role="alert"
+                      class="text-sm font-semibold break-words text-ink"
+                    >
+                      <span aria-hidden="true">⚠ </span>
+                      {renameError}
+                    </p>
+                  )}
+                  <button type="submit" class={`${SECONDARY_BUTTON} px-4 text-base sm:w-fit`}>
+                    {RENAME_BUTTON}
+                  </button>
+                </form>
+              </details>
+            </article>
+          </li>
+        );
+      })}
+    </ul>
+  </section>
+</section>

@@ -694,9 +694,9 @@ A municipality is served only when it has a locality whose active flag is on. A 
 
 ### Requirement: Catalogues of categories, zones and trades with stable slug (v2)
 
-Added in v2 — source: ADR 0006.
+Added in v2 — source: ADR 0006. Amended on 2026-10-18 by EMR-52 and the decision of the product owner of that date: the admin adds zones from the panel, whose slugs follow the same rule and never change either.
 
-The system MUST have three persisted catalogues: the 8 categories of PRD §6.1 and the trades of Appendix B, which are global, and the zones of each locality, Tizayuca's from the SEPOMEX postal catalogue (see "Zones belong to a locality, and Tizayuca's come from the SEPOMEX postal catalogue (v2)"). Each category and each trade MUST have a unique name and slug. Each zone MUST have a slug unique within its locality; two zones of a locality MAY share a name when SEPOMEX lists it with two settlement types, and their slugs tell them apart. A slug MUST be suitable for SEO URLs: lowercase ASCII words joined by hyphens, without accents or punctuation (e.g. `plomeria`, `haciendas-de-tizayuca`, to compose `/plomeria-haciendas-de-tizayuca`). A slug MUST NOT change once published, even when the admin renames its entry.
+The system MUST have three persisted catalogues: the 8 categories of PRD §6.1 and the trades of Appendix B, which are global, and the zones of each locality, Tizayuca's from the SEPOMEX postal catalogue (see "Zones belong to a locality, and Tizayuca's come from the SEPOMEX postal catalogue (v2)"). Each category and each trade MUST have a unique name and slug. Each zone MUST have a slug unique within its locality; two zones of a locality MAY share a name when SEPOMEX lists it with two settlement types, or when the admin names them so while their display names still tell them apart (`admin-review`, "The admin can hide and rename the zones of a locality (v2)"), and their slugs tell them apart. A slug MUST be suitable for SEO URLs: lowercase ASCII words joined by hyphens, without accents or punctuation (e.g. `plomeria`, `haciendas-de-tizayuca`, to compose `/plomeria-haciendas-de-tizayuca`). A slug MUST NOT change once published, even when the admin renames its entry. A zone the admin adds takes the slug of its name, by the slug rule of the states and municipalities (see "The database holds only the reference data of the localities it serves (v2)"), and keeps it for good (`admin-review`, "The admin can add a zone to a locality (v2)").
 
 #### Scenario: catalogues populated
 
@@ -707,6 +707,11 @@ The system MUST have three persisted catalogues: the 8 categories of PRD §6.1 a
 
 - **WHEN** the slug of the trade "Plomería" and that of the zone "Haciendas de Tizayuca" are queried
 - **THEN** they are `plomeria` and `haciendas-de-tizayuca` (no capitals, accents or spaces)
+
+#### Scenario: the slug of a zone the admin adds
+
+- **WHEN** the admin adds the zone "Privada Ñandú (2a. sección)" and later renames it
+- **THEN** its slug is `privada-nandu-2a-seccion` before and after the rename
 
 ### Requirement: Zones belong to a locality and are loaded from the SEPOMEX postal catalogue (v2)
 
@@ -764,9 +769,9 @@ The prototype's hand-maintained list of colonias MUST be used only to cross-chec
 
 ### Requirement: Zones belong to a locality, and Tizayuca's come from the SEPOMEX postal catalogue (v2)
 
-Added in v2 — source: decision of the product owner, 2026-10-14; ADR 0006 (amended on 2026-10-15). Amended on 2026-10-15 by decision of the product owner: a zone whose name repeats in its locality, or is the locality's, is shown on the public pages with its type.
+Added in v2 — source: decision of the product owner, 2026-10-14; ADR 0006 (amended on 2026-10-15). Amended on 2026-10-15 by decision of the product owner: a zone whose name repeats in its locality, or is the locality's, is shown on the public pages with its type. Amended on 2026-10-18 by EMR-52 and the decision of the product owner of that date: the admin adds zones from the panel, which are data the panel writes, not reference data.
 
-Each zone MUST belong to exactly one locality, and its settlement type (colonia, fraccionamiento, pueblo, barrio, unidad habitacional or another settlement type) MUST be stored with it. Zones are reference data and ship as data migrations with the rest of their locality's reference data, so that they reach every environment, production included, without seeds; an automatic check MUST verify what they leave in the database. Postal codes are not stored. Every zone starts visible, and the admin MUST be able to hide or rename a zone. How the zones of a new city are prepared is decided when one is needed (see "The database holds only the reference data of the localities it serves (v2)").
+Each zone MUST belong to exactly one locality, and its settlement type (colonia, fraccionamiento, pueblo, barrio, unidad habitacional or another settlement type) MUST be stored with it. The zones of a city's catalogue (Tizayuca's, from SEPOMEX) are reference data and ship as data migrations with the rest of their locality's reference data, so that they reach every environment, production included, without seeds; an automatic check MUST verify what they leave in the database. Postal codes are not stored. Every zone starts visible, and the admin MUST be able to hide or rename a zone (`admin-review`, "The admin can hide and rename the zones of a locality (v2)"). The admin MAY also add a zone to a locality from the panel, such as a housing development that SEPOMEX does not list yet, with one of the settlement types the zones of the locality have (`admin-review`, "The admin can add a zone to a locality (v2)"): such a zone is data the panel writes in each environment, like a card, and no migration or seed carries it. How the zones of a new city are prepared is decided when one is needed (see "The database holds only the reference data of the localities it serves (v2)").
 
 The zones of Tizayuca are its settlements in SEPOMEX's Catálogo Nacional de Códigos Postales, which Correos de México publishes: one zone per settlement, with its type as SEPOMEX writes it. Their data migration MUST name the source, its download page and the date of the catalogue's last update; it is the record of where they came from, and SEPOMEX's file is not kept in the repository. Their names are SEPOMEX's, with its accents and capitals, single spaces and no text garbled by an encoding, and settlements whose names differ only in case, accents or spacing are a single zone. Their slugs follow the slug rule of the states and municipalities (see "The database holds only the reference data of the localities it serves (v2)") and are unique within the locality. Four names that SEPOMEX lists with two settlement types keep the name in both zones, and their slugs carry the type: "El Carmen" (`colonia-el-carmen`, `fraccionamiento-el-carmen`), "El Chopo" (`pueblo-el-chopo`, `rancho-el-chopo`), "El Manantial" (`fraccionamiento-el-manantial`, `rancho-el-manantial`) and "Tizayuca" (`unidad-habitacional-tizayuca`, `zona-industrial-tizayuca`). On the public pages, those zones, and any zone whose name repeats in its locality or is the locality's, are told apart by their type, as `public-directory` describes in "A zone whose name repeats in its locality is shown with its settlement type (v2)"; the stored name stays SEPOMEX's.
 
@@ -806,6 +811,11 @@ The prototype's hand-maintained list of colonias MUST be used only to cross-chec
 
 - **WHEN** the admin hides a zone and renames another
 - **THEN** the hidden zone is no longer offered as an option for new registrations, and the renamed zone shows its new name while keeping its slug (see "Catalogues of categories, zones and trades with stable slug (v2)")
+
+#### Scenario: a zone the admin adds
+
+- **WHEN** the admin adds a fraccionamiento to Tizayuca from the panel
+- **THEN** Tizayuca has one more zone, visible, with that type, and the migrations still leave the 105 zones of SEPOMEX
 
 ### Requirement: Businesses, pending edits, reports and the audit log reference their locality, and slugs are unique per locality (v2)
 
@@ -1042,7 +1052,7 @@ The business MUST keep, next to its name and its "¿Qué ofreces?", a version of
 
 ### Requirement: The slugs of the catalogues do not produce ambiguous URLs at the root of a locality (v2)
 
-Added in v2 — source: ADR 0006, ADR 0007.
+Added in v2 — source: ADR 0006, ADR 0007. Amended on 2026-10-18 by EMR-52: the panel runs the same check before it saves a zone the admin adds.
 
 The pages of a locality live under `/{estado}/{municipio}/` (see "Public URLs carry the state and the municipality (v2)" in `public-directory`). There, one path segment is a category (`servicios-del-hogar`), a trade (`plomeria`) or a trade and a zone of that locality joined by a hyphen (`plomeria-haciendas-de-tizayuca`), next to the site's own pages, so every such segment MUST read in only one way. For each locality, with the global categories and trades and all the zones of that locality (hidden ones included, because a slug never changes), the project MUST have an automatic check that fails —before anything is published— when:
 
@@ -1051,7 +1061,7 @@ The pages of a locality live under `/{estado}/{municipio}/` (see "Public URLs ca
 - a composed slug matches a category slug or a trade slug;
 - two different trade and zone pairs produce the same composed slug.
 
-A zone on its own is not a page, so a zone slug that matches a trade slug or a composed slug still reads in one way. The reserved segments are declared once, in the code the check and the routes share: the first segment of the other pages of a locality (`buscar`, `negocio`, `reportar`, `registro`, `editar`), the legal pages (`aviso-de-privacidad`, `terminos`) and the routes at the root of the site (`admin`, `health`). A new page of a locality adds its first segment there. The check names every conflicting segment with all its readings. It runs against the catalogues the migrations leave, so a migration that adds a category, a trade or the zones of a locality fails the tests when it makes a URL ambiguous. Reserving a name is free; migrating an already published URL is not.
+A zone on its own is not a page, so a zone slug that matches a trade slug or a composed slug still reads in one way. The reserved segments are declared once, in the code the check and the routes share: the first segment of the other pages of a locality (`buscar`, `negocio`, `reportar`, `registro`, `editar`), the legal pages (`aviso-de-privacidad`, `terminos`) and the routes at the root of the site (`admin`, `health`). A new page of a locality adds its first segment there. The check names every conflicting segment with all its readings. It runs against the catalogues the migrations leave, so a migration that adds a category, a trade or the zones of a locality fails the tests when it makes a URL ambiguous. The panel runs the same check, with the same reserved segments, on the catalogues as they are plus a zone the admin is about to add, and refuses the zone when one of its readings conflicts (`admin-review`, "The admin can add a zone to a locality (v2)"); a rename never changes a slug, so it needs no check. Reserving a name is free; migrating an already published URL is not.
 
 #### Scenario: today's catalogues are unambiguous
 

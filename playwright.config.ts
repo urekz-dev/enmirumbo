@@ -44,6 +44,7 @@ export default defineConfig({
         "registration.spec.ts",
         "edit.spec.ts",
         "admin.spec.ts",
+        "admin-zones.spec.ts",
         "turnstile-real.spec.ts",
       ],
     },
@@ -97,17 +98,28 @@ export default defineConfig({
       testMatch: "admin.spec.ts",
       dependencies: ["phone, edit"],
     },
+    // The zones screen of the panel (test/e2e/admin-zones.spec.ts): it hides,
+    // renames and adds zones of Tizayuca, which the registration form, the
+    // trade pages and the crawls would see, and narrows the roles of the
+    // local identity for a while, which test/e2e/admin.spec.ts does too, so
+    // it runs alone, after "phone, admin" and before the second locality.
+    {
+      name: "phone, admin zones",
+      use: PHONE,
+      testMatch: "admin-zones.spec.ts",
+      dependencies: ["phone, admin"],
+    },
     // The same site with a second, fictitious active locality
     // (test/e2e/two-localities/): the list of localities at the root, the
     // locality cookie and the link to change municipality, and the crawls
     // again, now through the list. It runs after "phone", "phone, many cards",
-    // "phone, search pages", "phone, registration", "phone, edit" and "phone,
-    // admin", whose tests expect Tizayuca alone, and its teardown removes the
-    // second locality.
+    // "phone, search pages", "phone, registration", "phone, edit", "phone,
+    // admin" and "phone, admin zones", whose tests expect Tizayuca alone, and
+    // its teardown removes the second locality.
     {
       name: "second locality",
       testMatch: "two-localities/second-locality.setup.ts",
-      dependencies: ["phone, admin"],
+      dependencies: ["phone, admin zones"],
       teardown: "no second locality",
     },
     {

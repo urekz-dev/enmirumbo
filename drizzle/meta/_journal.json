@@ -92,6 +92,13 @@
       "when": 1792371113200,
       "tag": "0012_pending_edit_photo",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792378181379,
+      "tag": "0013_zones_manage_add",
+      "breakpoints": true
     }
   ]
 }

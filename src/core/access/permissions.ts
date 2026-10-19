@@ -13,7 +13,7 @@ export const PERMISSIONS = {
   "edits.review": "Aplicar o descartar los cambios que mandan los dueños",
   "reports.manage": "Atender los reportes de los vecinos",
   "links.manage": "Generar enlaces de gestión",
-  "zones.manage": "Ocultar y renombrar colonias",
+  "zones.manage": "Agregar, ocultar y renombrar colonias",
   "audit_log.view": "Ver la bitácora",
   "localities.manage": "Configurar ciudades: WhatsApp de contacto, umbral y activación",
   "users.manage": "Invitar, crear y desactivar usuarios del panel y asignarles roles",
