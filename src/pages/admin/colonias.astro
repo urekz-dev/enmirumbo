@@ -1,0 +1,132 @@
+---
+// The zones of a locality, at /admin/colonias (docs/specs/admin-review.md,
+// "The admin can hide and rename the zones of a locality (v2)", "The admin
+// can add a zone to a locality (v2)", "The panel says that a change takes up
+// to a minute to reach the site (v2)", "The panel filters by locality, and
+// the filter is hidden while there is one (v2)" and "Inside the panel, a user
+// can do only what their roles allow (v2)").
+//
+// Behind the same Access check, headers and layout rules as the rest of the
+// panel (see src/pages/admin/index.astro). Its forms post here, to the
+// screen of their locality, with the actions `admin.setZoneVisibility`,
+// `admin.renameZone` and `admin.addZone` (src/actions/index.ts), which Astro
+// runs before this page; then, through HYPERDRIVE_FRESH:
+//
+// 1. A user who may manage the zones of no locality, or who is not a panel
+//    user, gets the panel's 403 before anything else is read.
+// 2. An action that found no zone or no locality of the user answers the
+//    site's 404; a saved change, a 303 to the screen of its locality with
+//    the row of its zone confirming it, so a reload sends nothing again.
+// 3. Otherwise the zones of the locality the address names (`?localidad=`),
+//    or of the first active one, by display name; a form with errors comes
+//    back with them and with what was typed, with a 400. The query carries
+//    only `localidad` and `listo`. Any method but GET, HEAD or POST gets a
+//    405 with no body.
+import { actions } from "astro:actions";
+import { env, waitUntil } from "cloudflare:workers";
+import ZonesScreen from "../../components/admin/ZonesScreen.astro";
+import { withDb } from "../../core/db/client.ts";
+import { boundedText, formText } from "../../core/forms/text.ts";
+import { localityFilterOptions } from "../../core/review/localities.ts";
+import { queuePath } from "../../core/review/paths.ts";
+import { panelScope, queueLocalities } from "../../core/review/scope.ts";
+import { BACK_TO_QUEUE, FILTER_BY_LOCALITY, localityText } from "../../core/review/texts.ts";
+import { panelZones } from "../../core/zones/manage.ts";
+import { parseZoneId, zonesFormAction, zonesPath } from "../../core/zones/paths.ts";
+import { MAX_ZONE_NAME_LENGTH, type ZonesFailure } from "../../core/zones/rules.ts";
+import { chosenZonesLocality, zonesLocalities } from "../../core/zones/scope.ts";
+import { ZONES_TITLE } from "../../core/zones/texts.ts";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../lib/access/admin-gate.ts";
+import { notFound, seeOther } from "../../lib/locality.ts";
+import { ZONE_FIELDS } from "../../lib/zones.ts";
+
+const admin = Astro.locals.admin;
+// Second line of defense: never render the panel without an identity.
+if (admin === undefined) return forbiddenResponse();
+// Its forms post here; nothing else writes.
+if (!["GET", "HEAD", "POST"].includes(Astro.request.method)) {
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD, POST" } });
+}
+
+const results = {
+  visibility: Astro.getActionResult(actions.admin.setZoneVisibility),
+  rename: Astro.getActionResult(actions.admin.renameZone),
+  add: Astro.getActionResult(actions.admin.addZone),
+};
+const result = results.visibility ?? results.rename ?? results.add;
+const params = Astro.url.searchParams;
+
+if (result?.error?.code === "FORBIDDEN") return forbiddenResponse();
+// What the page shows, unless the action's answer leads elsewhere.
+const settled = result?.error?.code === "NOT_FOUND" || result?.data?.kind === "done";
+const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  const seen = await zonesLocalities(db, admin.email);
+  const locality = chosenZonesLocality(params.getAll("localidad"), seen);
+  if (locality === null) return null;
+  if (settled) return { seen, locality, zones: [], types: [], queue: false };
+  const [zones, panel] = await Promise.all([
+    panelZones(db, locality.code, locality.name),
+    panelScope(db, admin.email),
+  ]);
+  return { seen, locality, ...zones, queue: queueLocalities(panel).length > 0 };
+});
+if (view === null) return forbiddenResponse();
+const { seen, locality } = view;
+
+if (result?.error?.code === "NOT_FOUND") return notFound();
+if (result?.data?.kind === "done") return seeOther(zonesPath(locality.code, result.data.zoneId));
+
+let failure: ZonesFailure | null = null;
+if (result?.error) {
+  // Astro refused the body before the action read it, or saving failed.
+  Astro.response.status = result.error.status >= 400 ? result.error.status : 500;
+  failure = { form: "general" };
+} else if (result?.data?.kind === "invalid") {
+  Astro.response.status = 400;
+  let form = new FormData();
+  try {
+    form = await Astro.request.formData();
+  } catch {
+    // A body that is no form leaves the fields empty.
+  }
+  const typed = boundedText(formText(form, ZONE_FIELDS.name).trim(), MAX_ZONE_NAME_LENGTH);
+  const zoneId = parseZoneId(formText(form, ZONE_FIELDS.zone).trim());
+  failure =
+    results.rename && zoneId !== null
+      ? { form: "rename", zoneId, errors: result.data.errors, name: typed }
+      : {
+          form: "add",
+          errors: result.data.errors,
+          name: typed,
+          type: formText(form, ZONE_FIELDS.type).trim(),
+        };
+}
+
+const options = localityFilterOptions(seen);
+const localityFilter = options.map((option) => ({
+  text: localityText(option),
+  href: zonesPath(option.code),
+  current: option.code === locality.code,
+}));
+const done = result === undefined ? parseZoneId(params.get("listo")) : null;
+---
+
+<BaseLayout title={ZONES_TITLE}>
+  <ZonesScreen
+    localityName={locality.name}
+    zones={view.zones}
+    types={view.types}
+    localityFilter={localityFilter}
+    localityFilterLabel={FILTER_BY_LOCALITY}
+    done={done}
+    failure={failure}
+    actions={{
+      visibility: zonesFormAction(locality.code, actions.admin.setZoneVisibility.queryString),
+      rename: zonesFormAction(locality.code, actions.admin.renameZone.queryString),
+      add: zonesFormAction(locality.code, actions.admin.addZone.queryString),
+    }}
+    queueHref={view.queue ? queuePath() : null}
+    queueText={BACK_TO_QUEUE}
+  />
+</BaseLayout>

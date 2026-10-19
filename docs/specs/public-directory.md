@@ -1479,9 +1479,9 @@ The value of the honeypot field of the report form MUST be trimmed before it is 
 
 ### Requirement: Public pages may show a change up to a minute late (v2)
 
-Added in v2 — source: ADR 0005, decision of 2026-10-14.
+Added in v2 — source: ADR 0005, decision of 2026-10-14. Amended on 2026-10-18 by EMR-52: the admin also adds zones (`admin-review`, "The admin can add a zone to a locality (v2)").
 
-The public pages read through the cached Hyperdrive binding, whose results may be up to 60 seconds old and are not invalidated by writes. So a card the admin publishes, unpublishes, edits or permanently deletes, and a zone the admin hides or renames, MAY keep its previous state on the public pages (listings, counts, the zone filter, the home page, the trade pages, the search results, the card itself and `sitemap.xml`) for up to 60 seconds. After that, every rule of "Only what is published is shown" applies in full; where it says "on the next request" and "without waiting for any cache to expire", this requirement wins and the limit is 60 seconds. The admin panel says so after each of those actions (`admin-review`, "The panel says that a change takes up to a minute to reach the site (v2)").
+The public pages read through the cached Hyperdrive binding, whose results may be up to 60 seconds old and are not invalidated by writes. So a card the admin publishes, unpublishes, edits or permanently deletes, and a zone the admin hides, shows, renames or adds, MAY keep its previous state on the public pages (listings, counts, the zone filter, the home page, the trade pages, the search results, the card itself and `sitemap.xml`) for up to 60 seconds. After that, every rule of "Only what is published is shown" applies in full; where it says "on the next request" and "without waiting for any cache to expire", this requirement wins and the limit is 60 seconds. The admin panel says so after each of those actions (`admin-review`, "The panel says that a change takes up to a minute to reach the site (v2)").
 
 #### Scenario: an unpublished card
 

@@ -19,7 +19,7 @@ import {
   isFixtureState,
   UNSERVED_MUNICIPALITY,
 } from "./fixtures.ts";
-import { slugify } from "./slug.ts";
+import { slugify } from "../../src/core/catalogue/slug.ts";
 
 const STATE = "96";
 const STATE_SLUG = `estado-de-prueba-${STATE}`;

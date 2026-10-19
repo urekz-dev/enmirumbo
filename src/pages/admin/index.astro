@@ -21,6 +21,8 @@
 // 3. Reads "Registros por revisar" and "Negocios reportados" of those
 //    localities, with the clock of this request, and the display names of
 //    their zones.
+// 4. Offers "Administrar colonias" to a user who manages the zones of a
+//    locality (src/core/zones/scope.ts).
 import { env, waitUntil } from "cloudflare:workers";
 import ReviewQueue from "../../components/admin/ReviewQueue.astro";
 import { withDb } from "../../core/db/client.ts";
@@ -34,6 +36,8 @@ import {
 import { businessesPath, queuePath } from "../../core/review/paths.ts";
 import { reportedBusinesses, reviewQueue } from "../../core/review/queue.ts";
 import { narrowScope, panelScope, queueLocalities } from "../../core/review/scope.ts";
+import { zonesPath } from "../../core/zones/paths.ts";
+import { zonesLocalities } from "../../core/zones/scope.ts";
 import {
   ALL_LOCALITIES,
   FILTER_BY_LOCALITY,
@@ -58,11 +62,16 @@ const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => 
   const zoneNames = await zoneNamesByLocality(db, seen);
   const rows = withZoneNames(await reviewQueue(db, narrowed, now), zoneNames);
   const reported = await reportedBusinesses(db, narrowed.reports);
-  return { scope, seen, options, chosen, rows, reported };
+  const zoneLocalities = (await zonesLocalities(db, admin.email)).map(({ code }) => code);
+  const zonesHref =
+    zoneLocalities.length === 0
+      ? null
+      : zonesPath(chosen !== null && zoneLocalities.includes(chosen) ? chosen : null);
+  return { scope, seen, options, chosen, rows, reported, zonesHref };
 });
 if (view === null) return forbiddenResponse();
 
-const { scope, seen, options, chosen, rows, reported } = view;
+const { scope, seen, options, chosen, rows, reported, zonesHref } = view;
 const localityFilter =
   options.length === 0
     ? []
@@ -89,5 +98,6 @@ const localityNames =
     localityFilterLabel={FILTER_BY_LOCALITY}
     localityNames={localityNames}
     listHref={scope.cards.length > 0 ? businessesPath({ locality: chosen }) : null}
+    zonesHref={zonesHref}
   />
 </BaseLayout>

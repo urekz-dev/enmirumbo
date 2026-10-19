@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it } from "vite-plus/test";
 import { SLUG_PATTERN } from "../../src/core/db/schema/checks.ts";
 import { zones } from "../../src/core/db/schema/index.ts";
 import { db } from "./fixtures.ts";
-import { slugify } from "./slug.ts";
+import { slugify } from "../../src/core/catalogue/slug.ts";
 
 interface Row {
   type: string;

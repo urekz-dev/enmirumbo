@@ -21,7 +21,7 @@ import {
 import { PERMISSIONS } from "../../src/core/access/permissions.ts";
 import { SPORTS_CATEGORY_SLUG } from "../../src/core/catalogue/categories.ts";
 import { db, FIRST_FIXTURE_CODE, isFixtureSlug } from "./fixtures.ts";
-import { slugify } from "./slug.ts";
+import { slugify } from "../../src/core/catalogue/slug.ts";
 
 const CATEGORIES = [
   ["Restaurantes y fondas", "restaurantes-y-fondas"],
