@@ -53,12 +53,14 @@ export interface EditForm {
 /**
  * The edit form of the card `businessId` of `locality`, or null when it is
  * not there any more. It is called only with a card a link just opened
- * (src/core/management-link/link.ts).
+ * (src/core/management-link/link.ts), or an authorized panel rectification.
+ * `alsoZoneIds` lets that panel offer its additional hidden catalogue zones.
  */
 export async function editForm(
   db: Db,
   locality: Pick<ServedLocality, "code" | "name">,
   businessId: string,
+  alsoZoneIds: readonly number[] = [],
 ): Promise<EditForm | null> {
   const [card] = await db
     .select(formColumns(businesses))
@@ -72,6 +74,7 @@ export async function editForm(
   const catalogue = await registrationCatalogue(db, locality, [
     card.zoneId,
     waiting?.zoneId ?? null,
+    ...alsoZoneIds,
   ]);
   return { card, waiting: waiting ?? null, catalogue };
 }

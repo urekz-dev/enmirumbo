@@ -1,0 +1,40 @@
+---
+import { env, waitUntil } from "cloudflare:workers";
+import { withDb } from "../../../../core/db/client.ts";
+import { cardToDecide } from "../../../../core/review/decision.ts";
+import { registrationPath } from "../../../../core/review/paths.ts";
+import { RECTIFICATION_SAVED } from "../../../../core/review/texts.ts";
+import { panelScope } from "../../../../core/review/scope.ts";
+import { PUBLIC_DELAY } from "../../../../core/review/texts.ts";
+import BaseLayout from "../../../../layouts/BaseLayout.astro";
+import { forbiddenResponse } from "../../../../lib/access/admin-gate.ts";
+import { notFound } from "../../../../lib/locality.ts";
+const admin = Astro.locals.admin;
+if (admin === undefined) return forbiddenResponse();
+if (Astro.request.method !== "GET" && Astro.request.method !== "HEAD")
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
+const id = Astro.params.id ?? "";
+const access = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  if ((await panelScope(db, admin.email)).cards.length === 0) return { kind: "forbidden" } as const;
+  return cardToDecide(db, { email: admin.email, businessId: id }, "businesses.edit");
+});
+if (access.kind === "forbidden") return forbiddenResponse();
+if (access.kind !== "card") return notFound();
+---
+
+<BaseLayout title={RECTIFICATION_SAVED}>
+  <section class="flex flex-col gap-6 py-4">
+    <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{RECTIFICATION_SAVED}</h1>
+    {access.card.status === "published" && (
+      <p role="status" class="text-sm font-semibold">
+        {PUBLIC_DELAY}
+      </p>
+    )}
+    <a
+      href={registrationPath(id)}
+      class="inline-flex min-h-11 w-fit items-center font-semibold text-action-strong underline underline-offset-4"
+    >
+      Volver al detalle
+    </a>
+  </section>
+</BaseLayout>

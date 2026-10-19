@@ -52,6 +52,7 @@ export default defineConfig({
         "admin-resolutions.spec.ts",
         "admin-removals.spec.ts",
         "admin-users.spec.ts",
+        "admin-rectification.spec.ts",
         "turnstile-real.spec.ts",
       ],
     },
@@ -141,12 +142,20 @@ export default defineConfig({
       testMatch: "admin-removals.spec.ts",
       dependencies: ["phone, admin resolutions"],
     },
+    // Rectification adds published fixture cards, so it runs alone before
+    // user/role management and the second locality.
+    {
+      name: "phone, admin rectification",
+      use: PHONE,
+      testMatch: "admin-rectification.spec.ts",
+      dependencies: ["phone, admin removals"],
+    },
     // User/role management temporarily narrows the local identity's roles.
     {
       name: "phone, admin users",
       use: PHONE,
       testMatch: "admin-users.spec.ts",
-      dependencies: ["phone, admin removals"],
+      dependencies: ["phone, admin rectification"],
     },
     // The same site with a second, fictitious active locality
     // (test/e2e/two-localities/): the list of localities at the root, the
@@ -154,9 +163,8 @@ export default defineConfig({
     // again, now through the list. It runs after "phone", "phone, many cards",
     // "phone, search pages", "phone, registration", "phone, edit", "phone,
     // admin", "phone, admin zones", "phone, admin resolutions" and "phone,
-    // admin removals" and "phone, admin users", whose tests expect Tizayuca
-    // alone, and its teardown
-    // removes the second locality.
+    // admin removals", "phone, admin rectification" and "phone, admin users",
+    // whose tests expect Tizayuca alone. Its teardown removes the second locality.
     {
       name: "second locality",
       testMatch: "two-localities/second-locality.setup.ts",

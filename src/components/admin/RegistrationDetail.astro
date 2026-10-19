@@ -53,6 +53,8 @@ import VerifyButton from "./VerifyButton.astro";
 
 interface Props {
   detail: RegistrationDetail;
+  editHref?: string | null;
+  copyHref?: string | null;
   /** The zone as the admin reads it: its display name, or the free text of "Otra" marked as such. */
   zone: string | null;
   /** Its unattended reports, oldest first; null when the user does not attend reports. */
@@ -74,6 +76,8 @@ interface Props {
 
 const {
   detail,
+  editHref = null,
+  copyHref = null,
   zone,
   reports,
   now,
@@ -229,6 +233,24 @@ const REPORT_NOTICE_ID = "report-notice";
     businessName={detail.name}
     localityName={detail.localityName}
   />
+
+  <div class="flex flex-col gap-3">
+    {editHref && (
+      <a href={editHref} class={`${SECONDARY_BUTTON} w-fit px-5 py-3`}>
+        Editar ficha
+      </a>
+    )}
+    {copyHref && (
+      <a
+        href={copyHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        class={`${SECONDARY_BUTTON} w-fit px-5 py-3`}
+      >
+        Mandar copia de sus datos por WhatsApp
+      </a>
+    )}
+  </div>
 
   <slot />
 </article>

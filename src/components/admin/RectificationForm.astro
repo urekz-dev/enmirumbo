@@ -1,0 +1,45 @@
+---
+// The panel reuses the registration form without its public anti-bot fields.
+import RegistrationForm from "../RegistrationForm.astro";
+import PanelPhoto from "./PanelPhoto.astro";
+import type { RegistrationCatalogue } from "../../core/registration/catalogue.ts";
+import type {
+  RegistrationDraft,
+  RegistrationErrors,
+  GeneralError,
+} from "../../core/registration/submission.ts";
+import { RECTIFICATION_HEADING, RECTIFICATION_WARNING } from "../../core/review/texts.ts";
+interface Props {
+  action: string;
+  catalogue: RegistrationCatalogue;
+  catalogueZoneOnly?: boolean;
+  municipality: string;
+  draft: RegistrationDraft;
+  errors: RegistrationErrors;
+  general: GeneralError | null;
+  waiting: boolean;
+  photoKey: string | null;
+  detailHref: string;
+}
+const { waiting, photoKey, detailHref, ...form } = Astro.props;
+---
+
+<section class="flex flex-col gap-6 py-4">
+  <a
+    href={detailHref}
+    class="inline-flex min-h-11 w-fit items-center font-semibold text-action-strong underline underline-offset-4"
+  >
+    Volver al detalle
+  </a>
+  <h1 class="text-2xl font-bold tracking-tight sm:text-3xl">{RECTIFICATION_HEADING}</h1>
+  {waiting && (
+    <p role="status" class="rounded-lg border border-ink p-4 text-sm font-semibold text-ink">
+      {RECTIFICATION_WARNING}
+    </p>
+  )}
+  <div class="flex flex-col gap-1.5">
+    <p class="text-sm font-semibold">Foto actual</p>
+    <PanelPhoto photoKey={photoKey} alt="Foto actual del negocio" />
+  </div>
+  <RegistrationForm {...form} mode="panel" turnstile={null} />
+</section>

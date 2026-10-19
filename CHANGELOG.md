@@ -7,6 +7,7 @@ All notable changes to this product are documented here. Format: [Keep a Changel
 ### Added
 
 - Panel users and role bundles at `/admin/usuarios` and `/admin/roles`, with global permission checks, activation and assignment management, a concurrent last-super-admin guard, and an accessible panel home for roles without queue permissions (EMR-72).
+- Direct rectification of any card from its panel detail, using the registration form and validation, with optional field and photo removal, locality permissions and atomic contact auditing. Published cards keep a local catalogue zone, with hidden zones available to the admin; cards in review or rejected keep the registration's free-text option. The panel can open WhatsApp with a copy of the card's captured data, trades and privacy notice acceptance, without internal review data or photo addresses.
 
 - Architecture decision records 0001–0018 and the product requirements document.
 - Devlog template.
