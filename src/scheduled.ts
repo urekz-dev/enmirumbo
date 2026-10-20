@@ -16,9 +16,11 @@
 //   so nothing ever waits there and the task does nothing.
 // - `retention-purge`: the purge of the rejected cards 90 days after their
 //   rejection and of the pending edits 30 days after they were resolved
-//   (src/core/review/purge.ts), every run, by each locality's local days,
-//   a bounded amount of work a run. A run that could not purge an item fails,
-//   with counts only, and tries it again the next hour.
+//   (src/core/review/purge.ts), by each locality's local days. Called every
+//   run, it purges only the localities whose local hour is 3 (03:00 in their
+//   own time zone) and does nothing in the others, a bounded amount of work a
+//   run. A run that could not purge an item fails, with counts only, and the
+//   next day's 03:00 run tries it again.
 // - `orphan-photo-sweep`: once a UTC day, lists `photos/` in the environment's
 //   R2 bucket and removes only the photos that no card or pending edit names
 //   and that are older than seven days. A pass that reaches its bound

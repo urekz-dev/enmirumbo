@@ -393,7 +393,7 @@ The migration tree MUST be able to be applied in full on an empty database with 
 
 ### Requirement: Rejected registrations are permanently deleted after 90 days
 
-Amended on 2026-10-19 (EMR-56): the term counts local calendar days in the IANA time zone of the card's locality: a rejection is due from the first moment of the local day that is 90 days after the local day of `rejected_at`, not after 90 times 24 hours. The purge is a task of the hourly job (`deployment`, "Scheduled work runs from one hourly Cron Trigger per environment (v2)") that runs every hour, since a deadline is a local day and a run that failed must try again in the next hour; it does the same deletion as the panel's, photos first, and writes the `purge` entry of the audit log for each card it deletes. A registration that was rejected, corrected and sent again has no rejection date any more, so the purge never takes it; the card is locked from the check of its term to the deletion of its rows, so a resubmission that arrives meanwhile waits and then finds the card gone, never a card that lost its photo to a purge that no longer applied.
+Amended on 2026-10-19 (EMR-56): the term counts local calendar days in the IANA time zone of the card's locality: a rejection is due from the first moment of the local day that is 90 days after the local day of `rejected_at`, not after 90 times 24 hours. The purge is a task of the hourly job (`deployment`, "Scheduled work runs from one hourly Cron Trigger per environment (v2)") that runs once a day for each locality, at 03:00 local time, in the locality's time zone: after midnight, at the lowest traffic, and before the admin's 08:00 daily email, which can report what the night's purge did or could not do. A card is purged by the 03:00 run of the first local day on which it is due. What a run's limits leave, and what failed, waits for the next day's 03:00 run; a day whose 03:00 does not exist because of a daylight saving jump is skipped and its cards go the next day. The purge does the same deletion as the panel's, photos first, and writes the `purge` entry of the audit log for each card it deletes. A registration that was rejected, corrected and sent again has no rejection date any more, so the purge never takes it; the card is locked from the check of its term to the deletion of its rows, so a resubmission that arrives meanwhile waits and then finds the card gone, never a card that lost its photo to a purge that no longer applied.
 
 The system MUST permanently delete —the same real deletion as the ARCO operation, leaving no data recoverable by any query— the businesses in status `rejected` whose rejection date is 90 days old or more, which is the commitment published in the privacy notice (PRD §8). The purge MUST NOT touch any business in another status, nor a rejected one that has not yet reached the deadline, nor a rejected one without a rejection date. It MUST be idempotent: running it twice in a row leaves the database the same and does not fail. It MUST report how many registrations it deleted, without publishing any personal data in that report.
 
@@ -422,6 +422,11 @@ The system MUST permanently delete —the same real deletion as the ARCO operati
 - **WHEN** a card of a locality in UTC-6 was rejected at 23:30 of 19 December local time (05:30 UTC of the 20th)
 - **THEN** it is purged by the first run at or after 00:00 of 19 March local time (06:00 UTC), and not before; a card of a locality in UTC+9 rejected at the same instant is purged by the first run at or after 00:00 of 20 March local time (15:00 UTC of the 19th)
 
+#### Scenario: the purge runs at 03:00 local time
+
+- **WHEN** the hourly job runs at every hour of a day with a card past its term in a locality in UTC-6 and another in a locality in UTC+9
+- **THEN** the first card is purged only by the run at 03:00 in UTC-6 (09:00 UTC), the second only by the run at 03:00 in UTC+9 (18:00 UTC of the day before), and every other run purges nothing and reports zero counts
+
 #### Scenario: a purge is logged
 
 - **WHEN** the purge deletes a rejected card
@@ -435,7 +440,7 @@ The system MUST permanently delete —the same real deletion as the ARCO operati
 #### Scenario: one run does a bounded amount of work
 
 - **WHEN** more rejected cards are past their term than one run purges
-- **THEN** the run purges the oldest ones up to its limit, the rest wait for the next hour and the run does not fail
+- **THEN** the run purges the oldest ones up to its limit, the rest wait for the next day's run and the run does not fail
 
 #### Scenario: idempotent purge
 
@@ -956,9 +961,9 @@ Added in v2 — source: PRD §4, PRD §7, ADR 0013. Amended on 2026-10-18 by EMR
 
 Amended on 2026-10-19 (EMR-56): SMS verification is not built before the launch, so no registration can be unverified at launch and the 30-day purge of never-verified registrations is deferred. The story that builds SMS verification (E6) MUST add that purge as a task of the hourly job, with its boundary tests in a locality's time zone and its count-only failure report as the other two purges have, and MUST amend this requirement and the PRD then. Until then the model has no unverified state, and the purge takes no registration in `in_review`.
 
-Amended on 2026-10-19 (EMR-56): the term counts local calendar days in the IANA time zone of the edit's locality, and the purge is a task of the hourly job that runs every hour, like the one of rejected registrations. Edits write no entry in the audit log: the log is the log of cards ("The audit log records the destructive actions of the admin (v2)"), and an entry `purge` of a card that stays would say the opposite of what happened.
+Amended on 2026-10-19 (EMR-56): the term counts local calendar days in the IANA time zone of the edit's locality, and the purge is a task of the hourly job that runs once a day for each locality, at 03:00 local time, like the one of rejected registrations (what its limits leave, what failed and a day with no 03:00 wait for the next day's run). Edits write no entry in the audit log: the log is the log of cards ("The audit log records the destructive actions of the admin (v2)"), and an entry `purge` of a card that stays would say the opposite of what happened.
 
-The system MUST permanently delete every pending edit that was applied, discarded or superseded by a newer one when 30 or more local calendar days have passed since its resolution: from the first moment of the local day that is 30 days after the local day of `resolved_at`. A resolved edit's new photo, when it still names one (an edit applied to its card names the card's photo; a discarded or superseded one gave its key up when it was resolved), MUST be deleted first, with the deletion of a photo (objects, then the cache of the media hostname), when no card names it, and MUST stay when a card does. The purge MUST NOT touch an edit still waiting for review or one resolved fewer than 30 local calendar days ago, nor the new photo of an edit that waits. It MUST be idempotent, MUST continue when one edit or photo fails (the edit then stays, is counted as not purged and is tried again by the next run), MUST report counts (purged and not purged) with no personal data, and MUST do a bounded amount of work in each run.
+The system MUST permanently delete every pending edit that was applied, discarded or superseded by a newer one when 30 or more local calendar days have passed since its resolution: from the first moment of the local day that is 30 days after the local day of `resolved_at`. A resolved edit's new photo, when it still names one (an edit applied to its card names the card's photo; a discarded or superseded one gave its key up when it was resolved), MUST be deleted first, with the deletion of a photo (objects, then the cache of the media hostname), when no card names it, and MUST stay when a card does. The purge MUST NOT touch an edit still waiting for review or one resolved fewer than 30 local calendar days ago, nor the new photo of an edit that waits. It MUST be idempotent, MUST continue when one edit or photo fails (the edit then stays, is counted as not purged and is tried again by the next day's run), MUST report counts (purged and not purged) with no personal data, and MUST do a bounded amount of work in each run.
 
 #### Scenario: resolved edits past the term
 

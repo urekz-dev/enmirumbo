@@ -10,11 +10,12 @@
 // deletion.ts) and the task of the hourly job that runs them
 // (src/scheduled.ts), against the database and the local media bucket.
 //
-// The purges act on the whole database, so every run is in the first half of
-// March 2026 and every item this file purges was rejected or resolved before
-// it, months before any other file's: the rows of the files that run at the
-// same time are never due. Locality A is in Mexico City's time zone (UTC-6,
-// no daylight saving time) and B in Tokyo's (UTC+9). The state is the
+// The purges act on the whole database, so every run is in February or March
+// 2026 and every item this file purges was rejected or resolved before it,
+// months before any other file's: the rows of the files that run at the same
+// time are never due. The task purges at 03:00 local time of a locality, so
+// a run is at 09:00 UTC for A, which is in Mexico City's time zone (UTC-6, no
+// daylight saving time), and at 18:00 UTC for B, which is in Tokyo's (UTC+9). The state is the
 // fictitious 71 (test/worker/fixtures.ts); its photos are removed after.
 import { createScheduledController } from "cloudflare:test";
 import { env } from "cloudflare:workers";
@@ -227,15 +228,16 @@ const NONE = { cardsPurged: 0, cardsNotPurged: 0, editsPurged: 0, editsNotPurged
 
 describe("Rejected registrations are permanently deleted after 90 days", () => {
   // Rejected at 23:30 of 19 December in Mexico City (05:30 UTC of the 20th):
-  // 90 local days later is 19 March, which starts at 06:00 UTC.
+  // 90 local days later is 19 March, so the first 03:00 local time that finds
+  // it due is the one of the 19th, 09:00 UTC.
   const REJECTED = "2025-12-20T05:30:00Z";
 
-  it("is due from the start of the local day 90 days after the local day of the rejection", async () => {
+  it("is due from the local day 90 days after the local day of the rejection, at 03:00", async () => {
     const id = await rejected(REJECTED);
-    expect(await run("2026-03-19T05:59:59Z")).toEqual(NONE);
+    expect(await run("2026-03-18T09:00:00Z")).toEqual(NONE);
     expect(await exists(id)).toBe(true);
 
-    expect(await run("2026-03-19T06:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
+    expect(await run("2026-03-19T09:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
     expect(await exists(id)).toBe(false);
   });
 
@@ -243,28 +245,64 @@ describe("Rejected registrations are permanently deleted after 90 days", () => {
     // 90 times 24 hours after the rejection is 05:30 UTC of 20 March, and the
     // UTC day 90 days after the 20th is 20 March too: both a day later.
     const id = await rejected(REJECTED);
-    await run("2026-03-19T12:00:00Z");
+    await run("2026-03-19T09:00:00Z");
     expect(await exists(id)).toBe(false);
   });
 
-  it("another locality counts by its own time zone", async () => {
-    // The same instant is 14:30 of 20 December in Tokyo: due at 00:00 JST of
-    // 20 March, which is 15:00 UTC of the 19th.
+  it("another locality counts by its own time zone and is purged at its own 03:00", async () => {
+    // The same instant is 14:30 of 20 December in Tokyo: due on 20 March
+    // there, whose 03:00 JST is 18:00 UTC of the 19th. A is due on the 19th.
     const inA = await rejected(REJECTED);
     const inB = await rejectedInB(REJECTED);
-    expect(await run("2026-03-19T14:59:59Z")).toEqual({ ...NONE, cardsPurged: 1 });
+    // 03:00 JST of the 19th: B's hour, but not its day yet.
+    expect(await run("2026-03-18T18:00:00Z")).toEqual(NONE);
+    // 03:00 in Mexico City of the 19th: A's hour and day, and B's is 18:00.
+    expect(await run("2026-03-19T09:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
     expect(await exists(inA)).toBe(false);
     expect(await exists(inB)).toBe(true);
 
-    // The other way round: B is ahead of UTC and A behind it.
-    expect(await run("2026-03-19T15:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
+    expect(await run("2026-03-19T18:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
     expect(await exists(inB)).toBe(false);
   });
 
+  it("is purged at 03:00 local time and at no other local hour, edits too", async () => {
+    const inA = await rejected("2025-12-01T12:00:00Z");
+    const inB = await rejectedInB("2025-12-01T12:00:00Z");
+    const publishedInB = await insertBusiness(f, {
+      status: "published",
+      publishedAt: at("2025-11-02T12:00:00Z"),
+      localityCode: f.localityB,
+      zoneId: f.zoneB,
+    });
+    const editInA = await resolved(await published(), "2026-01-01T12:00:00Z");
+    const editInB = await resolved(
+      publishedInB,
+      "2026-01-01T12:00:00Z",
+      "applied",
+      {},
+      f.localityB,
+    );
+    const reports = new Map<number, unknown>();
+    for (let hour = 0; hour < 24; hour++) {
+      const now = `2026-03-10T${String(hour).padStart(2, "0")}:00:00Z`;
+      reports.set(hour, await run(now));
+    }
+    // 03:00 in Mexico City is 09:00 UTC, and 03:00 in Tokyo is 18:00 UTC of the day before.
+    for (const [hour, report] of reports) {
+      if (hour === 9) expect(report).toEqual({ ...NONE, cardsPurged: 1, editsPurged: 1 });
+      else if (hour === 18) expect(report).toEqual({ ...NONE, cardsPurged: 1, editsPurged: 1 });
+      else expect(report).toEqual(NONE);
+    }
+    expect(await exists(inA)).toBe(false);
+    expect(await exists(inB)).toBe(false);
+    expect(await editExists(editInA)).toBe(false);
+    expect(await editExists(editInB)).toBe(false);
+  });
+
   it("a card of 89 days stays and one of 91 days goes", async () => {
-    const young = await rejected("2025-12-21T18:00:00Z");
+    const young = await rejected("2025-12-20T18:00:00Z");
     const old = await rejected("2025-12-17T18:00:00Z");
-    expect(await run("2026-03-19T18:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
+    expect(await run("2026-03-19T09:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
     expect(await exists(young)).toBe(true);
     expect(await exists(old)).toBe(false);
   });
@@ -290,7 +328,7 @@ describe("Rejected registrations are permanently deleted after 90 days", () => {
         await env.MEDIA.delete(keys);
       },
     });
-    expect(await run("2026-03-10T12:00:00Z", t.bucket)).toEqual({ ...NONE, cardsPurged: 1 });
+    expect(await run("2026-03-10T09:00:00Z", t.bucket)).toEqual({ ...NONE, cardsPurged: 1 });
 
     expect(seen).toEqual([true, true]);
     expect(await exists(id)).toBe(false);
@@ -311,7 +349,7 @@ describe("Rejected registrations are permanently deleted after 90 days", () => {
       name: "Nombre Secreto de Prueba",
       photoKey: await storedPhoto(),
     });
-    await run("2026-03-10T12:00:00Z");
+    await run("2026-03-10T09:00:00Z");
     const entries = await auditOf(id);
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
@@ -337,10 +375,10 @@ describe("Rejected registrations are permanently deleted after 90 days", () => {
     const ids = [
       await published(),
       await insertBusiness(f, { registeredAt: at("2025-11-01T12:00:00Z") }),
-      await rejected("2026-02-20T12:00:00Z"),
+      await rejected("2026-02-20T09:00:00Z"),
       await rejected("2026-03-09T12:00:00Z"),
     ];
-    expect(await run("2026-03-10T12:00:00Z")).toEqual(NONE);
+    expect(await run("2026-03-10T09:00:00Z")).toEqual(NONE);
     for (const id of ids) expect(await exists(id)).toBe(true);
   });
 
@@ -358,7 +396,7 @@ describe("Rejected registrations are permanently deleted after 90 days", () => {
         })
         .where(eq(businesses.id, id)),
     );
-    expect(await run("2026-03-10T12:00:00Z")).toEqual(NONE);
+    expect(await run("2026-03-10T09:00:00Z")).toEqual(NONE);
     expect(await exists(id)).toBe(true);
     expect(await auditOf(id)).toEqual([]);
   });
@@ -374,7 +412,7 @@ describe("Rejected registrations are permanently deleted after 90 days", () => {
     );
     const t = testBucket();
     expect(
-      await db((tx) => purgeRejectedCard(tx, id, at("2026-03-10T12:00:00Z"), t.bucket)),
+      await db((tx) => purgeRejectedCard(tx, id, at("2026-03-10T09:00:00Z"), t.bucket)),
     ).toEqual({ kind: "not-due" });
     expect(await exists(id)).toBe(true);
     expect(await objectsOf(photo)).toHaveLength(2);
@@ -399,42 +437,43 @@ describe("Rejected registrations are permanently deleted after 90 days", () => {
         await env.MEDIA.delete(keys);
       },
     });
-    expect(await run("2026-03-10T12:00:00Z", t.bucket)).toEqual({ ...NONE, cardsPurged: 1 });
+    expect(await run("2026-03-10T09:00:00Z", t.bucket)).toEqual({ ...NONE, cardsPurged: 1 });
     expect(await resubmission).toEqual([]);
     expect(await exists(id)).toBe(false);
   });
 
   it("is idempotent: the second run deletes nothing, fails nothing and says zero", async () => {
     const id = await rejected("2025-12-01T12:00:00Z");
-    expect(await run("2026-03-10T12:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
-    expect(await run("2026-03-10T12:00:00Z")).toEqual(NONE);
+    expect(await run("2026-03-10T09:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
+    expect(await run("2026-03-10T09:00:00Z")).toEqual(NONE);
     expect(await auditOf(id)).toHaveLength(1);
   });
 });
 
 describe("Applied, discarded and superseded pending edits are purged after 30 days (v2)", () => {
   // Resolved at 23:30 of 8 January in Mexico City (05:30 UTC of the 9th): due
-  // at the start of 7 February, 06:00 UTC.
+  // on 7 February, so the first 03:00 local time that finds it due is the one
+  // of the 7th, 09:00 UTC.
   const RESOLVED = "2026-01-09T05:30:00Z";
 
-  it("purges applied, discarded and superseded edits from the start of the local day 30 days later", async () => {
+  it("purges applied, discarded and superseded edits from the local day 30 days later, at 03:00", async () => {
     const id = await published();
     const edits = [
       await resolved(id, RESOLVED, "applied"),
       await resolved(id, RESOLVED, "discarded"),
       await resolved(id, RESOLVED, "superseded"),
     ];
-    expect(await run("2026-02-07T05:59:59Z")).toEqual(NONE);
+    expect(await run("2026-02-06T09:00:00Z")).toEqual(NONE);
     for (const edit_ of edits) expect(await editExists(edit_)).toBe(true);
 
-    expect(await run("2026-02-07T06:00:00Z")).toEqual({ ...NONE, editsPurged: 3 });
+    expect(await run("2026-02-07T09:00:00Z")).toEqual({ ...NONE, editsPurged: 3 });
     for (const edit_ of edits) expect(await editExists(edit_)).toBe(false);
     // The card is unchanged, and no entry says an edit was purged.
     expect(await exists(id)).toBe(true);
     expect(await auditOf(id)).toEqual([]);
   });
 
-  it("another locality counts by its own time zone", async () => {
+  it("another locality counts by its own time zone and is purged at its own 03:00", async () => {
     const inA = await published();
     const inB = await insertBusiness(f, {
       status: "published",
@@ -442,13 +481,17 @@ describe("Applied, discarded and superseded pending edits are purged after 30 da
       localityCode: f.localityB,
       zoneId: f.zoneB,
     });
-    // 14:30 of 8 January in Tokyo; due at 00:00 JST of 7 February, 15:00 UTC of the 6th.
+    // 23:30 of 8 January in Tokyo (08:30 in Mexico City): due on 7 February in both.
     const a = await resolved(inA, "2026-01-08T14:30:00Z");
     const b = await resolved(inB, "2026-01-08T14:30:00Z", "applied", {}, f.localityB);
-    expect(await run("2026-02-06T14:59:59Z")).toEqual(NONE);
-    expect(await run("2026-02-06T15:00:00Z")).toEqual({ ...NONE, editsPurged: 1 });
+    // 03:00 in Mexico City of the 6th: A's hour, not its day yet.
+    expect(await run("2026-02-06T09:00:00Z")).toEqual(NONE);
+    // 03:00 JST of the 7th: B's own, and A's is 12:00.
+    expect(await run("2026-02-06T18:00:00Z")).toEqual({ ...NONE, editsPurged: 1 });
     expect(await editExists(b)).toBe(false);
     expect(await editExists(a)).toBe(true);
+    expect(await run("2026-02-07T09:00:00Z")).toEqual({ ...NONE, editsPurged: 1 });
+    expect(await editExists(a)).toBe(false);
   });
 
   it("leaves an edit that is still waiting and one resolved 29 days ago", async () => {
@@ -456,7 +499,7 @@ describe("Applied, discarded and superseded pending edits are purged after 30 da
     const other = await published();
     const waiting = await edit(id, { status: "pending", createdAt: at("2025-12-20T12:00:00Z") });
     const recent = await resolved(other, "2026-01-12T12:00:00Z");
-    expect(await run("2026-02-10T12:00:00Z")).toEqual(NONE);
+    expect(await run("2026-02-10T09:00:00Z")).toEqual(NONE);
     expect(await editExists(waiting)).toBe(true);
     expect(await editExists(recent)).toBe(true);
   });
@@ -469,7 +512,7 @@ describe("Applied, discarded and superseded pending edits are purged after 30 da
       newPhotoKey: photo,
     });
     const t = testBucket();
-    expect(await run("2026-02-20T12:00:00Z", t.bucket)).toEqual({ ...NONE, editsPurged: 1 });
+    expect(await run("2026-02-20T09:00:00Z", t.bucket)).toEqual({ ...NONE, editsPurged: 1 });
     expect(await editExists(applied)).toBe(false);
     expect(await objectsOf(photo)).toHaveLength(2);
     expect(t.purged).toEqual([]);
@@ -489,7 +532,7 @@ describe("Applied, discarded and superseded pending edits are purged after 30 da
         await env.MEDIA.delete(keys);
       },
     });
-    expect(await run("2026-02-20T12:00:00Z", t.bucket)).toEqual({ ...NONE, editsPurged: 1 });
+    expect(await run("2026-02-20T09:00:00Z", t.bucket)).toEqual({ ...NONE, editsPurged: 1 });
     expect(seen).toEqual([true]);
     expect(await objectsOf(left)).toEqual([]);
     expect(t.purged.toSorted()).toEqual([
@@ -509,7 +552,7 @@ describe("Applied, discarded and superseded pending edits are purged after 30 da
     });
     const other = await published();
     await resolved(other, RESOLVED);
-    await run("2026-02-20T12:00:00Z");
+    await run("2026-02-20T09:00:00Z");
     expect(await editExists(waiting)).toBe(true);
     expect(await objectsOf(waitingPhoto)).toHaveLength(2);
   });
@@ -517,8 +560,8 @@ describe("Applied, discarded and superseded pending edits are purged after 30 da
   it("is idempotent", async () => {
     const id = await published();
     await resolved(id, RESOLVED);
-    expect(await run("2026-02-20T12:00:00Z")).toEqual({ ...NONE, editsPurged: 1 });
-    expect(await run("2026-02-20T12:00:00Z")).toEqual(NONE);
+    expect(await run("2026-02-20T09:00:00Z")).toEqual({ ...NONE, editsPurged: 1 });
+    expect(await run("2026-02-20T09:00:00Z")).toEqual(NONE);
   });
 });
 
@@ -535,7 +578,7 @@ describe("The scheduled purges report what they could not purge", () => {
     const noPhoto = await rejected("2025-12-02T12:00:00Z");
     const t = testBucket({ remove: down });
 
-    const report = await run("2026-03-10T12:00:00Z", t.bucket);
+    const report = await run("2026-03-10T09:00:00Z", t.bucket);
     expect(report).toEqual({ ...NONE, cardsPurged: 1, cardsNotPurged: 1 });
     expect(retentionPurgeFailure(report)).toBe(
       "1 card(s) purged, 1 not purged, 0 edit(s) purged, 0 not purged",
@@ -549,7 +592,7 @@ describe("The scheduled purges report what they could not purge", () => {
     expect(await objectsOf(photo)).toHaveLength(2);
 
     // The next run, with the store back, purges it.
-    expect(await run("2026-03-10T13:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
+    expect(await run("2026-03-11T09:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
     expect(await exists(stuck)).toBe(false);
     expect(await objectsOf(photo)).toEqual([]);
     for (const line of log.mock.calls.flat()) expect(String(line)).not.toContain(photo);
@@ -564,11 +607,11 @@ describe("The scheduled purges report what they could not purge", () => {
       newPhotoKey: left,
     });
     const other = await resolved(id, "2026-01-02T12:00:00Z");
-    const report = await run("2026-02-20T12:00:00Z", testBucket({ remove: down }).bucket);
+    const report = await run("2026-02-20T09:00:00Z", testBucket({ remove: down }).bucket);
     expect(report).toEqual({ ...NONE, editsPurged: 1, editsNotPurged: 1 });
     expect(await editExists(stuck)).toBe(true);
     expect(await editExists(other)).toBe(false);
-    expect(await run("2026-02-20T13:00:00Z")).toEqual({ ...NONE, editsPurged: 1 });
+    expect(await run("2026-02-21T09:00:00Z")).toEqual({ ...NONE, editsPurged: 1 });
   });
 
   it("a purge of the cache that fails keeps the addresses for the retry and still deletes the card", async () => {
@@ -576,7 +619,7 @@ describe("The scheduled purges report what they could not purge", () => {
     const photo = await storedPhoto();
     const id = await rejected("2025-12-01T12:00:00Z", { photoKey: photo });
     const t = testBucket({ purge: async () => ({ ok: false, failure: "HTTP 503" }) });
-    expect(await run("2026-03-10T12:00:00Z", t.bucket)).toEqual({ ...NONE, cardsPurged: 1 });
+    expect(await run("2026-03-10T09:00:00Z", t.bucket)).toEqual({ ...NONE, cardsPurged: 1 });
     expect(await exists(id)).toBe(false);
     expect(t.deferred.toSorted()).toEqual([
       `${MEDIA}/photos/${photo}/card.webp`,
@@ -597,7 +640,7 @@ describe("The scheduled purges report what they could not purge", () => {
           return typeof value === "function" ? value.bind(target) : value;
         },
       });
-      return runRetentionPurge(broken, at("2026-03-10T12:00:00Z"), testBucket().bucket);
+      return runRetentionPurge(broken, at("2026-03-10T09:00:00Z"), testBucket().bucket);
     });
     expect(report).toEqual({ ...NONE, cardsNotPurged: 1 });
     expect(await exists(id)).toBe(true);
@@ -605,7 +648,7 @@ describe("The scheduled purges report what they could not purge", () => {
       "review: a rejected card could not be purged (PostgreSQL 57P01)",
     ]);
 
-    expect(await run("2026-03-10T13:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
+    expect(await run("2026-03-11T09:00:00Z")).toEqual({ ...NONE, cardsPurged: 1 });
   });
 
   it("the task fails the run with counts only, and reports them when it works", async () => {
@@ -613,7 +656,7 @@ describe("The scheduled purges report what they could not purge", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const photo = await storedPhoto();
     await rejected("2025-12-01T12:00:00Z", { photoKey: photo, name: "Nombre Secreto de Prueba" });
-    const now = at("2026-03-10T12:00:00Z");
+    const now = at("2026-03-10T09:00:00Z");
     const pending: Promise<unknown>[] = [];
     const ctx = { waitUntil: (p: Promise<unknown>) => pending.push(p) };
     const controller = createScheduledController({ cron: "0 * * * *", scheduledTime: now });
@@ -657,13 +700,13 @@ describe("One run does a bounded amount of work", () => {
     const limits = { cards: 2, edits: 2, photos: 100 };
     const bucket = testBucket().bucket;
     expect(
-      await db((tx) => runRetentionPurge(tx, at("2026-03-10T12:00:00Z"), bucket, limits)),
+      await db((tx) => runRetentionPurge(tx, at("2026-03-10T09:00:00Z"), bucket, limits)),
     ).toEqual({ ...NONE, cardsPurged: 2 });
     expect(await exists(oldest)).toBe(false);
     expect(await exists(middle)).toBe(false);
     expect(await exists(newest)).toBe(true);
     expect(
-      await db((tx) => runRetentionPurge(tx, at("2026-03-10T13:00:00Z"), bucket, limits)),
+      await db((tx) => runRetentionPurge(tx, at("2026-03-11T09:00:00Z"), bucket, limits)),
     ).toEqual({ ...NONE, cardsPurged: 1 });
   });
 
@@ -675,7 +718,7 @@ describe("One run does a bounded amount of work", () => {
     const limits = { cards: 2, edits: 2, photos: 100 };
     const bucket = testBucket().bucket;
     expect(
-      await db((tx) => runRetentionPurge(tx, at("2026-03-10T12:00:00Z"), bucket, limits)),
+      await db((tx) => runRetentionPurge(tx, at("2026-03-10T09:00:00Z"), bucket, limits)),
     ).toEqual({ ...NONE, editsPurged: 2 });
     expect(await editExists(first)).toBe(false);
     expect(await editExists(second)).toBe(false);
@@ -692,7 +735,7 @@ describe("One run does a bounded amount of work", () => {
     const limits = { cards: 20, edits: 20, photos: 2 };
     const bucket = testBucket().bucket;
     expect(
-      await db((tx) => runRetentionPurge(tx, at("2026-03-10T12:00:00Z"), bucket, limits)),
+      await db((tx) => runRetentionPurge(tx, at("2026-03-10T09:00:00Z"), bucket, limits)),
     ).toEqual({ ...NONE, cardsPurged: 2 });
     expect(await exists(ids[2]!)).toBe(true);
   });

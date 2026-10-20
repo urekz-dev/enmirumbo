@@ -4,7 +4,8 @@
 // "The scheduled purges report what they could not purge"; docs/specs/
 // deployment.md, "Scheduled work runs from one hourly Cron Trigger per
 // environment (v2)" and "Permanent deletion refuses to claim it deleted what
-// it did not delete"). Two purges, run in this order on every run:
+// it did not delete"). Two purges, run in this order on every run, for the
+// localities whose local hour is PURGE_LOCAL_HOUR:
 //
 // 1. Rejected cards 90 days after their rejection: the panel's permanent
 //    deletion (purgeRejectedCard, ./deletion.ts), photos first, with an entry
@@ -19,26 +20,33 @@
 //
 // The term counts local calendar days in the IANA time zone of the item's
 // locality: an item is due from the first moment of the local day that is
-// 90 (30) days after the local day of its rejection (resolution). The purges
-// run every hour and need no local hour of their own: a run that cannot
-// purge something leaves it for the next hour, and nothing is decided by the
-// hour of the day.
+// 90 (30) days after the local day of its rejection (resolution), and is
+// purged by the run of the first 03:00 local time at or after that moment.
+//
+// The task is called every hour and each run purges only the items of the
+// localities whose local hour at the time it was scheduled for is 3, by their
+// own time zone: after midnight, at the lowest traffic, and before the admin's
+// 08:00 email (EMR-55), which can report what the night's purge did or could
+// not do. In every other hour the run does nothing and reports zero counts. A
+// day whose 03:00 does not exist because of a daylight saving jump is skipped,
+// and its items go the next day. What a run's bounds leave, and what failed,
+// waits for the next day's 03:00 run.
 //
 // One run does a bounded amount of work, so it stays within a Worker's
 // limits (Workers Free: 50 subrequests, and each photo deleted is a request
 // to Cloudflare's cache API; the budget the hourly run shares among its tasks
 // is written in src/scheduled.ts): at most MAX_CARDS_PER_RUN cards and
 // MAX_EDITS_PER_RUN edits, and no new item once MAX_PHOTOS_PER_RUN photos
-// were deleted. What is left waits for the next hour, oldest first. An item
+// were deleted. What is left waits for the next day, oldest first. An item
 // that failed also waits, and counts among those not purged; a stuck item
-// keeps its place in the order, so the run fails every hour until someone
+// keeps its place in the order, so the run fails every day until someone
 // looks at it, which is the point of failing.
 //
 // The report is counts only, as a task's report is (src/scheduled.ts): it is
 // what the admin's daily email (EMR-55) can add to its text.
 //
 // Binding: HYPERDRIVE_FRESH.
-import { and, asc, eq, isNotNull, ne, sql, type SQL } from "drizzle-orm";
+import { type AnyColumn, and, asc, eq, isNotNull, ne, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../db/client.ts";
 import { failureKind } from "../db/failure.ts";
 import { businesses, pendingEdits } from "../db/schema/index.ts";
@@ -57,6 +65,19 @@ export const MAX_EDITS_PER_RUN = 20;
 
 /** The photos after which a run starts no new item. */
 export const MAX_PHOTOS_PER_RUN = 15;
+
+/** The local hour at which a locality's purges run. */
+export const PURGE_LOCAL_HOUR = 3;
+
+/** Whether it is `PURGE_LOCAL_HOUR` at `at` in the time zone of the locality `localityCode`. */
+function atPurgeHour(localityCode: AnyColumn, at: Date): SQL {
+  const now = at.toISOString();
+  return sql`exists (
+    select 1 from localities l
+    where l.code = ${localityCode}
+      and extract(hour from ${now}::timestamptz at time zone l.time_zone) = ${PURGE_LOCAL_HOUR}::int
+  )`;
+}
 
 /** What the purges did in one run, as counts. */
 export interface RetentionPurgeReport extends Record<string, number> {
@@ -176,7 +197,8 @@ function countingBucket(bucket: MediaBucket): { bucket: MediaBucket; deleted: ()
 
 /**
  * The purges of the rejected cards and of the resolved edits that are due at
- * `now` (the time the job was scheduled for), within one run's limits.
+ * `now` (the time the job was scheduled for) in the localities where it is
+ * 03:00, within one run's limits.
  */
 export async function runRetentionPurge(
   db: Db,
@@ -200,6 +222,7 @@ export async function runRetentionPurge(
         eq(businesses.status, "rejected"),
         isNotNull(businesses.rejectedAt),
         rejectionOlderThan(REJECTED_RETENTION_DAYS, now),
+        atPurgeHour(businesses.localityCode, now),
       ),
     )
     .orderBy(asc(businesses.rejectedAt), asc(businesses.id))
@@ -214,7 +237,7 @@ export async function runRetentionPurge(
   const edits = await db
     .select({ id: pendingEdits.id })
     .from(pendingEdits)
-    .where(purgeableEdit(now))
+    .where(and(purgeableEdit(now), atPurgeHour(pendingEdits.localityCode, now)))
     .orderBy(asc(pendingEdits.resolvedAt), asc(pendingEdits.id))
     .limit(limits.edits);
   for (const { id } of edits) {
