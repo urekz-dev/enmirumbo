@@ -12,6 +12,7 @@ All notable changes to this product are documented here. Format: [Keep a Changel
 
 ### Changed
 
+- Each deploy checks the catalogue URLs of its target database plus the pending migrations before applying them. The pending migrations run inside a transaction that is rolled back, so the check never changes the database, and a zone the panel added that would take a URL from a new category or trade stops the deploy (EMR-73).
 - The panel navigation offers "Salir" through Cloudflare Access on shared phones. Checkbox and radio controls keep their normal 20px size inside label rows that meet the 44px touch target rule; public registration sizing is unchanged.
 
 - Architecture decision records 0001–0018 and the product requirements document.

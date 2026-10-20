@@ -53,6 +53,16 @@ jobs:
       - name: Check the build
         id: check-build
         run: scripts/deploy/check-build.sh stage
+      # The target database may hold a zone the admin added from the panel, so
+      # the catalogues it already has plus the pending migrations are checked
+      # before anything is applied: the check runs them in a transaction and
+      # rolls it back, and a conflict stops the deploy (docs/specs/data-model.md,
+      # "The slugs of the catalogues do not produce ambiguous URLs at the root
+      # of a locality (v2)").
+      - name: Check the catalogue URLs
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/check-catalogue-urls.ts
       - name: Apply the migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

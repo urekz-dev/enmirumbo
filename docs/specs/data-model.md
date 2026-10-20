@@ -1103,7 +1103,7 @@ The business MUST keep, next to its name and its "¿Qué ofreces?", a version of
 
 ### Requirement: The slugs of the catalogues do not produce ambiguous URLs at the root of a locality (v2)
 
-Added in v2 — source: ADR 0006, ADR 0007. Amended on 2026-10-18 by EMR-52: the panel runs the same check before it saves a zone the admin adds.
+Added in v2 — source: ADR 0006, ADR 0007. Amended on 2026-10-18 by EMR-52: the panel runs the same check before it saves a zone the admin adds. Amended on 2026-10-19 (EMR-73) by decision of the product owner: each deploy runs the check on the target database plus its pending migrations before applying them.
 
 The pages of a locality live under `/{estado}/{municipio}/` (see "Public URLs carry the state and the municipality (v2)" in `public-directory`). There, one path segment is a category (`servicios-del-hogar`), a trade (`plomeria`) or a trade and a zone of that locality joined by a hyphen (`plomeria-haciendas-de-tizayuca`), next to the site's own pages, so every such segment MUST read in only one way. For each locality, with the global categories and trades and all the zones of that locality (hidden ones included, because a slug never changes), the project MUST have an automatic check that fails —before anything is published— when:
 
@@ -1113,6 +1113,8 @@ The pages of a locality live under `/{estado}/{municipio}/` (see "Public URLs ca
 - two different trade and zone pairs produce the same composed slug.
 
 A zone on its own is not a page, so a zone slug that matches a trade slug or a composed slug still reads in one way. The reserved segments are declared once, in the code the check and the routes share: the first segment of the other pages of a locality (`buscar`, `negocio`, `reportar`, `registro`, `editar`), the legal pages (`aviso-de-privacidad`, `terminos`) and the routes at the root of the site (`admin`, `health`). A new page of a locality adds its first segment there. The check names every conflicting segment with all its readings. It runs against the catalogues the migrations leave, so a migration that adds a category, a trade or the zones of a locality fails the tests when it makes a URL ambiguous. The panel runs the same check, with the same reserved segments, on the catalogues as they are plus a zone the admin is about to add, and refuses the zone when one of its readings conflicts (`admin-review`, "The admin can add a zone to a locality (v2)"); a rename never changes a slug, so it needs no check. Reserving a name is free; migrating an already published URL is not.
+
+Because a zone the admin adds is data that no migration carries, the check also guards every deploy. Before `vp run db:migrate`, each deploy workflow runs `scripts/check-catalogue-urls.ts` with the environment's `DATABASE_URL`. The script opens a transaction on the target database, applies the pending migrations inside it, runs `rootUrlConflicts` on every locality with zones (one global check when there is none, so a category and a trade that clash never pass unnoticed), and rolls the transaction back. It stops the deploy, without applying the migrations, when it finds a conflict, naming each conflicting segment, its number of readings and the locality, and never a card's data. Everything, the pending migrations included, happens inside that transaction, so the check leaves the database unchanged whether it passes or fails, and a migration that cannot run inside a transaction fails the check and the deploy. The real migration runs only after the check passed.
 
 #### Scenario: today's catalogues are unambiguous
 
@@ -1143,6 +1145,16 @@ A zone on its own is not a page, so a zone slug that matches a trade slug or a c
 
 - **WHEN** a zone whose slug matches that of a trade is added to a locality
 - **THEN** the check passes: the segment can only be read as the trade
+
+#### Scenario: a zone the admin added conflicts with a pending migration
+
+- **WHEN** the deploy check applies the pending migrations on a target database that holds a zone the panel added, and a new category or trade takes that zone's slug or makes a composed slug read in two ways
+- **THEN** the deploy stops before applying the migrations and names each conflicting segment, its number of readings and its locality
+
+#### Scenario: the deploy check never changes the database
+
+- **WHEN** the deploy check runs on a target database, whether it passes or fails
+- **THEN** every pending migration it applied and every table or schema it created are rolled back, and the database keeps exactly what it had before
 
 ### Requirement: Reproducible migrations that carry the reference data (v2)
 
