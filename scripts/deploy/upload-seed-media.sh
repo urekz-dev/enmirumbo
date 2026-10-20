@@ -66,6 +66,10 @@ export AWS_RESPONSE_CHECKSUM_VALIDATION="when_required"
 count=0
 while IFS=$'\t' read -r key file content_type cache_control bytes md5; do
   [[ "${key}" =~ ^[a-z0-9/._-]+$ ]] && [[ "${key}" != *..* ]] || fail "'${key}' is not a media key"
+  case "${env_name}:${key}" in
+  dev:dev/photos/dev_* | stage:photos/*) ;;
+  *) fail "'${key}' is not a photo of ${env_name}'s folder" ;;
+  esac
   [[ "${file}" != /* ]] && [[ "${file}" != *..* ]] || fail "'${file}' is not a file of ${directory}"
   [ -f "${directory}/${file}" ] || fail "${directory}/${file} is missing"
   aws s3api put-object --endpoint-url "${endpoint}" --bucket "${bucket}" --key "${key}" \

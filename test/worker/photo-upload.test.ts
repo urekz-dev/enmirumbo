@@ -151,6 +151,7 @@ function recordedImages(base: ImagesBinding = env.IMAGES) {
 function recordedBucket(options: { failOn?: string } = {}) {
   const calls = { puts: [] as string[], deletes: [] as string[] };
   const bucket: PhotoServices["bucket"] = {
+    photoFolder: "photos/" as const,
     put: ((key: string, value: Uint8Array, putOptions: R2PutOptions) => {
       calls.puts.push(key);
       if (options.failOn !== undefined && key.endsWith(options.failOn)) {

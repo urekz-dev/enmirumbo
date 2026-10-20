@@ -10,16 +10,21 @@
 // waits on it and it outlives the card.
 import { sql } from "drizzle-orm";
 import { boolean, check, date, pgTable, text, timestamp } from "drizzle-orm/pg-core";
-import { BUSINESS_ID_ALPHABET } from "../../business/id.ts";
-import { PHOTO_KEY_LENGTH, PHOTO_VARIANTS } from "../../photos/photo.ts";
-import { matches } from "./checks.ts";
+import {
+  DEV_PHOTO_KEY_MARKER,
+  DEV_PHOTOS_PREFIX,
+  PHOTOS_PREFIX,
+  PHOTO_RANDOM_KEY_PATTERN,
+  PHOTO_VARIANTS,
+} from "../../photos/photo.ts";
+import { matches, oneOf } from "./checks.ts";
 
 const VARIANT_FILES = Object.values(PHOTO_VARIANTS)
   .map(({ file }) => file.replace(".", "\\."))
   .join("|");
 
-/** An https address of one variant of a photo: `https://<host>/photos/<key>/<variant>.webp`. */
-export const PURGE_URL_PATTERN = `^https://[a-z0-9.-]+/photos/[${BUSINESS_ID_ALPHABET}]{${PHOTO_KEY_LENGTH}}/(${VARIANT_FILES})$`;
+/** An https photo-variant address with the folder matching its stored key. */
+export const PURGE_URL_PATTERN = `^https://[a-z0-9.-]+/(${PHOTOS_PREFIX}${PHOTO_RANDOM_KEY_PATTERN}|${DEV_PHOTOS_PREFIX}${DEV_PHOTO_KEY_MARKER}${PHOTO_RANDOM_KEY_PATTERN})/(${VARIANT_FILES})$`;
 
 export const photoCachePurges = pgTable(
   "photo_cache_purges",
@@ -39,6 +44,14 @@ export const orphanPhotoSweepState = pgTable(
     cursor: text("cursor"),
     // The UTC day on which the last complete pass finished.
     completedOn: date("completed_on", { mode: "string" }),
+    // Null denotes the legacy photos/ scan, so its existing cursor stays valid.
+    photoFolder: text("photo_folder"),
   },
-  (t) => [check("orphan_photo_sweep_state_singleton_check", sql`${t.singleton}`)],
+  (t) => [
+    check("orphan_photo_sweep_state_singleton_check", sql`${t.singleton}`),
+    check(
+      "orphan_photo_sweep_state_folder_check",
+      oneOf(t.photoFolder, [PHOTOS_PREFIX, DEV_PHOTOS_PREFIX]),
+    ),
+  ],
 );

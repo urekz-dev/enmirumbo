@@ -9,8 +9,8 @@ import { businesses, orphanPhotoSweepState, pendingEdits } from "../db/schema/in
 import { removePhoto, type MediaBucket } from "./upload.ts";
 import {
   isPhotoKey,
-  PHOTO_VARIANTS,
-  PHOTO_VARIANT_NAMES,
+  photoKeyOfObject,
+  photoFolder,
   photoObjectKeys,
   PHOTOS_PREFIX,
 } from "./photo.ts";
@@ -63,22 +63,6 @@ const emptyCounts = (): OrphanPhotoSweepCounts => ({
   skipped: 0,
 });
 
-function photoKeyOfObject(objectKey: string): string | null {
-  if (!objectKey.startsWith(PHOTOS_PREFIX)) return null;
-  const relative = objectKey.slice(PHOTOS_PREFIX.length);
-  const separator = relative.indexOf("/");
-  if (separator < 0 || relative.indexOf("/", separator + 1) !== -1) return null;
-  const photoKey = relative.slice(0, separator);
-  const variantFile = relative.slice(separator + 1);
-  if (
-    !isPhotoKey(photoKey) ||
-    !PHOTO_VARIANT_NAMES.some((variant) => PHOTO_VARIANTS[variant].file === variantFile)
-  ) {
-    return null;
-  }
-  return photoKey;
-}
-
 /** Photo keys named by a card or any pending edit, regardless of its status. */
 async function referencedPhotoKeys(
   db: Pick<Db, "select">,
@@ -101,7 +85,7 @@ async function referencedPhotoKeys(
  * A pass starts once per UTC day and continues each following hour until it
  * reaches the end of the listing; stopping at a bound is `continued`, not a
  * failure. A failed page keeps its cursor so the next run retries it
- * (`incomplete`). An object under `photos/` that is not a photo's variant is
+ * (`incomplete`). An object under the owned folder that is not a photo's variant is
  * counted and never touched, and does not hold the cursor back. A completed
  * pass is idempotently skipped for the rest of that UTC day.
  */
@@ -138,19 +122,29 @@ export async function sweepOrphanPhotos(
       .where(eq(orphanPhotoSweepState.singleton, true))
       .for("update");
     if (state === undefined) throw new Error("orphan sweep: state row missing");
-    if (state.cursor === null && state.completedOn === utcDay) {
+    const folder = deletionBucket.photoFolder;
+    const sameFolder = (state.photoFolder ?? PHOTOS_PREFIX) === folder;
+    const completedOn = sameFolder ? state.completedOn : null;
+    let cursor = sameFolder ? (state.cursor ?? undefined) : undefined;
+    if (!sameFolder) {
+      // A reset copies stage's cursor and day into dev. Neither belongs to
+      // this listing; persist the new ownership even if its first page fails.
+      await tx
+        .update(orphanPhotoSweepState)
+        .set({ photoFolder: folder, cursor: null, completedOn: null });
+    }
+    if (cursor === undefined && completedOn === utcDay) {
       counts.skipped = 1;
       return;
     }
 
-    let cursor = state.cursor ?? undefined;
     const seenKeys = new Set<string>();
     while (counts.listedObjects < objectsPerRun && counts.deletedPhotos < photosPerRun) {
       const limit = Math.min(pageSize, objectsPerRun - counts.listedObjects);
       let page: R2Objects;
       try {
         page = await media.list({
-          prefix: PHOTOS_PREFIX,
+          prefix: deletionBucket.photoFolder,
           limit,
           ...(cursor === undefined ? {} : { cursor }),
         });
@@ -170,7 +164,7 @@ export async function sweepOrphanPhotos(
       const pageObjects = new Map<string, R2Object[]>();
       for (const object of page.objects) {
         const key = photoKeyOfObject(object.key);
-        if (key === null) {
+        if (key === null || photoFolder(key) !== deletionBucket.photoFolder) {
           counts.invalidObjects += 1;
           continue;
         }
@@ -218,6 +212,7 @@ export async function sweepOrphanPhotos(
         }
 
         const removal = await removePhoto(deletionBucket, key);
+        if (removal.kind === "foreign") continue;
         if (removal.kind === "kept") {
           counts.failed += 1;
           pageIncomplete = true;
@@ -249,8 +244,9 @@ export async function sweepOrphanPhotos(
       }
       cursor = page.truncated ? page.cursor : undefined;
       await tx.update(orphanPhotoSweepState).set({
+        photoFolder: folder,
         cursor: cursor ?? null,
-        completedOn: cursor === undefined ? utcDay : state.completedOn,
+        completedOn: cursor === undefined ? utcDay : completedOn,
       });
 
       if (cursor === undefined) {

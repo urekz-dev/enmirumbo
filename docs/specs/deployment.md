@@ -194,6 +194,8 @@ Outside a deployment —the machine of whoever is developing— the local store 
 
 ### Requirement: Permanent deletion refuses to claim it deleted what it did not delete
 
+Amended on 2026-10-19 (EMR-75) by decision of the product owner: the photo deletion rules below apply only to photos owned by this environment. A foreign photo is a successful skip: the rows are deleted as usual, its objects and cached addresses stay untouched, and no result claims those objects were deleted. This includes cards and pending edits copied from `stage` to `dev`, the retention purges, replacements, removals and discards.
+
 When a business has a photo and the storage cannot be reached, the permanent deletion (ARCO, PRD §8) MUST NOT run: the row MUST NOT be touched and whoever requested it MUST receive a message saying that it was **not** deleted, why, and that it can be retried. The files MUST be attempted BEFORE the row, or in the same unit of work; NEVER the row first, because then the photo —personal data— stays alive with no row naming it, out of reach even of the orphan sweep.
 
 The opposite risk —the files go and the row survives— is accepted in exchange: that card is left without a photo, which is repairable and visible.
@@ -206,6 +208,11 @@ In the scheduled purge, a registration in that state MUST be counted as not purg
 
 - **WHEN** the admin confirms the permanent deletion of a card with a photo and the storage cannot be reached
 - **THEN** the card still exists complete, and the screen says it was not deleted, that the photo store could not be reached and to check the configuration and try again
+
+#### Scenario: dev deletes a copied stage card
+
+- **WHEN** dev permanently deletes or retention-purges a card whose key belongs to stage
+- **THEN** its rows follow the usual deletion behavior, its photo objects and cache are untouched, no purge is deferred, and no result claims those objects were deleted, including when the row deletion fails
 
 #### Scenario: the card has no photo
 
@@ -478,11 +485,11 @@ Added in v2 — source: ADR 0013, PRD §4. Amended on 2026-10-18 by EMR-42, whic
 
 ### Requirement: The orphan-photo sweep is bounded, resumes and reports what it could not sweep (v2)
 
-Amended on 2026-10-19 (EMR-57) by decision of the product owner: the sweep runs on `stage` and production against that environment's media bucket and database. `dev` has no Cron Trigger. `dev` and `stage` share `enmirumbo-media-dev`, so `stage` may delete a photo uploaded on `dev` when the stage database does not name it and its objects are more than seven days old; this is accepted because `dev` is reset from `stage` on every deploy. The same seven-day grace applies in production, so no upload in flight is swept.
+Amended on 2026-10-19 (EMR-75) by decision of the product owner: each sweep lists only its environment's folder: `dev/photos/` on `dev`, and `photos/` on `stage`, production and the local Worker. This supersedes EMR-57's acceptance of stage sweeping dev uploads: the folders are disjoint, so neither sweep sees the other's objects. `stage` and production keep their hourly Cron Triggers; `dev` has none, and only its own task run on demand can sweep dev uploads left behind by a database reset. The seven-day grace applies everywhere.
 
-The sweep MUST run once per UTC day as a task of the hourly job, using R2 as the source of stored objects and the environment's database as the source of photo references. It MUST list only the `photos/` prefix, page by page, at most 500 objects per run, and delete at most 15 photos per run (at most 30 variant objects). A photo is eligible only when no card in any status names its key, no pending edit in any status names it through `new_photo_key`, and every variant object that exists is older than seven days. A younger variant keeps the whole photo. Deletion MUST go through `deletePhoto` or `removePhoto` with `mediaBucket(env)`, which purges both media-hostname addresses and leaves failed purges to the hourly retry.
+The sweep MUST run once per UTC day as a task of the hourly job, using R2 as the source of stored objects and the environment's database as the source of photo references. It MUST list only its configured photo folder, page by page, at most 500 objects per run, and delete at most 15 photos per run (at most 30 variant objects). A photo is eligible only when no card in any status names its key, no pending edit in any status names it through `new_photo_key`, and every variant object that exists is older than seven days. A younger variant keeps the whole photo. Deletion MUST go through `deletePhoto` or `removePhoto` with `mediaBucket(env)`, which purges both media-hostname addresses and leaves failed purges to the hourly retry.
 
-The sweep MUST keep its R2 continuation cursor and last completed UTC day in the singleton operational row `orphan_photo_sweep_state` (`data-model`). Reaching a bound of a run is not a failure: the run reports `continued`, and the next hourly run MUST resume from the saved cursor until the pass is complete. A failed page MUST leave its cursor unchanged so the next hourly run retries it. After a complete pass, later runs that UTC day MUST skip it. What the sweep could not sweep MUST fail the run visibly and MUST NOT be logged as success: a listing, lookup or deletion that failed, a purge whose addresses could not be kept for the retry, and an object under `photos/` that is no variant of a photo. That object is counted as `invalidObjects` and never deleted, and it does not hold the cursor back, so one stray object never stops the rest of the bucket from being swept; the run fails once a day, when the pass reaches it, until someone removes it. The report MUST contain counts only, shaped for the admin's daily email (EMR-55); no photo key or personal data appears in a log. `dev` may run the task in tests but has no scheduled trigger.
+The sweep MUST keep its R2 continuation cursor, last completed UTC day and their photo folder in the singleton operational row `orphan_photo_sweep_state` (`data-model`). A legacy null folder denotes `photos/`; a different folder, as after a stage-to-dev reset, MUST start a fresh bounded pass without using the copied cursor or completed day, persisting its own folder even if its first page fails. Reaching a bound of a run is not a failure: the run reports `continued`, and the next hourly run MUST resume from the saved cursor until the pass is complete. A failed page MUST leave its cursor unchanged so the next hourly run retries it. After a complete pass, later runs that UTC day MUST skip it. What the sweep could not sweep MUST fail the run visibly and MUST NOT be logged as success: a listing, lookup or deletion that failed, a purge whose addresses could not be kept for the retry, and an object under its configured photo folder that is no variant of a photo. That object is counted as `invalidObjects` and never deleted, and it does not hold the cursor back, so one stray object never stops the rest of the bucket from being swept; the run fails once a day, when the pass reaches it, until someone removes it. The report MUST contain counts only, shaped for the admin's daily email (EMR-55); no photo key or personal data appears in a log. `dev` runs the task only on demand and has no scheduled trigger.
 
 #### Scenario: an orphan
 
@@ -501,7 +508,7 @@ The sweep MUST keep its R2 continuation cursor and last completed UTC day in the
 
 #### Scenario: only the photos prefix
 
-- **WHEN** the bucket contains an object outside `photos/`
+- **WHEN** the bucket contains an object outside the environment's photo folder, including the other environment's photos in the shared bucket
 - **THEN** the sweep neither lists it nor deletes it
 
 #### Scenario: a bounded pass resumes
@@ -511,7 +518,7 @@ The sweep MUST keep its R2 continuation cursor and last completed UTC day in the
 
 #### Scenario: the sweep stops
 
-- **WHEN** listing, a lookup or a deletion fails, or an object that is no photo's variant is found under `photos/`
+- **WHEN** listing, a lookup or a deletion fails, or an object that is no photo's variant is found under the configured photo folder
 - **THEN** the run is reported as failed and logged with counts only; a failed page keeps its cursor for the next hourly run, while the stray object is counted, kept and passed over
 
 #### Scenario: no keys in the report
@@ -647,7 +654,7 @@ The build prerenders the legal pages in a local workerd with the bindings of its
 - `stage` (`deploy-stage.yml`): on every push to `main`, or by hand on `main`. It checks the catalogue URLs, applies the migrations, runs the fictitious seed, uploads the seed's photos and deploys.
 - `prod` (`deploy-prod.yml`): on a tag `vX.Y.Z` (three numbers without leading zeros and nothing after them), or by hand on such a tag. It checks the catalogue URLs, applies the migrations without seeding, deploys, and then creates the GitHub Release of the tag with generated notes; only that job may write to the repository.
 
-On `dev` and `stage` the seed draws its photos into a directory (`data-model`, "The demo seed draws its photos and writes them where its environment serves media (v2)"), and a step of its own uploads them to `enmirumbo-media-dev` through R2's S3 API with an R2 token that can read and write that bucket only. That step gets the token and no database secret; the seed's step gets the database and no token. The upload refuses production, a build of another environment and a build without its `MEDIA` binding, puts each object with its media type, its caching and its Content-MD5, and fails unless R2 then holds each object's size.
+On `dev` and `stage` the seed draws its photos into a directory (`data-model`, "The demo seed draws its photos and writes them where its environment serves media (v2)"), and a step of its own uploads them to `enmirumbo-media-dev` through R2's S3 API with an R2 token that can read and write that bucket only. That step gets the token and no database secret; the seed's step gets the database and no token. The upload refuses production, a build of another environment, a build without its `MEDIA` binding and any object outside the target environment's photo folder, puts each object with its media type, its caching and its Content-MD5, and fails unless R2 then holds each object's size.
 
 After each deploy a smoke test MUST request the site URL and fail unless the home answers 200, following its redirects only over https, with `X-Robots-Tag: noindex` and the security headers on the page the redirects end at, `/aviso-de-privacidad`, a prerendered page that Cloudflare serves without the Worker, answers 200 with `X-Robots-Tag: noindex` and the security headers, and `/robots.txt` closes the site, retrying for about a minute while the new version spreads. The home redirects while one locality is active (`public-directory`, "While there is one active locality, the root redirects to it (v2)"), as on `dev` and `stage` once the fictitious seed turns Tizayuca on. Two deploys of the same environment never run at the same time, and a running deploy is never cancelled.
 
@@ -915,9 +922,11 @@ The admin panel —every response at `/admin` and below, and the admin actions�
 
 ### Requirement: Public media live in R2, in one bucket for production and one for dev and stage (v2)
 
+Amended on 2026-10-19 (EMR-75) by decision of the product owner: dev uploads, seed photos included, live under `dev/photos/<dev_key>/`; stage, production and local photos stay under `photos/<key>/`. The stored key carries the folder, so dev keeps rendering stage photos copied with its database. Existing unmarked keys and their objects stay where they are and belong to stage in the shared bucket. `ENVIRONMENT` selects ownership in `src/lib/`, passed into the core as part of `mediaBucket(env)`; the core never reads configuration.
+
 Added in v2 — source: decision of the product owner, 2026-10-18; ADR 0011 (amended on 2026-10-18), PRD §6.8.
 
-Business photos MUST be stored in a public media bucket of Cloudflare R2: a bucket that holds only public content people or the admin upload, organized by prefix, with the photos under `photos/` (`public-directory`, "The photo of an unpublished business is referenced on no public surface (v2)"; `data-model`, "A photo key is 24 characters of the identifier alphabet, and names two objects under `photos/` (v2)"). Nothing private MUST go in it: the backups keep their own bucket ("Production is backed up every night to a private bucket (v2)"). There MUST be two media buckets: `enmirumbo-media` for production alone, and `enmirumbo-media-dev`, shared by `dev` and `stage`, so that nothing deployed from a branch can reach production's media, and the cards `dev` copies from `stage` point at photos that exist. The Worker binds its environment's bucket as `MEDIA`.
+Business photos MUST be stored in a public media bucket of Cloudflare R2: a bucket that holds only public content people or the admin upload, organized by prefix, with photos under their environment's photo folder (`public-directory`, "The photo of an unpublished business is referenced on no public surface (v2)"; `data-model`, "A photo key is 24 characters of the identifier alphabet, and names two objects under `photos/` (v2)"). Nothing private MUST go in it: the backups keep their own bucket ("Production is backed up every night to a private bucket (v2)"). There MUST be two media buckets: `enmirumbo-media` for production alone, and `enmirumbo-media-dev`, shared by `dev` and `stage`, so that nothing deployed from a branch can reach production's media, and the cards `dev` copies from `stage` point at photos that exist. The Worker binds its environment's bucket as `MEDIA`.
 
 Each bucket MUST be served from its media hostname, a custom domain of the bucket, named as an https origin in the variable `MEDIA_URL` of the environments that use it: `https://media-enmirumbo.urekz.com` for `prod` and `https://media-dev-enmirumbo.urekz.com` for `dev` and `stage`, temporary hostnames under `urekz.com` until `enmirumbo.com` is on Cloudflare (later `media.enmirumbo.com` and `media-dev.enmirumbo.com`); moving them MUST be a change of configuration and never of code. `MEDIA_URL` is the only other origin the content security policy lets images come from. Serving a photo MUST NOT invoke the Worker: Cloudflare serves it from the bucket and its cache, following the `Cache-Control: public, max-age=31536000, immutable` every object carries. The media hostname MUST NOT list the bucket, and the bucket's `r2.dev` URL MUST stay off.
 
@@ -962,6 +971,8 @@ What the Worker writes with `console` is then kept nowhere. Debugging a deployed
 - **THEN** the check of the build refuses it, naming `observability`, and nothing is deployed
 
 ### Requirement: A deleted photo is purged from the cache of the media hostname, and a purge that fails is retried every hour (v2)
+
+Amended on 2026-10-19 (EMR-75) by decision of the product owner: deletion and cache purge reach only the environment's own folder, through the shared photo code. A foreign key is skipped successfully without an R2 delete, a cache purge or a deferred purge; a failed row deletion MUST NOT claim its photo was deleted. Cache-purge URLs follow the folder encoded in the key. The hourly retry selects only addresses of this media hostname and folder before applying its existing batch limits, so addresses copied from stage neither get purged by dev nor consume its batches.
 
 Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-48); ADR 0011, ADR 0013 and ADR 0020, amended. The privacy notice promises a real deletion (`legal-pages`), and every object of a photo carries a year of caching ("Public media live in R2, in one bucket for production and one for dev and stage (v2)"), so Cloudflare's cache of the media hostname keeps serving a photo whose objects are gone from R2 (R2, "Consistency model", read on 2026-10-18). It amends "Permanent deletion refuses to claim it deleted what it did not delete" with what a deletion says when only the cache could not be purged.
 

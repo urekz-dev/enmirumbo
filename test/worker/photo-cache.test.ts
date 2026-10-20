@@ -30,7 +30,7 @@ import {
   purgeCachedUrls,
   retryCachePurges,
 } from "../../src/core/photos/cache.ts";
-import { newPhotoKey, photoObjectKeys } from "../../src/core/photos/photo.ts";
+import { DEV_PHOTOS_PREFIX, newPhotoKey, photoObjectKeys } from "../../src/core/photos/photo.ts";
 import { deletePhoto, type MediaBucket, removePhoto } from "../../src/core/photos/upload.ts";
 import { cachedMediaOrigin, mediaBucket } from "../../src/lib/media-bucket.ts";
 import { IncompleteTask, purgeWaitingPhotos, runScheduledTasks } from "../../src/scheduled.ts";
@@ -104,6 +104,7 @@ function bucketWith(
   remove: R2Bucket["delete"] = (keys) => env.MEDIA.delete(keys),
 ) {
   return {
+    photoFolder: "photos/" as const,
     put: env.MEDIA.put.bind(env.MEDIA) as R2Bucket["put"],
     delete: remove,
     cache,
@@ -120,6 +121,20 @@ function testCache(purge: (urls: readonly string[]) => Promise<PurgeResult>) {
 }
 
 describe("The addresses of a photo", () => {
+  it("dev addresses pass the CHECK, while folder/key mismatches do not", async () => {
+    const key = newPhotoKey(DEV_PHOTOS_PREFIX);
+    const urls = photoCacheUrls(BASE, key);
+    await db((tx) => deferCachePurge(tx, urls));
+    expect(await waiting()).toEqual(urls);
+    for (const invalid of [
+      urls[0]!.replace("dev/photos/", "photos/"),
+      urls[0]!.replace("dev_", ""),
+      urls[0]!.replace("dev/photos/", "stage/photos/"),
+    ]) {
+      expect(await pgErrorCode(() => db((tx) => deferCachePurge(tx, [invalid])))).toBe(PG.check);
+    }
+  });
+
   it("are both variants under the media hostname", () => {
     const key = newPhotoKey();
     expect(photoCacheUrls(BASE, key)).toEqual([
@@ -289,6 +304,27 @@ describe("Deleting a photo purges both of its addresses", () => {
 });
 
 describe("The media bucket of the Worker", () => {
+  it("a failed purge of an owned dev photo keeps its dev addresses for retry", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const key = newPhotoKey(DEV_PHOTOS_PREFIX);
+    for (const object of photoObjectKeys(key))
+      await env.MEDIA.put(object, new Uint8Array([1, 2, 3]));
+    const api = fakeApi(() => apiAnswer(503, false));
+    const bucket = mediaBucket(
+      {
+        ...env,
+        ENVIRONMENT: "dev",
+        MEDIA_URL: BASE,
+        MEDIA_ZONE_ID: ZONE,
+        MEDIA_CACHE_PURGE_TOKEN: crypto.randomUUID(),
+      },
+      api.fetch,
+    );
+    expect(await removePhoto(bucket, key)).toEqual({ kind: "removed", cache: "deferred" });
+    expect(await waiting()).toEqual(photoCacheUrls(BASE, key));
+    expect(filesOf(api.calls[0]!)).toEqual(photoCacheUrls(BASE, key));
+  });
+
   it("locally purges nothing and needs no secret", async () => {
     expect(env.ENVIRONMENT).toBe("local");
     expect(cachedMediaOrigin(env)).toBeNull();
@@ -370,6 +406,54 @@ describe("The photo addresses waiting for their purge are the only thing kept of
 });
 
 describe("The hourly job retries the purges that failed", () => {
+  it("a reset dev database purges only dev URLs, without foreign URLs consuming a batch", async () => {
+    const stageUrls = photoCacheUrls(BASE, newPhotoKey());
+    const devUrls = photoCacheUrls(BASE, newPhotoKey(DEV_PHOTOS_PREFIX));
+    await db((tx) => deferCachePurge(tx, [...stageUrls, ...devUrls]));
+    const purge = vi.fn(async (_urls: readonly string[]): Promise<PurgeResult> => ({ ok: true }));
+    expect(
+      await db((tx) =>
+        retryCachePurges(tx, purge, {
+          batch: 1,
+          requests: 2,
+          scope: { base: BASE, folder: DEV_PHOTOS_PREFIX },
+        }),
+      ),
+    ).toEqual({ purged: 2, waiting: 0, failed: 0 });
+    expect(purge.mock.calls.flat(2).toSorted()).toEqual(devUrls);
+    expect(await waiting()).toEqual(stageUrls);
+
+    await db((tx) => deferCachePurge(tx, devUrls));
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => apiAnswer(200, true));
+    const deployed = {
+      ...env,
+      ENVIRONMENT: "dev",
+      MEDIA_URL: BASE,
+      MEDIA_ZONE_ID: ZONE,
+      MEDIA_CACHE_PURGE_TOKEN: crypto.randomUUID(),
+    };
+    expect(await purgeWaitingPhotos(deployed, { waitUntil: () => {} })).toEqual({
+      purged: 2,
+      waiting: 0,
+    });
+    expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual({ files: devUrls });
+    expect(await waiting()).toEqual(stageUrls);
+
+    await db((tx) => deferCachePurge(tx, devUrls));
+    expect(
+      await purgeWaitingPhotos(
+        { ...deployed, ENVIRONMENT: "stage" },
+        {
+          waitUntil: () => {},
+        },
+      ),
+    ).toEqual({ purged: 2, waiting: 0 });
+    expect(JSON.parse(fetch.mock.calls[1]![1]!.body as string)).toEqual({ files: stageUrls });
+    expect(await waiting()).toEqual(devUrls);
+  });
+
   it("purges what waits, at most 100 addresses a request, and forgets what it purged", async () => {
     const urls = Array.from({ length: 150 }, () => photoCacheUrls(BASE, newPhotoKey())).flat();
     await db((tx) => deferCachePurge(tx, urls));

@@ -18,6 +18,7 @@ import {
   LOCAL_DATABASE_URL,
 } from "../src/core/db/url.ts";
 import { writeLocalSeedMedia, writeSeedMediaDirectory } from "./seed-media.ts";
+import { mediaPhotoFolder } from "../src/lib/media-folder.ts";
 
 const url = process.env["DATABASE_URL"] ?? LOCAL_DATABASE_URL;
 // Typed as string on purpose: `wrangler types` narrows ENVIRONMENT to the local value.
@@ -48,7 +49,11 @@ assertSafeConnectionString(url);
 const client = new pg.Client({ connectionString: url });
 await client.connect();
 try {
-  const report = await seed(drizzle({ client, schema }));
+  const report = await seed(
+    drizzle({ client, schema }),
+    new Date(),
+    mediaPhotoFolder({ ENVIRONMENT: environment }),
+  );
   for (const line of seedSummary(report)) console.log(line);
   const objects = seedPhotoObjects(report.photos);
   if (deployed) {

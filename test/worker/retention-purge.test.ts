@@ -213,6 +213,7 @@ function testBucket(
     },
   });
   const bucket: MediaBucket = {
+    photoFolder: "photos/" as const,
     put: env.MEDIA.put.bind(env.MEDIA) as R2Bucket["put"],
     delete: options.remove ?? ((keys) => env.MEDIA.delete(keys)),
     cache,

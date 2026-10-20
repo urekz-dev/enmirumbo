@@ -166,7 +166,8 @@ async function purgeResolvedEdit(
           .limit(1);
         if (named === undefined) {
           const removal = await removePhoto(bucket, edit.key);
-          if (removal.kind === "kept" || removal.cache === "failed") return "failed";
+          if (removal.kind === "kept" || (removal.kind === "removed" && removal.cache === "failed"))
+            return "failed";
         }
       }
 
@@ -184,6 +185,7 @@ function countingBucket(bucket: MediaBucket): { bucket: MediaBucket; deleted: ()
   let deleted = 0;
   return {
     bucket: {
+      photoFolder: bucket.photoFolder,
       put: bucket.put.bind(bucket) as MediaBucket["put"],
       delete: (keys) => {
         deleted += 1;

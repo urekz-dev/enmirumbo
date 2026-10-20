@@ -35,11 +35,45 @@ import {
   PHOTO_VARIANTS,
   photoObjectKey,
   photoObjectKeys,
+  DEV_PHOTOS_PREFIX,
+  photoKeyInFolder,
 } from "../../src/core/photos/photo.ts";
 import { normalizeText, searchTerms } from "../../src/core/search/normalize.ts";
 import { db, FIRST_FIXTURE_CODE } from "./fixtures.ts";
 
 const NOW = new Date("2026-10-14T18:00:00.000Z");
+
+describe("The seed respects the dev photo folder (EMR-75)", () => {
+  it("new dev seed rows and their objects use dev keys and stay idempotent", async () => {
+    await rolledBack(async (tx) => {
+      const first = await seed(tx, NOW, DEV_PHOTOS_PREFIX);
+      expect(first.photos.map(({ photoKey }) => photoKey).toSorted()).toEqual(
+        SEEDED_PHOTOS.map(({ photoKey }) =>
+          photoKeyInFolder(photoKey, DEV_PHOTOS_PREFIX),
+        ).toSorted(),
+      );
+      expect(
+        seedPhotoObjects(first.photos).every(({ key }) => key.startsWith("dev/photos/dev_")),
+      ).toBe(true);
+      const again = await seed(tx, NOW, DEV_PHOTOS_PREFIX);
+      expect(again.photos).toEqual(first.photos);
+      expect(again.inserted).toBe(0);
+    });
+  });
+
+  it("a dev reset keeps stage seed keys and never rewrites their objects", async () => {
+    await rolledBack(async (tx) => {
+      const stage = await seed(tx, NOW);
+      const dev = await seed(tx, NOW, DEV_PHOTOS_PREFIX);
+      expect(dev.inserted).toBe(0);
+      expect(dev.photos).toEqual([]);
+      const keys = (await seeded(tx)).flatMap(({ photoKey }) =>
+        photoKey === null ? [] : [photoKey],
+      );
+      expect(keys.toSorted()).toEqual(stage.photos.map(({ photoKey }) => photoKey).toSorted());
+    });
+  });
+});
 
 /** The fake businesses with a photo, as the seed reports them. */
 const SEEDED_PHOTOS = FAKE_BUSINESSES.flatMap(({ name, photoKey }, shade) =>

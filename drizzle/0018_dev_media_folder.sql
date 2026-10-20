@@ -1,0 +1,7 @@
+-- destructive-ok: Only the two photo CHECK constraints are replaced with wider forms; no data or column is removed.
+ALTER TABLE "pending_edits" DROP CONSTRAINT "pending_edits_new_photo_check";--> statement-breakpoint
+ALTER TABLE "photo_cache_purges" DROP CONSTRAINT "photo_cache_purges_url_check";--> statement-breakpoint
+ALTER TABLE "orphan_photo_sweep_state" ADD COLUMN "photo_folder" text;--> statement-breakpoint
+ALTER TABLE "pending_edits" ADD CONSTRAINT "pending_edits_new_photo_check" CHECK (("pending_edits"."new_photo_key" IS NULL OR "pending_edits"."photo_change" = 'replace') AND ("pending_edits"."status" <> 'pending' OR "pending_edits"."photo_change" <> 'replace' OR "pending_edits"."new_photo_key" IS NOT NULL) AND "pending_edits"."new_photo_key" ~ '^(dev_)?[23456789abcdefghjkmnpqrstuvwxyz]{24}$');--> statement-breakpoint
+ALTER TABLE "orphan_photo_sweep_state" ADD CONSTRAINT "orphan_photo_sweep_state_folder_check" CHECK ("orphan_photo_sweep_state"."photo_folder" IN ('photos/', 'dev/photos/'));--> statement-breakpoint
+ALTER TABLE "photo_cache_purges" ADD CONSTRAINT "photo_cache_purges_url_check" CHECK ("photo_cache_purges"."url" ~ '^https://[a-z0-9.-]+/(photos/[23456789abcdefghjkmnpqrstuvwxyz]{24}|dev/photos/dev_[23456789abcdefghjkmnpqrstuvwxyz]{24})/(card\.webp|full\.webp)$');

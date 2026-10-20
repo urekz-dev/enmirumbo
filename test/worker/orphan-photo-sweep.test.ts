@@ -23,7 +23,9 @@ import {
   PHOTO_CONTENT_TYPE,
   newPhotoKey,
   photoObjectKeys,
+  DEV_PHOTOS_PREFIX,
 } from "../../src/core/photos/photo.ts";
+import { mediaBucket } from "../../src/lib/media-bucket.ts";
 import { sweepOrphanPhotos, type OrphanPhotoSweepLimits } from "../../src/core/photos/sweep.ts";
 import { IncompleteTask, runOrphanPhotoSweepTask } from "../../src/scheduled.ts";
 import { deletePhoto, type MediaBucket } from "../../src/core/photos/upload.ts";
@@ -107,6 +109,7 @@ function localMediaWithAges(
 
 function localDeletionBucket(purge = vi.fn(async () => "purged" as const)): MediaBucket {
   return {
+    photoFolder: "photos/" as const,
     put: env.MEDIA.put.bind(env.MEDIA) as R2Bucket["put"],
     delete: (keys) => env.MEDIA.delete(keys),
     cache: { purge },
@@ -169,7 +172,7 @@ beforeEach(async () => {
       .where(inArray(businesses.localityCode, [fixture.localityA, fixture.localityB]));
     await tx
       .update(orphanPhotoSweepState)
-      .set({ cursor: null, completedOn: null })
+      .set({ cursor: null, completedOn: null, photoFolder: null })
       .where(eq(orphanPhotoSweepState.singleton, true));
   });
   await env.MEDIA.delete(["outside/photos/not-a-business-photo.webp", STRAY]);
@@ -183,6 +186,110 @@ afterAll(async () => {
 });
 
 describe("The orphan-photo sweep is bounded, age-gated and reference-aware (v2)", () => {
+  it.for([true, false])(
+    "dev starts its own pass after copying stage state (completed=%s)",
+    async (completed) => {
+      const now = new Date();
+      const key = await writePhoto(newPhotoKey(DEV_PHOTOS_PREFIX));
+      await db((tx) =>
+        tx.update(orphanPhotoSweepState).set({
+          photoFolder: "photos/",
+          cursor: completed ? null : "stage-cursor",
+          completedOn: now.toISOString().slice(0, 10),
+        }),
+      );
+      const fetch = vi.fn(async () => Response.json({ success: true }));
+      const bucket = mediaBucket(
+        {
+          ...env,
+          ENVIRONMENT: "dev",
+          MEDIA_URL: "https://sweep.enmirumbo.test",
+          MEDIA_ZONE_ID: "a".repeat(32),
+          MEDIA_CACHE_PURGE_TOKEN: crypto.randomUUID(),
+        },
+        fetch,
+      );
+
+      expect(await sweep(now, await markOld(key), {}, bucket)).toMatchObject({
+        deletedPhotos: 1,
+        skipped: 0,
+        failed: 0,
+      });
+      expect(listingCalls[0]).toMatchObject({ prefix: "dev/photos/" });
+      expect(listingCalls[0]?.cursor).toBeUndefined();
+      expect((await db((tx) => tx.select().from(orphanPhotoSweepState)))[0]).toMatchObject({
+        photoFolder: "dev/photos/",
+        cursor: null,
+        completedOn: now.toISOString().slice(0, 10),
+      });
+      expect(await sweep(now, await markOld(key), {}, bucket)).toMatchObject({ skipped: 1 });
+    },
+  );
+
+  it("a legacy photos/ cursor stays valid, while dev continuations keep their folder", async () => {
+    const first = await writePhoto();
+    const second = await writePhoto();
+    const keys = [first, second].toSorted();
+    const cursor = photoObjectKeys(keys[0]!)[1]!;
+    await db((tx) => tx.update(orphanPhotoSweepState).set({ photoFolder: null, cursor }));
+    const ages = new Map([...(await markOld(first)), ...(await markOld(second))]);
+    expect(await sweep(new Date(), ages)).toMatchObject({ deletedPhotos: 1 });
+    expect(listingCalls[0]?.cursor).toBe(cursor);
+
+    const devKey = await writePhoto(newPhotoKey(DEV_PHOTOS_PREFIX));
+    const devKey2 = await writePhoto(newPhotoKey(DEV_PHOTOS_PREFIX));
+    const bucket: MediaBucket = { ...localDeletionBucket(), photoFolder: DEV_PHOTOS_PREFIX };
+    const devAges = new Map([...(await markOld(devKey)), ...(await markOld(devKey2))]);
+    expect(
+      await sweep(new Date(), devAges, { pageSize: 1, objectsPerRun: 1 }, bucket),
+    ).toMatchObject({ continued: 1, deletedPhotos: 1 });
+    const [state] = await db((tx) => tx.select().from(orphanPhotoSweepState));
+    expect(state?.photoFolder).toBe(DEV_PHOTOS_PREFIX);
+    const calls = listingCalls.length;
+    expect(await sweep(new Date(), devAges, {}, bucket)).toMatchObject({
+      deletedPhotos: 1,
+      continued: 0,
+    });
+    expect(listingCalls[calls]?.cursor).toBe(state?.cursor);
+  });
+
+  it.for(["dev", "stage"])(
+    "%s lists only its own folder in the shared bucket",
+    async (environment) => {
+      const stageKey = await writePhoto();
+      const devKey = await writePhoto(newPhotoKey(DEV_PHOTOS_PREFIX));
+      const ages = new Map([...(await markOld(stageKey)), ...(await markOld(devKey))]);
+      const fetch = vi.fn(async (_url: string, _init: RequestInit) =>
+        Response.json({ success: true }),
+      );
+      const bucket = mediaBucket(
+        {
+          ...env,
+          ENVIRONMENT: environment,
+          MEDIA_URL: "https://sweep.enmirumbo.test",
+          MEDIA_ZONE_ID: "a".repeat(32),
+          MEDIA_CACHE_PURGE_TOKEN: crypto.randomUUID(),
+        },
+        fetch,
+      );
+
+      const counts = await sweep(new Date(), ages, {}, bucket);
+
+      expect(counts).toMatchObject({
+        listedObjects: 2,
+        deletedPhotos: 1,
+        deletedObjects: 2,
+        failed: 0,
+      });
+      expect(listingCalls.every(({ prefix }) => prefix === bucket.photoFolder)).toBe(true);
+      for (const key of photoObjectKeys(environment === "dev" ? stageKey : devKey))
+        expect(await env.MEDIA.head(key)).not.toBeNull();
+      for (const key of photoObjectKeys(environment === "dev" ? devKey : stageKey))
+        expect(await env.MEDIA.head(key)).toBeNull();
+      expect(fetch).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("deletes an orphan older than seven days through the photo cache purge path", async () => {
     const key = await writePhoto();
     const purge = vi.fn(async () => "purged" as const);

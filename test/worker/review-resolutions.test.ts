@@ -311,6 +311,7 @@ function photoDeleter() {
   const deleted: string[] = [];
   const purged: string[] = [];
   const bucket: MediaBucket = {
+    photoFolder: "photos/" as const,
     put: env.MEDIA.put.bind(env.MEDIA) as R2Bucket["put"],
     delete: async (keys) => {
       const photoKey = [keys].flat()[0]?.split("/")[1];

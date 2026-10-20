@@ -28,7 +28,7 @@
 import { asc, inArray, sql } from "drizzle-orm";
 import type { Db } from "../db/client.ts";
 import { photoCachePurges } from "../db/schema/index.ts";
-import { PHOTO_VARIANT_NAMES, photoUrl } from "./photo.ts";
+import { PHOTO_VARIANT_NAMES, photoUrl, type PhotoFolder } from "./photo.ts";
 
 /** Where Cloudflare's API answers. */
 export const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
@@ -197,12 +197,27 @@ export const MAX_PURGE_REQUESTS_PER_RUN = 10;
 export async function retryCachePurges(
   db: Db,
   purge: PurgeUrls,
-  { batch = MAX_PURGE_URLS, requests = MAX_PURGE_REQUESTS_PER_RUN } = {},
+  {
+    batch = MAX_PURGE_URLS,
+    requests = MAX_PURGE_REQUESTS_PER_RUN,
+    scope,
+  }: {
+    batch?: number;
+    requests?: number;
+    scope?: { base: string; folder: PhotoFolder };
+  } = {},
 ): Promise<CachePurgeRetry> {
   const counts: CachePurgeRetry = { purged: 0, waiting: 0, failed: 0 };
+  // A dev database reset copies stage's queue too. Foreign addresses neither
+  // get purged nor consume a batch, and stay for their owning environment.
+  const owned =
+    scope === undefined
+      ? undefined
+      : sql`starts_with(${photoCachePurges.url}, ${`${scope.base}/${scope.folder}`})`;
   const waiting = await db
     .select({ url: photoCachePurges.url })
     .from(photoCachePurges)
+    .where(owned)
     .orderBy(asc(photoCachePurges.recordedAt), asc(photoCachePurges.url))
     .limit(batch * requests);
   for (let start = 0; start < waiting.length; start += batch) {
@@ -218,7 +233,10 @@ export async function retryCachePurges(
     await db.delete(photoCachePurges).where(inArray(photoCachePurges.url, urls));
     counts.purged += urls.length;
   }
-  const [left] = await db.select({ count: sql<number>`count(*)::int` }).from(photoCachePurges);
+  const [left] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(photoCachePurges)
+    .where(owned);
   counts.waiting = left?.count ?? 0;
   return counts;
 }
