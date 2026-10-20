@@ -16,6 +16,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { NodePgQueryResultHKT } from "drizzle-orm/node-postgres";
 import type { PgDatabase } from "drizzle-orm/pg-core";
 import { NOTICE_VERSION } from "../../legal/version.ts";
+import { PHOTOS_PREFIX, photoKeyInFolder, type PhotoFolder } from "../../photos/photo.ts";
 import type * as schema from "../schema/index.ts";
 import {
   businesses,
@@ -148,7 +149,19 @@ const bySlug = (rows: readonly { slug: string; id: number }[]) =>
  * data and its trades. All or nothing, in one transaction. `now` anchors the
  * dates.
  */
-export async function seed(db: SeedDb, now: Date = new Date()): Promise<SeedReport> {
+export async function seed(
+  db: SeedDb,
+  now: Date = new Date(),
+  folder: PhotoFolder = PHOTOS_PREFIX,
+): Promise<SeedReport> {
+  const fakes = FAKE_BUSINESSES.map((fake) =>
+    fake.photoKey === undefined
+      ? fake
+      : {
+          ...fake,
+          photoKey: photoKeyInFolder(fake.photoKey, folder),
+        },
+  );
   return db.transaction(async (tx) => {
     const [locality] = await tx
       .select({ name: municipalities.name })
@@ -181,7 +194,7 @@ export async function seed(db: SeedDb, now: Date = new Date()): Promise<SeedRepo
 
     const inserted = await tx
       .insert(businesses)
-      .values(FAKE_BUSINESSES.map((fake) => businessRow(fake, ids, now)))
+      .values(fakes.map((fake) => businessRow(fake, ids, now)))
       .onConflictDoNothing()
       .returning({ id: businesses.id });
     // Trades only for the businesses inserted now: the seed changes nothing
@@ -193,7 +206,7 @@ export async function seed(db: SeedDb, now: Date = new Date()): Promise<SeedRepo
     // The fake businesses with a photo whose row still carries their key: a
     // row the seed did not insert (a business that took the WhatsApp first)
     // names no seeded photo, so none is written for it.
-    const withPhoto = FAKE_BUSINESSES.flatMap((fake, shade) =>
+    const withPhoto = fakes.flatMap((fake, shade) =>
       fake.photoKey === undefined ? [] : [{ name: fake.name, photoKey: fake.photoKey, shade }],
     );
     const named =

@@ -6,6 +6,9 @@
 // of the media hostname, so deletePhoto and removePhoto
 // (src/core/photos/upload.ts) purge both addresses of every photo they
 // delete.
+// Its photoFolder also limits writes, deletions, sweep listings and cache
+// retries to this environment's photos (EMR-75). Dev still renders copied
+// stage keys, but removing their rows leaves stage's objects and cache alone.
 //
 // - Locally (ENVIRONMENT `local`) the local Worker serves the bucket itself,
 //   under /_media/, with no cache of Cloudflare's in front: nothing is
@@ -30,6 +33,8 @@ import {
   purgeCachedUrls,
 } from "../core/photos/cache.ts";
 import type { MediaBucket } from "../core/photos/upload.ts";
+import { photoFolder, photoKeyOfObject } from "../core/photos/photo.ts";
+import { mediaPhotoFolder } from "./media-folder.ts";
 import type { MediaVars } from "./media.ts";
 import { parseOrigin } from "./site-url.ts";
 
@@ -65,6 +70,14 @@ export function cachePurger(
   fetcher: PurgeRequestOptions["fetch"] = (url, init) => fetch(url, init),
 ): PurgeUrls {
   return (urls) => {
+    const base = cachedMediaOrigin(vars);
+    const folder = mediaPhotoFolder(vars);
+    const owned = urls.filter((url) => {
+      if (base === null || !url.startsWith(`${base}/`)) return false;
+      const key = photoKeyOfObject(url.slice(base.length + 1));
+      return key !== null && photoFolder(key) === folder;
+    });
+    if (owned.length === 0) return Promise.resolve({ ok: true });
     const zoneId = vars.MEDIA_ZONE_ID?.trim() ?? "";
     const token = vars.MEDIA_CACHE_PURGE_TOKEN?.trim() ?? "";
     if (zoneId === "" || token === "") {
@@ -72,7 +85,7 @@ export function cachePurger(
         `photos: MEDIA_ZONE_ID or MEDIA_CACHE_PURGE_TOKEN is not set in the "${vars.ENVIRONMENT ?? "(none)"}" environment, so deleted photos stay in the media hostname's cache until both are set.`,
       );
     }
-    return purgeCachedUrls(urls, { zoneId, token, fetch: fetcher });
+    return purgeCachedUrls(owned, { zoneId, token, fetch: fetcher });
   };
 }
 
@@ -87,6 +100,7 @@ export function mediaBucket(
 ): MediaBucket {
   const bucket = env.MEDIA;
   return {
+    photoFolder: mediaPhotoFolder(env),
     put: bucket.put.bind(bucket) as R2Bucket["put"],
     delete: (keys) => bucket.delete(keys),
     cache: photoCache({

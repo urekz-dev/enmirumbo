@@ -21,7 +21,7 @@
 //   own time zone) and does nothing in the others, a bounded amount of work a
 //   run. A run that could not purge an item fails, with counts only, and the
 //   next day's 03:00 run tries it again.
-// - `orphan-photo-sweep`: once a UTC day, lists `photos/` in the environment's
+// - `orphan-photo-sweep`: once a UTC day, lists the owned photo folder in the environment's
 //   R2 bucket and removes only the photos that no card or pending edit names
 //   and that are older than seven days. A pass that reaches its bound
 //   continues on the next hourly run; a failed page stays at its cursor and
@@ -44,7 +44,13 @@ import { sweepOrphanPhotos } from "./core/photos/sweep.ts";
 import type { MediaBucket } from "./core/photos/upload.ts";
 import { runRegistrationThresholdTask } from "./core/registration/threshold.ts";
 import { retentionPurgeFailure, runRetentionPurge } from "./core/review/purge.ts";
-import { cachePurger, mediaBucket } from "./lib/media-bucket.ts";
+import {
+  cachedMediaOrigin,
+  cachePurger,
+  mediaBucket,
+  type MediaBucketEnv,
+} from "./lib/media-bucket.ts";
+import { mediaPhotoFolder } from "./lib/media-folder.ts";
 
 /** The subrequests to the internet one invocation may make on Workers Free. */
 export const SUBREQUEST_LIMIT = 50;
@@ -66,7 +72,7 @@ export class IncompleteTask extends Error {
 /**
  * One bounded run of the orphan-photo sweep. A run that could not sweep what
  * it reached (a failed listing, lookup or deletion, or an object under
- * `photos/` that is no photo) fails with counts only; stopping at a bound is
+ * the owned folder that is no photo) fails with counts only; stopping at a bound is
  * not a failure, the pass continues next hour.
  */
 export async function runOrphanPhotoSweepTask(
@@ -89,12 +95,14 @@ export async function runOrphanPhotoSweepTask(
 
 /** The retry of the purges that failed, with the environment's zone and token. */
 export async function purgeWaitingPhotos(
-  env: Env,
+  env: MediaBucketEnv,
   ctx: Pick<ExecutionContext, "waitUntil">,
 ): Promise<Record<string, number>> {
   if (env.ENVIRONMENT === "local") return { purged: 0, waiting: 0 };
+  const base = cachedMediaOrigin(env);
+  if (base === null) return { purged: 0, waiting: 0 };
   const { purged, waiting, failed } = await withDb(env, "HYPERDRIVE_FRESH", ctx, (db) =>
-    retryCachePurges(db, cachePurger(env)),
+    retryCachePurges(db, cachePurger(env), { scope: { base, folder: mediaPhotoFolder(env) } }),
   );
   if (failed > 0) {
     throw new IncompleteTask(`${purged} purged, ${waiting} waiting, ${failed} failed purge(s)`);

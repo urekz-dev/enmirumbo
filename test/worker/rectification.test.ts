@@ -47,6 +47,7 @@ let f: Fixture;
 const written = new Set<string>();
 const purged: string[][] = [];
 const bucket: MediaBucket = {
+  photoFolder: "photos/" as const,
   put: (key, body, options) => {
     written.add(key);
     return env.MEDIA.put(key, body, options);

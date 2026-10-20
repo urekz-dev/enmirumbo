@@ -49,6 +49,9 @@ import {
   PHOTO_VARIANTS,
   photoObjectKey,
   photoObjectKeys,
+  photoFolder,
+  photoKeyInFolder,
+  type PhotoFolder,
   type PhotoVariant,
 } from "./photo.ts";
 
@@ -167,6 +170,8 @@ const OPENING_SLOTS = new PhotoSlots();
  * that serves it: what storing and deleting a photo need of it.
  */
 export interface MediaBucket extends Pick<R2Bucket, "put" | "delete"> {
+  /** The only folder this environment writes, deletes and sweeps. */
+  readonly photoFolder: PhotoFolder;
   /** Purges the cached copies of a photo once its objects are deleted. */
   readonly cache: PhotoCache;
 }
@@ -282,7 +287,7 @@ export async function storePhoto(
     return { kind: "rejected", error: "failed" };
   }
 
-  const key = newKey();
+  const key = photoKeyInFolder(newKey(), services.bucket.photoFolder);
   try {
     for (const variant of ["full", "card"] as const satisfies readonly PhotoVariant[]) {
       await services.bucket.put(photoObjectKey(key, variant), variants[variant], {
@@ -311,6 +316,8 @@ async function deleteObjects(bucket: Pick<R2Bucket, "delete">, photoKey: string)
 
 /** What deleting a photo did. */
 export type PhotoRemoval =
+  /** Another environment owns this photo: no objects or cached copies were touched. */
+  | { kind: "foreign" }
   /** The bucket could not be reached: both objects may still be there, and nothing was purged. */
   | { kind: "kept" }
   /** Both objects are gone, and `cache` says what became of their cached copies. */
@@ -319,18 +326,21 @@ export type PhotoRemoval =
 /**
  * Deletes both objects of a photo, then purges both of its addresses from the
  * cache of the media hostname (./cache.ts). An object that is not there is no
- * failure. A failure is logged by its kind: objects the bucket kept are left
+ * failure. A key of another folder is skipped successfully without touching
+ * R2 or the cache. A failure is logged by its kind: objects the bucket kept are left
  * to the orphan sweep, and a purge that failed waits for the hourly retry.
  */
 export async function removePhoto(bucket: MediaBucket, photoKey: string): Promise<PhotoRemoval> {
+  if (photoFolder(photoKey) !== bucket.photoFolder) return { kind: "foreign" };
   if (!(await deleteObjects(bucket, photoKey))) return { kind: "kept" };
   return { kind: "removed", cache: await bucket.cache.purge(photoKey) };
 }
 
 /**
- * Deletes a photo as removePhoto does, and says whether its objects are gone:
- * for whatever stops naming a photo and only logs what it could not do.
+ * Deletes a photo as removePhoto does, and says whether its cleanup is done:
+ * a foreign photo is done without touching its objects or cache. Used by
+ * whatever stops naming a photo and only logs what it could not do.
  */
 export async function deletePhoto(bucket: MediaBucket, photoKey: string): Promise<boolean> {
-  return (await removePhoto(bucket, photoKey)).kind === "removed";
+  return (await removePhoto(bucket, photoKey)).kind !== "kept";
 }

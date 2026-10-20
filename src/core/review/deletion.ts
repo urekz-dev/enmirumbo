@@ -113,14 +113,21 @@ async function photoKeysOf(db: Db, businessId: string): Promise<string[]> {
 async function removeKeys(
   bucket: MediaBucket,
   keys: readonly string[],
-): Promise<{ kind: "removed"; photoCached: boolean } | { kind: "storage" }> {
+): Promise<{ kind: "removed"; photoCached: boolean; photoRemoved: boolean } | { kind: "storage" }> {
   let photoCached = false;
+  let photoRemoved = false;
+  let foreign = false;
   for (const key of keys) {
     const removal = await removePhoto(bucket, key);
+    if (removal.kind === "foreign") {
+      foreign = true;
+      continue;
+    }
     if (removal.kind === "kept" || removal.cache === "failed") return { kind: "storage" };
+    photoRemoved = true;
     if (removal.cache === "deferred") photoCached = true;
   }
-  return { kind: "removed", photoCached };
+  return { kind: "removed", photoCached, photoRemoved: photoRemoved && !foreign };
 }
 
 /** Who deletes, and how the audit log calls it: the panel's `delete` or the scheduled `purge`. */
@@ -184,7 +191,7 @@ export async function deleteCard(
     );
   } catch (error) {
     console.error(`review: a card could not be deleted (${failureKind(error)})`);
-    return { kind: "failed", photoRemoved: keys.length > 0 };
+    return { kind: "failed", photoRemoved: removal.photoRemoved };
   }
   if (deleted === null) return GONE;
 

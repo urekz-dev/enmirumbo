@@ -213,6 +213,7 @@ const local = turnstileVerifier(env);
 
 /** The local media bucket, noting every photo key written, so it is removed afterwards. */
 const bucket: PhotoServices["bucket"] = {
+  photoFolder: "photos/" as const,
   put: ((key: string, value: Uint8Array, options: R2PutOptions) => {
     const photoKey = key.split("/")[1];
     if (photoKey !== undefined) storedKeys.add(photoKey);
@@ -1177,6 +1178,7 @@ describe("The edit of a card may change its photo, which reaches the card only w
     const { id, token } = await cardWithLink();
     const puts: string[] = [];
     const recording: PhotoServices["bucket"] = {
+      photoFolder: "photos/" as const,
       put: ((key: string, value: Uint8Array, options: R2PutOptions) => {
         puts.push(key);
         return bucket.put(key, value, options);

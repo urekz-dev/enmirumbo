@@ -22,7 +22,12 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { FAKE_BUSINESSES } from "../../src/core/db/seed/businesses.ts";
 import { seedPhotoObjects } from "../../src/core/db/seed/photos.ts";
-import { PHOTO_CACHE_CONTROL, PHOTO_CONTENT_TYPE } from "../../src/core/photos/photo.ts";
+import {
+  PHOTO_CACHE_CONTROL,
+  PHOTO_CONTENT_TYPE,
+  photoKeyInFolder,
+} from "../../src/core/photos/photo.ts";
+import { mediaPhotoFolder } from "../../src/lib/media-folder.ts";
 import { writeSeedMediaDirectory } from "../../scripts/seed-media.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -1081,7 +1086,15 @@ async function seededMedia(environment: Environment, config = build(environment)
   const directory = join(work, "seed-media");
   const objects = seedPhotoObjects(
     FAKE_BUSINESSES.flatMap(({ name, photoKey }, shade) =>
-      photoKey === undefined ? [] : [{ name, photoKey, shade }],
+      photoKey === undefined
+        ? []
+        : [
+            {
+              name,
+              photoKey: photoKeyInFolder(photoKey, mediaPhotoFolder({ ENVIRONMENT: environment })),
+              shade,
+            },
+          ],
     ),
   );
   await writeSeedMediaDirectory(directory, objects);
@@ -1206,6 +1219,25 @@ describe("The demo seed leaves cards with a photo to see the directory as the re
     });
 
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("the upload of photos/");
+    expect(result.stderr).toContain("the upload of dev/photos/");
   });
+
+  it.for(["dev", "stage"] as const)(
+    "refuses a manifest writing the other environment's folder from %s",
+    async (environment) => {
+      const media = await seededMedia(environment);
+      const manifest = join(media.args[1]!, "manifest.json");
+      const entries = JSON.parse(readFileSync(manifest, "utf8")) as { key: string }[];
+      for (const entry of entries)
+        entry.key =
+          environment === "dev"
+            ? entry.key.replace("dev/photos/dev_", "photos/")
+            : entry.key.replace("photos/", "dev/photos/dev_");
+      writeFileSync(manifest, JSON.stringify(entries));
+      const result = run("upload-seed-media.sh", media.args, { ...media.env, ...R2_ENV });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(`not a photo of ${environment}'s folder`);
+      expect(media.calls()).toEqual([]);
+    },
+  );
 });
