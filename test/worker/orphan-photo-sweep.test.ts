@@ -3,6 +3,8 @@
 // error (v2)"). It runs against the local R2 bucket and the test database:
 // card and edit references come from PostgreSQL, while R2's listing and object
 // metadata decide what is stored and old enough to delete.
+// The bucket is shared with the files that run at the same time, so the sweep
+// is handed a listing of this file's own objects (localMediaWithAges).
 import { env } from "cloudflare:workers";
 import { eq, inArray } from "drizzle-orm";
 import {
@@ -44,9 +46,32 @@ function withUploaded<T extends R2Object>(object: T, uploaded: Date): T {
   return copy;
 }
 
+/** The keys of the objects this file writes, deleted or not: all it lets the sweep see. */
+function ownObjectKeys(): string[] {
+  return [...new Set([...photos].flatMap(photoObjectKeys).concat(STRAY))].toSorted();
+}
+
+/** The objects of this file that are in the bucket now. */
+async function storedOwnObjects(): Promise<string[]> {
+  const found = await Promise.all(ownObjectKeys().map((key) => env.MEDIA.head(key)));
+  return found.filter((object) => object !== null).map(({ key }) => key);
+}
+
+/**
+ * The listing and the heads of the sweep: only the objects this file wrote,
+ * because the local bucket is shared with the test files that run at the same
+ * time and the sweep's counts must be this file's alone. Listing is what R2's
+ * is: by key under the prefix, `limit` objects a page, and a cursor (here the
+ * last key listed) that resumes after it. The real objects are served, with
+ * the ages the test gives them.
+ */
 function localMediaWithAges(
   ages: ReadonlyMap<string, Date> = new Map<string, Date>(),
 ): Pick<R2Bucket, "list" | "head"> {
+  const aged = (object: R2Object) => {
+    const uploaded = ages.get(object.key);
+    return uploaded === undefined ? object : withUploaded(object, uploaded);
+  };
   return {
     async list(options?: R2ListOptions) {
       const call: { cursor?: string; limit: number; prefix?: string } = {
@@ -57,19 +82,25 @@ function localMediaWithAges(
       listingCalls.push({
         ...call,
       });
-      const page = await env.MEDIA.list(options);
+      const objects: R2Object[] = [];
+      for (const key of ownObjectKeys()) {
+        if (options?.prefix !== undefined && !key.startsWith(options.prefix)) continue;
+        if (options?.cursor !== undefined && key <= options.cursor) continue;
+        const object = await env.MEDIA.head(key);
+        if (object !== null) objects.push(aged(object));
+      }
+      const page = objects.slice(0, call.limit);
+      const truncated = objects.length > call.limit;
       return {
-        ...page,
-        objects: page.objects.map((object) => {
-          const uploaded = ages.get(object.key);
-          return uploaded === undefined ? object : withUploaded(object, uploaded);
-        }),
-      };
+        objects: page,
+        delimitedPrefixes: [],
+        truncated,
+        ...(truncated ? { cursor: page.at(-1)!.key } : {}),
+      } as R2Objects;
     },
     async head(key) {
       const object = await env.MEDIA.head(key);
-      const uploaded = ages.get(key);
-      return object === null || uploaded === undefined ? object : withUploaded(object, uploaded);
+      return object === null ? null : aged(object);
     },
   };
 }
@@ -147,6 +178,7 @@ beforeEach(async () => {
 afterAll(async () => {
   const bucket = localDeletionBucket();
   for (const key of photos) await deletePhoto(bucket, key);
+  await env.MEDIA.delete(["outside/photos/not-a-business-photo.webp", STRAY]);
   await cleanup(STATE);
 });
 
@@ -344,7 +376,7 @@ describe("The orphan-photo sweep is bounded, age-gated and reference-aware (v2)"
       continued: 0,
       incomplete: 0,
     });
-    expect(await env.MEDIA.list({ prefix: "photos/" })).toMatchObject({ objects: [] });
+    expect(await storedOwnObjects()).toEqual([]);
   });
 
   it("counts an object under photos/ that is no photo, keeps it, and still finishes the pass", async () => {
