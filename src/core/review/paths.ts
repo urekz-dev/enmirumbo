@@ -38,6 +38,7 @@ import type { BusinessStatus } from "../db/schema/index.ts";
 export const QUEUE_PATH = "/admin";
 export const BUSINESSES_PATH = "/admin/negocios";
 export const AUDIT_LOG_PATH = "/admin/bitacora";
+export const TASKS_PATH = "/admin/tareas";
 
 /** The detail of a card. */
 export function registrationPath(businessId: string): string {

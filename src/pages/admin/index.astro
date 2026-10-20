@@ -37,7 +37,7 @@ import {
   withZoneNames,
   zoneNamesByLocality,
 } from "../../core/review/localities.ts";
-import { auditLogPath, businessesPath, queuePath } from "../../core/review/paths.ts";
+import { auditLogPath, businessesPath, queuePath, TASKS_PATH } from "../../core/review/paths.ts";
 import { reportedBusinesses, reviewQueue } from "../../core/review/queue.ts";
 import { narrowScope, panelScope, queueLocalities } from "../../core/review/scope.ts";
 import { zonesPath } from "../../core/zones/paths.ts";
@@ -57,7 +57,7 @@ if (admin === undefined) return forbiddenResponse();
 
 const now = new Date();
 const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
-  const home = await panelHome(db, admin.email);
+  const home = await panelHome(db, admin.email, env.ENVIRONMENT);
   if (home === null) return null;
   const scope = await panelScope(db, admin.email);
   const seen = await panelLocalities(db, queueLocalities(scope));
@@ -109,7 +109,8 @@ const localityNames =
     <div class="flex flex-col gap-6">
       <PanelNavigation
         links={view.home.links.filter(
-          (link) => link.href === usersPath() || link.href === rolesPath(),
+          (link) =>
+            link.href === usersPath() || link.href === rolesPath() || link.href === TASKS_PATH,
         )}
       />
       <ReviewQueue

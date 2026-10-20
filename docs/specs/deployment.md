@@ -280,6 +280,8 @@ When the sweep does NOT complete —because one of its safeguards stopped it—,
 
 ### Requirement: The 404 of scheduled tasks does not give them away
 
+Superseded in v2 by Manual scheduled tasks exist only in the local and dev panel (v2) — source: ADR 0013, decision of the product owner on 2026-10-19 (EMR-54). The current panel uses the same missing-page response, including its HTML and panel headers, rather than the v1 empty endpoint response.
+
 When a scheduled task route answers as if it did not exist, its response MUST NOT carry any mark of its own —no body of its own, no content type of its own, no headers of its own— that would let it be told apart from the rest of the site's routes in an automated scan. It MUST be the empty 404 that the framework emits when an existing route decides that what was requested is not there, with nothing of its own on top.
 
 The framework returns two different 404s: the full HTML page when the address matches no route, and that empty response. A scheduled route cannot emit the first —the framework does not expose a way to render that page from there—, so what is required is that it emit exactly the second. The other route of the system that emits this empty 404 is the one that serves the photos, and it also adds `cache-control: no-store`: that header is its own, and the tasks route MUST NOT copy it to look similar, because an extra header is precisely a mark of its own.
@@ -456,7 +458,7 @@ Turnstile needs `https://challenges.cloudflare.com` in `script-src` and in `fram
 
 Added in v2 — source: ADR 0013, PRD §4. Amended on 2026-10-18 by EMR-42, which brings the first task, the daily registrations alert (`business-registration`, "The daily registrations alert goes out once per local day (v2)"): every task runs at the time the trigger was scheduled for, so a repeated run decides the same. Amended on 2026-10-18 by EMR-48: one more task, the retry of the purges of the media hostname's cache ("A deleted photo is purged from the cache of the media hostname, and a purge that fails is retried every hour (v2)"), which runs every hour whatever the local hour. Amended on 2026-10-19 by EMR-56: one more task, `retention-purge`, the purges of rejected registrations at 90 days and of resolved pending edits at 30 days (`data-model`, "Rejected registrations are permanently deleted after 90 days" and "Applied, discarded and superseded pending edits are purged after 30 days (v2)"). It is called every hour and each run purges only the localities whose local hour is 03:00, in their own IANA time zone (after midnight, at the lowest traffic, and before the admin's 08:00 daily email, which can report what the night's purge did or could not do); in every other hour it does nothing and reports zero counts, and a day whose 03:00 does not exist because of a daylight saving jump is skipped and its items go the next day. Its terms are local calendar days, so an item is purged by the 03:00 run of its first due day. It does a bounded amount of work in each run, so it stays within a Worker's limits on a large backlog (Workers Free allows 50 subrequests, and each photo deleted is a request to Cloudflare's cache API): at most 20 rejected cards and 20 resolved edits, and no new item once 15 photos were deleted; what is left, and what failed, waits for the next day's 03:00 run, oldest first. It fails the run, with counts only, while an item could not be purged, and its counts are what the admin's daily email (`admin-review`) can add to its text. The purge of never-verified registrations is not a task until SMS verification is built (`data-model`). Amended on 2026-10-19 by EMR-57: the orphan-photo sweep ("The orphan-photo sweep is bounded, resumes and reports what it could not sweep (v2)"), which works on the UTC day because it belongs to the environment's bucket, not to a locality. Amended on 2026-10-19 by EMR-56 and the decision of the product owner of that date: every task of a run shares one budget of requests to the internet, because Workers Free allows 50 subrequests in one invocation (calls to R2 count against a separate limit) and each photo deleted makes one request to Cloudflare's cache API. The retry of the cache purges (10 requests), the retention purge (15 photos) and the orphan-photo sweep (15 photos) add up to 40, and the other 10 stay in reserve for the admin's daily email and for the retention purge's overshoot; the budget is written once in `src/scheduled.ts` and a test fails when the bounds exceed it. Workers Paid, from the launch, allows 10,000, and the bounds then only keep a run short.
 
-`stage` and production MUST each have exactly one Cron Trigger that fires every hour, declared inside its environment block. The `scheduled` handler MUST run every task, and each task MUST decide by the local hour of each locality, using its IANA time zone, whether it is its turn (for example, the pending-items email at 8:00 local time). The tasks are: the daily email to the admin, the purge of rejected registrations at 90 days, the purge at 30 days of resolved pending edits (and of never-verified registrations once SMS verification exists), the orphan-photo sweep, the alert of the daily registrations threshold and the retry of the purges of the media hostname's cache. Tasks MUST be idempotent and MUST log what they did and what they could not do, as counts only. `dev` has no trigger; a test-only route runs a task there.
+`stage` and production MUST each have exactly one Cron Trigger that fires every hour, declared inside its environment block. The `scheduled` handler MUST run every task, and each task MUST decide by the local hour of each locality, using its IANA time zone, whether it is its turn (for example, the pending-items email at 8:00 local time). The tasks are: the daily email to the admin, the purge of rejected registrations at 90 days, the purge at 30 days of resolved pending edits (and of never-verified registrations once SMS verification exists), the orphan-photo sweep, the alert of the daily registrations threshold and the retry of the purges of the media hostname's cache. Tasks MUST be idempotent and MUST log what they did and what they could not do, as counts only. `dev` has no trigger; the permission-gated panel page runs a task there ("Manual scheduled tasks exist only in the local and dev panel (v2)").
 
 #### Scenario: one trigger
 
@@ -482,6 +484,43 @@ Added in v2 — source: ADR 0013, PRD §4. Amended on 2026-10-18 by EMR-42, whic
 
 - **WHEN** one task fails
 - **THEN** the other tasks still run, the failure is logged as an error with counts only, and the run is reported as failed
+
+### Requirement: Manual scheduled tasks exist only in the local and dev panel (v2)
+
+Added in v2 — source: ADR 0013, decision of the product owner on 2026-10-19 (EMR-54); ADR 0021.
+
+`/admin/tareas` and its `admin.runTask` form action MUST exist only when `ENVIRONMENT` is `local` or `dev`. On `stage` and `prod`, both MUST answer exactly like a missing page under `/admin`: the same status, body and headers, with no mark of their own. The environment gate MUST run before any database access or action execution, including direct action calls and submissions from other pages. Cloudflare Access still applies as it does to a missing panel page.
+
+The page and action MUST check global `tasks.run` with `can(..., null)`, never a role name. Without it they MUST return the panel's generic `403` before reading time zones or running anything. The permission description is "Correr tareas programadas a mano"; its migration grants it only through the system super admin's all-permissions flag, with no grant to another base role. Navigation and the panel home offer "Tareas" only where the page exists and to users holding that permission.
+
+The screen MUST offer every task of `SCHEDULED_TASKS` by name, a date and time defaulting to now, and a choice of distinct IANA time zones of all database localities, ordered by time-zone name and defaulting to the first. "Ver hora UTC" MUST validate and show the resulting UTC instant without running a task; "Correr tarea" MUST run exactly the chosen task's existing `run` function once with that instant. A nonexistent or ambiguous wall time MUST be refused next to the field with "Elige otra fecha y hora. Debe existir una sola vez en esa zona horaria."; the server never silently picks an offset. Invalid task names and time zones are refused by the server. No localities means no run form and an explanation.
+
+A completed attempt, including an incomplete task, MUST answer `303` with `no-store` to `/admin/tareas` carrying only its task name, UTC instant and counts or counts-only failure in `tarea`, `utc`, `resultado` and `conteos`. It uses no cookie or new table. The GET is display-only, never executes a task, and an unreadable query shows the plain form. A successful attempt says "Listo, la tarea terminó."; a failed attempt says "La tarea falló." and shows its counts-only failure, never an unexpected error's data. The page and its logs carry no card data, and it writes no audit entry of its own; a task keeps its existing audit behavior. Its form works without JavaScript, inside the panel layout, with 44px targets at 390px width.
+
+#### Scenario: the page on dev
+
+- **WHEN** a user holding global `tasks.run` opens `/admin/tareas` on `dev`
+- **THEN** it shows every scheduled task, the locality time zones and the current time, with a UTC preview
+
+#### Scenario: indistinguishable missing page on stage and prod
+
+- **WHEN** someone requests the page or calls its action on `stage` or `prod`
+- **THEN** its status, body and headers are those of a missing panel page, and neither a database read nor a task runs
+
+#### Scenario: no global permission
+
+- **WHEN** an authenticated user without global `tasks.run` opens the page or posts its action on local or dev
+- **THEN** the answer is the panel's generic `403` and no time zones are read or tasks run
+
+#### Scenario: chosen instant and counts
+
+- **WHEN** the admin chooses `retention-purge` at 03:00 in a locality's time zone and runs it
+- **THEN** that task alone receives the chosen UTC instant and decides by its usual local-hour rules, and the screen shows its counts or its counts-only failure
+
+#### Scenario: reload
+
+- **WHEN** the admin reloads the result after the form's `303`
+- **THEN** the GET shows the result again and never runs the task again
 
 ### Requirement: The orphan-photo sweep is bounded, resumes and reports what it could not sweep (v2)
 

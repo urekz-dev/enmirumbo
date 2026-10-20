@@ -73,6 +73,7 @@ test("the crawl reaches the start pages, the home, the legal pages, the listings
     expect.arrayContaining([
       "/hidalgo/tizayuca",
       "/admin",
+      "/admin/tareas",
       "/no-existe",
       "/hidalgo/tizayuca/buscar",
       "/hidalgo/tizayuca/buscar?q=plomero",

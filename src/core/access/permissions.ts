@@ -18,6 +18,7 @@ export const PERMISSIONS = {
   "localities.manage": "Configurar ciudades: WhatsApp de contacto, umbral y activación",
   "users.manage": "Invitar, crear y desactivar usuarios del panel y asignarles roles",
   "roles.manage": "Crear y editar roles",
+  "tasks.run": "Correr tareas programadas a mano",
 } as const satisfies Record<string, string>;
 
 export type Permission = keyof typeof PERMISSIONS;

@@ -61,7 +61,11 @@ export const SUBREQUEST_RESERVE = 10;
 /** A task of the hourly job: what it did, as counts. */
 export interface ScheduledTask {
   name: string;
-  run: (env: Env, now: Date, ctx: ExecutionContext) => Promise<Record<string, number>>;
+  run: (
+    env: Env,
+    now: Date,
+    ctx: Pick<ExecutionContext, "waitUntil">,
+  ) => Promise<Record<string, number>>;
 }
 
 /** A task that ran but could not do all it had to; its message is counts only. */

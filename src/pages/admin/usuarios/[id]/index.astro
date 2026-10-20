@@ -44,7 +44,7 @@ const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => 
       db,
       (await db.select({ code: localities.code }).from(localities)).map((l) => l.code),
     ),
-    home: await panelHome(db, admin.email),
+    home: await panelHome(db, admin.email, env.ENVIRONMENT),
   };
 });
 if (view.kind === "forbidden") return forbiddenResponse();
