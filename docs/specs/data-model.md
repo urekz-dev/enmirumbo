@@ -1400,3 +1400,29 @@ When the purge of a deleted photo fails, the database MUST keep, in `photo_cache
 
 - **WHEN** the hourly retry purges the addresses that waited
 - **THEN** they are no longer in the table
+
+### Requirement: The orphan-photo sweep keeps only the state needed to resume (v2)
+
+Added in v2 — source: ADR 0011, ADR 0013; EMR-57.
+
+The database MUST have one row in `orphan_photo_sweep_state`, keyed by a `singleton` value that can only be true. The row stores only the opaque R2 listing cursor and the UTC day the last complete sweep finished; both are nullable, and the migration MUST insert the row. A cursor is written only after its whole page is handled, so a failed page remains the next page retried; a page left half-done by a bound of the run is listed again, since what was deleted is gone from it. Completing a pass clears the cursor and records the UTC day; a later hourly run skips another pass that day. The row has no relation to a business and no card data. Its cursor MUST NOT appear in logs or reports.
+
+#### Scenario: the operational row exists
+
+- **WHEN** all migrations are applied to an empty database
+- **THEN** `orphan_photo_sweep_state` has exactly one row with `singleton = true`, a null cursor and a null completed day
+
+#### Scenario: a partial sweep resumes
+
+- **WHEN** a bounded run completes one page but has more objects to list
+- **THEN** the next run starts from that page's R2 cursor
+
+#### Scenario: a failed page is retried
+
+- **WHEN** a page cannot be listed or one of its photos cannot be looked up or deleted
+- **THEN** its cursor is not advanced, and the next hourly run tries the page again
+
+#### Scenario: a completed day is idempotent
+
+- **WHEN** the full pass completes and the task runs again on the same UTC day
+- **THEN** it lists no objects and changes nothing

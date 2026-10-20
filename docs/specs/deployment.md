@@ -447,7 +447,7 @@ Turnstile needs `https://challenges.cloudflare.com` in `script-src` and in `fram
 
 ### Requirement: Scheduled work runs from one hourly Cron Trigger per environment (v2)
 
-Added in v2 — source: ADR 0013, PRD §4. Amended on 2026-10-18 by EMR-42, which brings the first task, the daily registrations alert (`business-registration`, "The daily registrations alert goes out once per local day (v2)"): every task runs at the time the trigger was scheduled for, so a repeated run decides the same. Amended on 2026-10-18 by EMR-48: one more task, the retry of the purges of the media hostname's cache ("A deleted photo is purged from the cache of the media hostname, and a purge that fails is retried every hour (v2)"), which runs every hour whatever the local hour.
+Added in v2 — source: ADR 0013, PRD §4. Amended on 2026-10-18 by EMR-42, which brings the first task, the daily registrations alert (`business-registration`, "The daily registrations alert goes out once per local day (v2)"): every task runs at the time the trigger was scheduled for, so a repeated run decides the same. Amended on 2026-10-18 by EMR-48: one more task, the retry of the purges of the media hostname's cache ("A deleted photo is purged from the cache of the media hostname, and a purge that fails is retried every hour (v2)"), which runs every hour whatever the local hour. Amended on 2026-10-19 by EMR-57: the orphan-photo sweep ("The orphan-photo sweep is bounded, resumes and reports what it could not sweep (v2)"), which works on the UTC day because it belongs to the environment's bucket, not to a locality.
 
 `stage` and production MUST each have exactly one Cron Trigger that fires every hour, declared inside its environment block. The `scheduled` handler MUST run every task, and each task MUST decide by the local hour of each locality, using its IANA time zone, whether it is its turn (for example, the pending-items email at 8:00 local time). The tasks are: the daily email to the admin, the purge of rejected registrations at 90 days, the purge at 30 days of pending edits and never-verified registrations, the orphan-photo sweep, the alert of the daily registrations threshold and the retry of the purges of the media hostname's cache. Tasks MUST be idempotent and MUST log what they did and what they could not do, as counts only. `dev` has no trigger; a test-only route runs a task there.
 
@@ -476,31 +476,48 @@ Added in v2 — source: ADR 0013, PRD §4. Amended on 2026-10-18 by EMR-42, whic
 - **WHEN** one task fails
 - **THEN** the other tasks still run, the failure is logged as an error with counts only, and the run is reported as failed
 
-### Requirement: The orphan-photo sweep is a task of the hourly job and a sweep that cannot finish is an error (v2)
+### Requirement: The orphan-photo sweep is bounded, resumes and reports what it could not sweep (v2)
 
-Added in v2 — source: ADR 0013, ADR 0011.
+Amended on 2026-10-19 (EMR-57) by decision of the product owner: the sweep runs on `stage` and production against that environment's media bucket and database. `dev` has no Cron Trigger. `dev` and `stage` share `enmirumbo-media-dev`, so `stage` may delete a photo uploaded on `dev` when the stage database does not name it and its objects are more than seven days old; this is accepted because `dev` is reset from `stage` on every deploy. The same seven-day grace applies in production, so no upload in flight is swept.
 
-The sweep MUST list the objects of the R2 bucket that no card references and delete them, as a task of the hourly job. It MUST ask the bucket what is stored, not any other place. When a safeguard stops the sweep, the run MUST be reported as an error in the log and as a failed run, never as a success. The report MUST hold counts only: no photo key MUST appear in it.
+The sweep MUST run once per UTC day as a task of the hourly job, using R2 as the source of stored objects and the environment's database as the source of photo references. It MUST list only the `photos/` prefix, page by page, at most 500 objects per run, and delete at most 50 photos per run (at most 100 variant objects). A photo is eligible only when no card in any status names its key, no pending edit in any status names it through `new_photo_key`, and every variant object that exists is older than seven days. A younger variant keeps the whole photo. Deletion MUST go through `deletePhoto` or `removePhoto` with `mediaBucket(env)`, which purges both media-hostname addresses and leaves failed purges to the hourly retry.
+
+The sweep MUST keep its R2 continuation cursor and last completed UTC day in the singleton operational row `orphan_photo_sweep_state` (`data-model`). Reaching a bound of a run is not a failure: the run reports `continued`, and the next hourly run MUST resume from the saved cursor until the pass is complete. A failed page MUST leave its cursor unchanged so the next hourly run retries it. After a complete pass, later runs that UTC day MUST skip it. What the sweep could not sweep MUST fail the run visibly and MUST NOT be logged as success: a listing, lookup or deletion that failed, a purge whose addresses could not be kept for the retry, and an object under `photos/` that is no variant of a photo. That object is counted as `invalidObjects` and never deleted, and it does not hold the cursor back, so one stray object never stops the rest of the bucket from being swept; the run fails once a day, when the pass reaches it, until someone removes it. The report MUST contain counts only, shaped for the admin's daily email (EMR-55); no photo key or personal data appears in a log. `dev` may run the task in tests but has no scheduled trigger.
 
 #### Scenario: an orphan
 
-- **WHEN** the sweep runs with an object no card references
-- **THEN** the object is deleted and the report counts it
+- **WHEN** the sweep runs with the two objects of a photo that no card or pending edit names and both are older than seven days
+- **THEN** both objects are deleted through the cache-purging photo deletion path and the report counts one deleted photo and two objects
 
 #### Scenario: a referenced object
 
-- **WHEN** the sweep runs with objects referenced by a card
-- **THEN** they are kept
+- **WHEN** the sweep runs with a photo key named by a card or by a pending edit, in any status
+- **THEN** both objects are kept
+
+#### Scenario: the grace period
+
+- **WHEN** one variant of an otherwise orphaned photo is younger than seven days
+- **THEN** both variants are kept
+
+#### Scenario: only the photos prefix
+
+- **WHEN** the bucket contains an object outside `photos/`
+- **THEN** the sweep neither lists it nor deletes it
+
+#### Scenario: a bounded pass resumes
+
+- **WHEN** more than 500 objects or 50 orphaned photos remain in a pass
+- **THEN** no run lists more than 500 objects or deletes more than 50 photos, the run reports `continued` and does not fail, and the next hourly run resumes from the saved cursor
 
 #### Scenario: the sweep stops
 
-- **WHEN** a safeguard stops the sweep before it finishes
-- **THEN** the run is reported as failed and logged as an error
+- **WHEN** listing, a lookup or a deletion fails, or an object that is no photo's variant is found under `photos/`
+- **THEN** the run is reported as failed and logged with counts only; a failed page keeps its cursor for the next hourly run, while the stray object is counted, kept and passed over
 
 #### Scenario: no keys in the report
 
 - **WHEN** the report and the log of the sweep are read
-- **THEN** they contain counts and no photo key
+- **THEN** they contain the counts `listedObjects`, `deletedPhotos`, `deletedObjects`, `referencedPhotos`, `youngPhotos`, `purgeDeferredPhotos`, `failed`, `invalidObjects`, `incomplete`, `continued` and `skipped`, and no photo key
 
 ### Requirement: The daily email to the admin lists the pending items and what expires within seven days (v2)
 
@@ -948,7 +965,7 @@ What the Worker writes with `console` is then kept nowhere. Debugging a deployed
 
 Added in v2 — source: decision of the product owner, 2026-10-18 (EMR-48); ADR 0011, ADR 0013 and ADR 0020, amended. The privacy notice promises a real deletion (`legal-pages`), and every object of a photo carries a year of caching ("Public media live in R2, in one bucket for production and one for dev and stage (v2)"), so Cloudflare's cache of the media hostname keeps serving a photo whose objects are gone from R2 (R2, "Consistency model", read on 2026-10-18). It amends "Permanent deletion refuses to claim it deleted what it did not delete" with what a deletion says when only the cache could not be purged.
 
-Every deletion of a photo's objects —the permanent deletion of a card, a resubmission or an edit that replaces or removes a photo, a superseded edit's new photo, an edit applied or discarded, and the purges of the scheduled job when they arrive— MUST go through the one deletion of a photo of the Worker, which deletes both objects and then purges both of its addresses (`card` and `full`) from Cloudflare's cache, with the purge by URL of the zone of the media hostname (`POST https://api.cloudflare.com/client/v4/zones/<zone id>/purge_cache` with `files`, at most 100 addresses a request, Cloudflare's limit on every plan but Enterprise). A photo that was never stored whole was never served, and nothing purges it. The zone's id and an API token with the permission Zone, Cache Purge on that zone alone are the Worker secrets `MEDIA_ZONE_ID` and `MEDIA_CACHE_PURGE_TOKEN` of each deployed environment (the zone's id is a secret because the repository holds no account or zone ids); `dev` and `stage` share the media hostname, and so its zone. The token MUST NOT appear in a log, an error, a page or the repository; what the Worker logs of a failed purge is its HTTP status, Cloudflare's error codes or a fixed reason, never an address. A deployed environment without either secret purges nothing, logs it once per isolate, and keeps every address for the retry. Locally (`ENVIRONMENT` `local`) the Worker serves the local bucket itself, with no cache of Cloudflare's in front: nothing is purged, nothing is kept and no secret is needed; the tests answer Cloudflare's API with a fake, never the network.
+Every deletion of a photo's objects —the permanent deletion of a card, a resubmission or an edit that replaces or removes a photo, a superseded edit's new photo, an edit applied or discarded, the orphan-photo sweep, and the purges of the scheduled job when they arrive— MUST go through the one deletion of a photo of the Worker, which deletes both objects and then purges both of its addresses (`card` and `full`) from Cloudflare's cache, with the purge by URL of the zone of the media hostname (`POST https://api.cloudflare.com/client/v4/zones/<zone id>/purge_cache` with `files`, at most 100 addresses a request, Cloudflare's limit on every plan but Enterprise). A photo that was never stored whole was never served, and nothing purges it. The zone's id and an API token with the permission Zone, Cache Purge on that zone alone are the Worker secrets `MEDIA_ZONE_ID` and `MEDIA_CACHE_PURGE_TOKEN` of each deployed environment (the zone's id is a secret because the repository holds no account or zone ids); `dev` and `stage` share the media hostname, and so its zone. The token MUST NOT appear in a log, an error, a page or the repository; what the Worker logs of a failed purge is its HTTP status, Cloudflare's error codes or a fixed reason, never an address. A deployed environment without either secret purges nothing, logs it once per isolate, and keeps every address for the retry. Locally (`ENVIRONMENT` `local`) the Worker serves the local bucket itself, with no cache of Cloudflare's in front: nothing is purged, nothing is kept and no secret is needed; the tests answer Cloudflare's API with a fake, never the network.
 
 A purge that fails MUST keep the photo's two addresses for the retry, and only them (`data-model`, "The photo addresses waiting for their purge are the only thing kept of a deleted photo (v2)"), through a connection of its own, so they stay even if what deleted the photo then fails. The hourly job MUST retry them in its task `photo-cache-purge`, every run whatever the local hour: the oldest first, at most 100 addresses a request and 10 requests a run, forgetting each address Cloudflare purged and leaving the others for the next run. It is idempotent, and it logs counts only (purged, waiting and failed requests); a run in which a purge request fails MUST be reported as failed, so Cloudflare shows it until the purge works. `dev` has no trigger, so its addresses wait until one runs the task there.
 

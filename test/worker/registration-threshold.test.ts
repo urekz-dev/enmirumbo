@@ -227,16 +227,20 @@ describe("Scheduled work runs from one hourly Cron Trigger per environment (v2)"
   afterEach(async () => {
     await Promise.all(pending.splice(0));
   });
+  // The orphan-photo sweep keeps its cursor in one shared row that its own test file
+  // drives, so this file runs the task it is about.
+  const thresholdOnly = SCHEDULED_TASKS.filter(({ name }) => name === "registration-threshold");
 
   it("the hourly job runs the threshold task at the time it was scheduled for, and logs the counts", async () => {
     expect(SCHEDULED_TASKS.map(({ name }) => name)).toEqual([
       "registration-threshold",
       "photo-cache-purge",
+      "orphan-photo-sweep",
     ]);
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await register(3, "2030-01-21T16:00:00Z");
-    await runScheduledTasks(controller("2030-01-21T17:00:00Z"), env, ctx);
+    await runScheduledTasks(controller("2030-01-21T17:00:00Z"), env, ctx, thresholdOnly);
     expect(log).toHaveBeenCalledWith('scheduled: cron "0 * * * *" at 2030-01-21T17:00:00.000Z');
     expect(log.mock.calls.flat()).toEqual(
       expect.arrayContaining([
@@ -249,7 +253,7 @@ describe("Scheduled work runs from one hourly Cron Trigger per environment (v2)"
 
     // Scenario: idempotent. The same run again changes nothing and does not fail.
     warn.mockClear();
-    await runScheduledTasks(controller("2030-01-21T17:00:00Z"), env, ctx);
+    await runScheduledTasks(controller("2030-01-21T17:00:00Z"), env, ctx, thresholdOnly);
     expect(warn.mock.calls.flat()).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ locality: f.localityA })]),
     );
