@@ -20,7 +20,7 @@ export const ORPHAN_SWEEP_PAGE_SIZE = 100;
 export const MAX_ORPHAN_SWEEP_OBJECTS_PER_RUN = 500;
 
 /** The maximum number of photos this task attempts to delete in one run. */
-export const MAX_ORPHAN_SWEEP_PHOTOS_PER_RUN = 50;
+export const MAX_ORPHAN_SWEEP_PHOTOS_PER_RUN = 15;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const GRACE_PERIOD_MS = 7 * DAY_MS;

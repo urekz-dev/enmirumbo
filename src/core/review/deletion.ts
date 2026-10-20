@@ -47,13 +47,25 @@
 // 5. A photo that a resubmission or an edit gave the card between steps 3 and
 //    4 is deleted after the rows, like any photo nothing names any more.
 //
+// The scheduled purge of a rejected card (purgeRejectedCard, EMR-56) is this
+// same deletion, with the scheduled job as the actor and `purge` as the
+// action, of a card that is still rejected and past its 90 days (data-model,
+// "Rejected registrations are permanently deleted after 90 days"). It holds
+// the card's row from the check of its term to the deletion of its rows, so a
+// resubmission cannot lose its photo to a purge that no longer applies.
+//
 // The log says only the kind of a failure: no name, no number, no key.
 //
 // Binding: HYPERDRIVE_FRESH.
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../db/client.ts";
 import { failureKind } from "../db/failure.ts";
-import { adminAuditLog, businesses, pendingEdits } from "../db/schema/index.ts";
+import {
+  adminAuditLog,
+  businesses,
+  pendingEdits,
+  SCHEDULED_JOB_ACTOR,
+} from "../db/schema/index.ts";
 import { formText } from "../forms/text.ts";
 import { isPhotoKey } from "../photos/photo.ts";
 import { type MediaBucket, removePhoto } from "../photos/upload.ts";
@@ -97,6 +109,58 @@ async function photoKeysOf(db: Db, businessId: string): Promise<string[]> {
   return [...new Set(keys)];
 }
 
+/** Deletes the photos `keys` one after the other; stops at the first the store or the cache cannot take. */
+async function removeKeys(
+  bucket: MediaBucket,
+  keys: readonly string[],
+): Promise<{ kind: "removed"; photoCached: boolean } | { kind: "storage" }> {
+  let photoCached = false;
+  for (const key of keys) {
+    const removal = await removePhoto(bucket, key);
+    if (removal.kind === "kept" || removal.cache === "failed") return { kind: "storage" };
+    if (removal.cache === "deferred") photoCached = true;
+  }
+  return { kind: "removed", photoCached };
+}
+
+/** Who deletes, and how the audit log calls it: the panel's `delete` or the scheduled `purge`. */
+interface DeletionEntry {
+  actor: string;
+  action: "delete" | "purge";
+}
+
+/**
+ * Step 4: the rows of the card `businessId` and its entry of the audit log in
+ * the transaction `tx`. Gives the photos the card and its edits named that
+ * `known` did not, or null when there is no such card.
+ */
+async function deleteRows(
+  tx: Db,
+  businessId: string,
+  { actor, action }: DeletionEntry,
+  known: readonly string[],
+): Promise<{ late: string[] } | null> {
+  const edits = await tx
+    .delete(pendingEdits)
+    .where(eq(pendingEdits.businessId, businessId))
+    .returning({ key: pendingEdits.newPhotoKey });
+  const [card] = await tx.delete(businesses).where(eq(businesses.id, businessId)).returning({
+    localityCode: businesses.localityCode,
+    status: businesses.status,
+    key: businesses.photoKey,
+  });
+  if (card === undefined) return null;
+  await tx.insert(adminAuditLog).values({
+    localityCode: card.localityCode,
+    businessId,
+    actor,
+    action,
+    previousStatus: card.status,
+  });
+  const named = [card, ...edits].map(({ key }) => key).filter(isPhotoKey);
+  return { late: [...new Set(named)].filter((key) => !known.includes(key)) };
+}
+
 /**
  * Deletes the card `businessId` for good with everything that hangs from it,
  * its photos first, and writes its entry of the audit log with `email`
@@ -109,36 +173,15 @@ export async function deleteCard(
   bucket: MediaBucket,
 ): Promise<DeletionOutcome> {
   const keys = await photoKeysOf(db, businessId);
-  let photoCached = false;
-  for (const key of keys) {
-    const removal = await removePhoto(bucket, key);
-    if (removal.kind === "kept" || removal.cache === "failed") return STORAGE;
-    if (removal.cache === "deferred") photoCached = true;
-  }
+  const removal = await removeKeys(bucket, keys);
+  if (removal.kind === "storage") return STORAGE;
+  let photoCached = removal.photoCached;
 
   let deleted: { late: string[] } | null;
   try {
-    deleted = await db.transaction(async (tx) => {
-      const edits = await tx
-        .delete(pendingEdits)
-        .where(eq(pendingEdits.businessId, businessId))
-        .returning({ key: pendingEdits.newPhotoKey });
-      const [card] = await tx.delete(businesses).where(eq(businesses.id, businessId)).returning({
-        localityCode: businesses.localityCode,
-        status: businesses.status,
-        key: businesses.photoKey,
-      });
-      if (card === undefined) return null;
-      await tx.insert(adminAuditLog).values({
-        localityCode: card.localityCode,
-        businessId,
-        actor: actorOf(email),
-        action: "delete",
-        previousStatus: card.status,
-      });
-      const named = [card, ...edits].map(({ key }) => key).filter(isPhotoKey);
-      return { late: [...new Set(named)].filter((key) => !keys.includes(key)) };
-    });
+    deleted = await db.transaction((tx) =>
+      deleteRows(tx, businessId, { actor: actorOf(email), action: "delete" }, keys),
+    );
   } catch (error) {
     console.error(`review: a card could not be deleted (${failureKind(error)})`);
     return { kind: "failed", photoRemoved: keys.length > 0 };
@@ -146,10 +189,91 @@ export async function deleteCard(
   if (deleted === null) return GONE;
 
   for (const key of deleted.late) {
-    const removal = await removePhoto(bucket, key);
-    if (removal.kind === "removed" && removal.cache === "deferred") photoCached = true;
+    const late = await removePhoto(bucket, key);
+    if (late.kind === "removed" && late.cache === "deferred") photoCached = true;
   }
   return { kind: "deleted", photoCached };
+}
+
+/**
+ * Whether the rejection of the card, by its locality's time zone, is `days`
+ * local calendar days old or more at `at`: the local date of the rejection is
+ * on or before the local date `days` before the local date of `at`. A card
+ * whose rejection was cleared by a resubmission has none, so none is old.
+ */
+export function rejectionOlderThan(days: number, at: Date): SQL {
+  const now = at.toISOString();
+  return sql`exists (
+    select 1 from localities l
+    where l.code = ${businesses.localityCode}
+      and (${businesses.rejectedAt} at time zone l.time_zone)::date
+        <= (${now}::timestamptz at time zone l.time_zone)::date - ${days}::int
+  )`;
+}
+
+/** The days after which a rejected registration is purged (PRD §8). */
+export const REJECTED_RETENTION_DAYS = 90;
+
+export type PurgeOutcome =
+  /** Deleted for good, with its entry `purge` in the audit log. */
+  | { kind: "purged" }
+  /** Not a rejected card past its term any more, or no card: nothing was touched. */
+  | { kind: "not-due" }
+  /** The photos could not be deleted: no row was touched, and a new run tries again. */
+  | { kind: "storage" }
+  /** The rows could not be deleted: none was, and a new run tries again. */
+  | { kind: "failed" };
+
+/**
+ * The scheduled purge of one rejected card whose rejection is
+ * REJECTED_RETENTION_DAYS old or more at `at` (docs/specs/data-model.md,
+ * "Rejected registrations are permanently deleted after 90 days"): the same
+ * deletion as the panel's, with its photos first and its entry of the audit
+ * log, whose actor is the scheduled job and whose action is `purge`.
+ *
+ * Nothing but a rejected card past its term is deleted. The card's row is
+ * locked and checked again before its photos go, and stays locked until its
+ * rows are deleted, so a resubmission that arrives meanwhile waits and then
+ * finds no card, instead of losing its photo to a purge that no longer
+ * applies. The panel's deletion does not hold the row so long: it deletes
+ * what the admin chose, whatever the card is, and cleans up after it
+ * (step 5).
+ */
+export async function purgeRejectedCard(
+  db: Db,
+  businessId: string,
+  at: Date,
+  bucket: MediaBucket,
+): Promise<PurgeOutcome> {
+  try {
+    return await db.transaction(async (tx): Promise<PurgeOutcome> => {
+      const [due] = await tx
+        .select({ id: businesses.id })
+        .from(businesses)
+        .where(
+          and(
+            eq(businesses.id, businessId),
+            eq(businesses.status, "rejected"),
+            isNotNull(businesses.rejectedAt),
+            rejectionOlderThan(REJECTED_RETENTION_DAYS, at),
+          ),
+        )
+        .for("update");
+      if (due === undefined) return { kind: "not-due" };
+      const keys = await photoKeysOf(tx, businessId);
+      if ((await removeKeys(bucket, keys)).kind === "storage") return { kind: "storage" };
+      const deleted = await deleteRows(
+        tx,
+        businessId,
+        { actor: SCHEDULED_JOB_ACTOR, action: "purge" },
+        keys,
+      );
+      return deleted === null ? { kind: "not-due" } : { kind: "purged" };
+    });
+  } catch (error) {
+    console.error(`review: a rejected card could not be purged (${failureKind(error)})`);
+    return { kind: "failed" };
+  }
 }
 
 /** What a deletion needs from the action. */

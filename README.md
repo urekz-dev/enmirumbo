@@ -114,7 +114,7 @@ To run the scheduled handler while `vp run dev` is running:
 curl "http://localhost:4321/cdn-cgi/local/scheduled?cron=0+*+*+*+*"
 ```
 
-The hourly job (`src/scheduled.ts`, [ADR 0013](docs/adr/0013-scheduled-jobs-hourly-cron.md)) runs every task at the time it was scheduled for and logs what each did, as counts; a task that fails is logged by its name and the kind of failure, the others still run, and the run fails. Its tasks today are the daily registrations alert (see [Operations](#daily-registrations-alert)) and the retry of the purges of deleted photos from the media hostname's cache (see [Operations](#purge-of-deleted-photos)), which does nothing locally.
+The hourly job (`src/scheduled.ts`, [ADR 0013](docs/adr/0013-scheduled-jobs-hourly-cron.md)) runs every task at the time it was scheduled for and logs what each did, as counts; a task that fails is logged by its name and the kind of failure, the others still run, and the run fails. Its tasks today are the daily registrations alert (see [Operations](#daily-registrations-alert)), the retry of the purges of deleted photos from the media hostname's cache (see [Operations](#purge-of-deleted-photos)), which does nothing locally, the retention purges (see [Operations](#retention-purges)) and the orphan-photo sweep (see [Operations](#orphan-photo-sweep)).
 
 No secret is needed locally. The local Worker purges nothing from any cache, so `MEDIA_ZONE_ID` and `MEDIA_CACHE_PURGE_TOKEN` stay unset (the tests and the end-to-end preview set them empty, and Wrangler warns about them in `vp run dev`). Wrangler also warns that `TURNSTILE_SECRET_KEY` is missing unless a `.dev.vars` file (ignored by git) sets it; without it the local Worker emulates Cloudflare's always-pass test secret, without network (see [Registration](#registration)), and the tests set that same secret. To see the form refused, write in `.dev.vars` the test secret that fails every token (`3x0000000000000000000000000000000AA` answers as if the token were already spent):
 
@@ -568,9 +568,20 @@ When it fails, check the secrets of that environment's GitHub Environment and th
 SELECT count(*), min(recorded_at) FROM photo_cache_purges;
 ```
 
+### Retention purges
+
+The task `retention-purge` of the hourly job (`src/core/review/purge.ts`; data-model, "Rejected registrations are permanently deleted after 90 days" and "Applied, discarded and superseded pending edits are purged after 30 days (v2)") deletes, every hour:
+
+- the cards still rejected 90 local calendar days after their rejection, with the panel's permanent deletion (their photos first, then their rows, which take their trades, reports, edits and link with them) and an entry `purge` of the scheduled job in the audit log; a card that was sent again is no longer rejected and stays;
+- the pending edits applied, discarded or superseded 30 local calendar days ago, and the new photo one still names when no card names it. Edits write no entry in the audit log.
+
+The days are the locality's, in its IANA time zone: an item is due from the first moment of the local day that is 90 (30) days after the local day it was rejected (resolved). One run purges at most 20 cards and 20 edits, oldest first, and starts no new item once it has deleted 15 photos; the rest waits for the next hour. Registrations never verified are not purged: SMS verification is not built before the launch.
+
+A run in which something could not be purged (the photo store did not answer, or a row could not be deleted) is a failed run of the Worker's Cron Trigger, logged as `scheduled: retention-purge failed (<n> card(s) purged, <n> not purged, <n> edit(s) purged, <n> not purged)`; the cause is logged just before, by its kind only. The item stays whole and the next hour tries it again, so check the photo store (`MEDIA` bucket) and the database when it keeps failing. Logs carry counts only, never a name, a number, a reason or a key. `dev` has no trigger, so nothing is purged there unless the task is run by hand.
+
 ### Orphan-photo sweep
 
-The hourly Worker task starts an R2 scan of `photos/` once per UTC day. Each run lists at most 500 objects and removes at most 50 photos. A pass that reaches one of those bounds reports `continued` and resumes from its saved cursor (`orphan_photo_sweep_state`) on the next hourly run, which is not a failure. A failed listing, lookup or deletion keeps the cursor at its page, is retried next hour and fails the Cron Trigger visibly, with counts only. An object under `photos/` that is no photo's variant is counted as `invalidObjects` and never deleted; it fails the run once a day, when the pass reaches it, until you remove it by hand, and it never stops the rest of the bucket from being swept. A complete pass is skipped for the rest of that UTC day.
+The hourly Worker task starts an R2 scan of `photos/` once per UTC day. Each run lists at most 500 objects and removes at most 15 photos. A pass that reaches one of those bounds reports `continued` and resumes from its saved cursor (`orphan_photo_sweep_state`) on the next hourly run, which is not a failure. A failed listing, lookup or deletion keeps the cursor at its page, is retried next hour and fails the Cron Trigger visibly, with counts only. An object under `photos/` that is no photo's variant is counted as `invalidObjects` and never deleted; it fails the run once a day, when the pass reaches it, until you remove it by hand, and it never stops the rest of the bucket from being swept. A complete pass is skipped for the rest of that UTC day.
 
 The log report uses the counts `listedObjects`, `deletedPhotos`, `deletedObjects`, `referencedPhotos`, `youngPhotos`, `purgeDeferredPhotos`, `failed`, `invalidObjects`, `incomplete`, `continued` and `skipped`; it contains no photo key. Until the admin's daily email includes this report (EMR-55), inspect it with `wrangler tail`. The sweep runs in `stage` and production; `dev` has no Cron Trigger.
 

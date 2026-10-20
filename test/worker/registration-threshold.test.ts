@@ -228,13 +228,15 @@ describe("Scheduled work runs from one hourly Cron Trigger per environment (v2)"
     await Promise.all(pending.splice(0));
   });
   // The orphan-photo sweep keeps its cursor in one shared row that its own test file
-  // drives, so this file runs the task it is about.
+  // drives, so this file runs the task it is about (and not the retention purge, which at a far
+  // date would purge the rejected cards of the files that run at the same time).
   const thresholdOnly = SCHEDULED_TASKS.filter(({ name }) => name === "registration-threshold");
 
   it("the hourly job runs the threshold task at the time it was scheduled for, and logs the counts", async () => {
     expect(SCHEDULED_TASKS.map(({ name }) => name)).toEqual([
       "registration-threshold",
       "photo-cache-purge",
+      "retention-purge",
       "orphan-photo-sweep",
     ]);
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
