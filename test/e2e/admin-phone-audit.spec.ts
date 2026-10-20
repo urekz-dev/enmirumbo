@@ -575,6 +575,10 @@ test("every panel screen is complete and usable at 390px without JavaScript", as
   );
   await auditPhoneScreen(page, testInfo, "21-role-detail", "Rol de teléfono para revisar detalles");
 
+  await page.goto("/admin/tareas");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Tareas programadas");
+  await auditPhoneScreen(page, testInfo, "23-tasks", "Tareas programadas");
+
   await page.goto("/admin/bitacora");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Bitácora");
   await expect(page.getByTestId("audit-log").getByRole("listitem")).toHaveCount(2);

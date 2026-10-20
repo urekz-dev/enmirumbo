@@ -3,7 +3,8 @@ import { eq, and } from "drizzle-orm";
 import type { Db } from "../db/client.ts";
 import { users, roleAssignments } from "../db/schema/index.ts";
 import { panelScope, queueLocalities } from "../review/scope.ts";
-import { auditLogPath, businessesPath, queuePath } from "../review/paths.ts";
+import { auditLogPath, businessesPath, queuePath, TASKS_PATH } from "../review/paths.ts";
+import { manualTasksEnabled } from "../tasks/access.ts";
 import { zonesPath } from "../zones/paths.ts";
 import { zonesLocalities } from "../zones/scope.ts";
 import { can } from "./queries.ts";
@@ -15,6 +16,7 @@ export interface PanelLink {
 export async function panelHome(
   db: Db,
   email: string,
+  environment = "",
 ): Promise<{ queue: boolean; links: PanelLink[] } | null> {
   const [user] = await db
     .select({ id: users.id })
@@ -34,5 +36,7 @@ export async function panelHome(
   if (await can(db, email, "users.manage", null))
     links.push({ href: usersPath(), text: "Usuarios" });
   if (await can(db, email, "roles.manage", null)) links.push({ href: rolesPath(), text: "Roles" });
+  if (manualTasksEnabled(environment) && (await can(db, email, "tasks.run", null)))
+    links.push({ href: TASKS_PATH, text: "Tareas" });
   return { queue, links };
 }

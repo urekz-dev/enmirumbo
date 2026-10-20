@@ -26,7 +26,7 @@ if (result?.error?.code === "FORBIDDEN") return forbiddenResponse();
 if (result?.error?.code === "NOT_FOUND") return notFound();
 const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
   if (!(await can(db, admin.email, "users.manage", null))) return null;
-  return { users: await panelUsers(db), home: await panelHome(db, admin.email) };
+  return { users: await panelUsers(db), home: await panelHome(db, admin.email, env.ENVIRONMENT) };
 });
 if (!view) return forbiddenResponse();
 if (result?.data?.kind === "done") return seeOther(userPath(String(result.data.id)));

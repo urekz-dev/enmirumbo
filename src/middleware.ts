@@ -12,6 +12,7 @@ import { servedLocality } from "./core/locality/served.ts";
 import { gateAdminRequest } from "./lib/access/admin-gate.ts";
 import { readAccessConfig, remoteAccessKeys } from "./lib/access/verify.ts";
 import { gateLocalityRequest, type FindLocality } from "./lib/locality.ts";
+import { hiddenTaskRequest } from "./lib/manual-tasks.ts";
 
 const findLocality: FindLocality = (stateSlug, municipalitySlug) =>
   withDb(env, "HYPERDRIVE", { waitUntil }, (db) => servedLocality(db, stateSlug, municipalitySlug));
@@ -19,6 +20,10 @@ const findLocality: FindLocality = (stateSlug, municipalitySlug) =>
 export const onRequest = sequence(
   defineMiddleware((context, next) =>
     gateAdminRequest(context, next, { config: readAccessConfig(env), keys: remoteAccessKeys }),
+  ),
+  defineMiddleware(
+    (context, next) =>
+      hiddenTaskRequest(env.ENVIRONMENT, context.url, context.routePattern) ?? next(),
   ),
   defineMiddleware((context, next) => gateLocalityRequest(context, next, findLocality)),
 );

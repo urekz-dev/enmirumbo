@@ -63,6 +63,8 @@ import {
   unpublishActionError,
 } from "../lib/review.ts";
 import { siteOrigin } from "../lib/site-url.ts";
+import { submitManualTask } from "../lib/manual-tasks.ts";
+import { taskTimeZones } from "../core/tasks/access.ts";
 import { turnstileVerifier } from "../lib/turnstile.ts";
 import {
   submittedName,
@@ -175,6 +177,24 @@ export const server = {
   // src/core/review/edit-decision.ts, the zones with withZonesOf). Reads and
   // writes go through HYPERDRIVE_FRESH.
   admin: {
+    runTask: defineAction({
+      accept: "form",
+      handler: async (form, context) => {
+        const admin = await requireAdmin(context);
+        const outcome = await submitManualTask(
+          form,
+          env.ENVIRONMENT,
+          context.routePattern,
+          () =>
+            withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, (db) => taskTimeZones(db, admin.email)),
+          env,
+          { waitUntil },
+        );
+        if (outcome.kind === "not_found") throw new ActionError({ code: "NOT_FOUND" });
+        if (outcome.kind === "forbidden") throw new ActionError({ code: "FORBIDDEN" });
+        return outcome;
+      },
+    }),
     createUser: defineAction({
       accept: "form",
       handler: async (form, context) => {

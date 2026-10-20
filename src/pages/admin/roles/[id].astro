@@ -35,7 +35,7 @@ const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => 
     kind: "found" as const,
     role,
     permissions: await rolePermissionKeys(db, role),
-    home: await panelHome(db, admin.email),
+    home: await panelHome(db, admin.email, env.ENVIRONMENT),
   };
 });
 if (view?.kind === "forbidden") return forbiddenResponse();

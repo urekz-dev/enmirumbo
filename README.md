@@ -491,6 +491,18 @@ The Worker secrets are declared by name in `secrets.required` at the top level a
 
 ## Operations
 
+### Run one scheduled task on dev
+
+Open `/admin/tareas` on `dev` (or locally) with global `tasks.run`, which the
+system super admin role includes. Choose a task by its name, a locality time
+zone and the date and time to run it as; use "Ver hora UTC" to check the instant,
+then "Correr tarea". The same task code used by the hourly job runs once, so a
+03:00-only task can be tried without waiting for 03:00. The result shows counts
+or a counts-only failure; reloading it does not run anything. Nonexistent or
+ambiguous daylight-saving times ask for another time. The screen works without
+JavaScript, writes no audit entry of its own and is absent on `stage` and `prod`.
+`dev` has no Cron Trigger; use this page for each manual run.
+
 ### Availability check
 
 `monitor.yml` requests the home page of production and `/health` at minutes 7 and 37 of every hour ([ADR 0016](docs/adr/0016-ci-cd-monitoring-and-backups.md)). `/health` answers 200 `ok` only when the Worker reaches the database (`SELECT 1` through `HYPERDRIVE_FRESH`), and 503 `unavailable` otherwise. Each check is tried three times, 20 seconds apart, before the run fails, and the run names every check that failed. GitHub emails a failed run to the person who last changed the workflow's schedule.
@@ -560,7 +572,7 @@ UPDATE localities SET daily_registration_threshold = 30 WHERE code = '13069';
 
 ### Purge of deleted photos
 
-Every photo object is cached a year on the media hostname, so deleting a photo also purges both of its addresses from Cloudflare's cache ([Photos](#photos); deployment, "A deleted photo is purged from the cache of the media hostname, and a purge that fails is retried every hour (v2)"). When the purge fails (Cloudflare does not answer, the token is wrong or expired, or `MEDIA_ZONE_ID` or `MEDIA_CACHE_PURGE_TOKEN` is not set), the photo's objects are still deleted, its two addresses wait in the table `photo_cache_purges`, which holds nothing else, and the hourly job (`photo-cache-purge`) retries them, 100 addresses a request and 10 requests a run, forgetting each one Cloudflare purges. A permanent deletion then tells the admin that the photo may still be seen a while. A run whose purge fails is a failed run of the Worker's Cron Trigger, logged as `scheduled: photo-cache-purge failed (<n> purged, <n> waiting, <n> failed purge(s))`; its cause is logged just before, by its HTTP status or Cloudflare's error codes (such as 10000 or 9109 for a token that may not purge the zone), never the token or an address. The retry selects only the environment's media hostname and folder before applying its bounds; copied stage URLs never get purged by dev or consume its batches. `dev` has no trigger, so its addresses wait for its task to run on demand (or disappear on its next database reset).
+Every photo object is cached a year on the media hostname, so deleting a photo also purges both of its addresses from Cloudflare's cache ([Photos](#photos); deployment, "A deleted photo is purged from the cache of the media hostname, and a purge that fails is retried every hour (v2)"). When the purge fails (Cloudflare does not answer, the token is wrong or expired, or `MEDIA_ZONE_ID` or `MEDIA_CACHE_PURGE_TOKEN` is not set), the photo's objects are still deleted, its two addresses wait in the table `photo_cache_purges`, which holds nothing else, and the hourly job (`photo-cache-purge`) retries them, 100 addresses a request and 10 requests a run, forgetting each one Cloudflare purges. A permanent deletion then tells the admin that the photo may still be seen a while. A run whose purge fails is a failed run of the Worker's Cron Trigger, logged as `scheduled: photo-cache-purge failed (<n> purged, <n> waiting, <n> failed purge(s))`; its cause is logged just before, by its HTTP status or Cloudflare's error codes (such as 10000 or 9109 for a token that may not purge the zone), never the token or an address. The retry selects only the environment's media hostname and folder before applying its bounds; copied stage URLs never get purged by dev or consume its batches. `dev` has no trigger, so its addresses wait for its task to run on demand (or disappear on its next database reset). Run `photo-cache-purge` from `/admin/tareas` to retry its waiting purges.
 
 When it fails, check the secrets of that environment's GitHub Environment and the token in the Cloudflare dashboard, and deploy again after changing one. To see what waits, in the Neon SQL Editor of the environment's branch:
 

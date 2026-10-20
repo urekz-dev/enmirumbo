@@ -1,0 +1,174 @@
+---
+import { actions } from "astro:actions";
+import { env, waitUntil } from "cloudflare:workers";
+import { panelHome } from "../../core/access/home.ts";
+import { withDb } from "../../core/db/client.ts";
+import { manualTasksEnabled, taskTimeZones } from "../../core/tasks/access.ts";
+import { taskInstant, wallTime } from "../../core/tasks/time.ts";
+import { formText } from "../../core/forms/text.ts";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import PanelNavigation from "../../components/admin/PanelNavigation.astro";
+import { forbiddenResponse } from "../../lib/access/admin-gate.ts";
+import { notFound, seeOther } from "../../lib/locality.ts";
+import { readTaskResult, taskResultPath } from "../../lib/manual-tasks.ts";
+import { SCHEDULED_TASKS } from "../../scheduled.ts";
+
+if (!manualTasksEnabled(env.ENVIRONMENT)) return notFound();
+const admin = Astro.locals.admin;
+if (!admin) return forbiddenResponse();
+if (!["GET", "HEAD", "POST"].includes(Astro.request.method))
+  return new Response(null, { status: 405, headers: { Allow: "GET, HEAD, POST" } });
+const action = Astro.getActionResult(actions.admin.runTask);
+if (action?.error?.code === "FORBIDDEN") return forbiddenResponse();
+if (action?.error?.code === "NOT_FOUND") return notFound();
+const view = await withDb(env, "HYPERDRIVE_FRESH", { waitUntil }, async (db) => {
+  const zones = await taskTimeZones(db, admin.email);
+  if (zones === null) return null;
+  return { zones, home: await panelHome(db, admin.email, env.ENVIRONMENT) };
+});
+if (!view) return forbiddenResponse();
+if (action?.data?.kind === "done") return seeOther(taskResultPath(action.data.result));
+const form =
+  Astro.request.method === "POST" ? await Astro.request.clone().formData() : new FormData();
+const zone = form.has("zone") ? formText(form, "zone") : view.zones[0] || "";
+const time = form.has("time") ? formText(form, "time") : zone ? wallTime(new Date(), zone) : "";
+const selectedTask = formText(form, "task") || SCHEDULED_TASKS[0]?.name;
+const errors = action?.data?.kind === "invalid" ? action.data.errors : {};
+if (action?.error) Astro.response.status = 500;
+else if (action?.data?.kind === "invalid") Astro.response.status = 400;
+const instant = view.zones.includes(zone) ? taskInstant(time, zone) : null;
+const result = readTaskResult(Astro.url.searchParams);
+const fieldClass =
+  "min-h-11 w-full min-w-0 rounded border border-control bg-surface px-3 py-2 text-base";
+---
+
+<BaseLayout title="Tareas programadas">
+  <div class="flex min-w-0 flex-col gap-6">
+    <PanelNavigation links={view.home?.links ?? []} />
+    <h1 class="text-2xl font-bold">Tareas programadas</h1>
+    <p>
+      Corre una tarea a mano con la fecha y hora que quieras probar. Solo está disponible en local y
+      dev.
+    </p>
+    {result && (
+      <section
+        aria-label="Resultado de la tarea"
+        class="flex flex-col gap-2 break-words rounded border border-control p-4"
+      >
+        <h2 class="text-xl font-bold">
+          {result.failed ? "La tarea falló." : "Listo, la tarea terminó."}
+        </h2>
+        <p>{result.task}</p>
+        <p>
+          Hora UTC: <time datetime={result.instant}>{result.instant}</time>
+        </p>
+        <p>{result.counts}</p>
+        <p>Recargar esta página solo vuelve a mostrar el resultado.</p>
+      </section>
+    )}
+    {action?.error && <p role="alert">No se pudo correr la tarea. Vuelve a intentarlo.</p>}
+    {view.zones.length === 0 ? (
+      <p>No hay zonas horarias configuradas en las localidades.</p>
+    ) : (
+      <form
+        method="post"
+        action={actions.admin.runTask.queryString}
+        novalidate
+        class="flex max-w-xl min-w-0 flex-col gap-5"
+      >
+        <div class="flex min-w-0 flex-col gap-2">
+          <label for="task" class="font-semibold">
+            Tarea
+          </label>
+          <select
+            id="task"
+            name="task"
+            class={fieldClass}
+            aria-describedby={errors["task"] ? "task-error" : undefined}
+          >
+            {SCHEDULED_TASKS.map((task) => (
+              <option value={task.name} selected={task.name === selectedTask}>
+                {task.name}
+              </option>
+            ))}
+          </select>
+          {errors["task"] && (
+            <p id="task-error" class="text-ink">
+              {errors["task"]}
+            </p>
+          )}
+        </div>
+        <div class="flex min-w-0 flex-col gap-2">
+          <label for="zone" class="font-semibold">
+            Zona horaria
+          </label>
+          <select
+            id="zone"
+            name="zone"
+            class={fieldClass}
+            aria-describedby={errors["zone"] ? "zone-error" : undefined}
+          >
+            {view.zones.map((item) => (
+              <option value={item} selected={zone === item}>
+                {item}
+              </option>
+            ))}
+          </select>
+          {errors["zone"] && (
+            <p id="zone-error" class="text-ink">
+              {errors["zone"]}
+            </p>
+          )}
+        </div>
+        <div class="flex min-w-0 flex-col gap-2">
+          <label for="time" class="font-semibold">
+            Fecha y hora
+          </label>
+          <input
+            id="time"
+            name="time"
+            type="datetime-local"
+            value={time}
+            class={fieldClass}
+            aria-describedby={errors["time"] ? "time-error" : "utc-time"}
+          />
+          {errors["time"] && (
+            <p id="time-error" class="text-ink">
+              {errors["time"]}
+            </p>
+          )}
+          <p id="utc-time" class="break-words">
+            {instant
+              ? `Hora UTC: ${instant.toISOString()}`
+              : "Revisa la fecha, la hora y la zona horaria."}
+          </p>
+          <p class="text-ink-muted">
+            Si cambias la fecha o la zona, usa “Ver hora UTC” para revisar el instante antes de
+            correrla.
+          </p>
+        </div>
+        {errors["intent"] && (
+          <p role="alert" class="text-ink">
+            {errors["intent"]}
+          </p>
+        )}
+        <div class="flex flex-wrap gap-3">
+          <button
+            name="intent"
+            value="preview"
+            class="min-h-11 rounded border border-control px-4 py-2 font-semibold"
+          >
+            Ver hora UTC
+          </button>
+          <button
+            name="intent"
+            value="run"
+            class="min-h-11 rounded bg-action-strong px-4 py-2 font-semibold text-background"
+          >
+            Correr tarea
+          </button>
+        </div>
+      </form>
+    )}
+  </div>
+</BaseLayout>
