@@ -584,6 +584,7 @@ describe("The migration tree applies in full and its constraints survive", () =>
       "categories",
       "localities",
       "municipalities",
+      "orphan_photo_sweep_state",
       "pending_edits",
       "permissions",
       "photo_cache_purges",

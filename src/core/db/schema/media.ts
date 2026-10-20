@@ -8,7 +8,8 @@
 // address of a variant of a photo, so the table can never hold anything
 // about a business. It points to no other table, so deleting a card never
 // waits on it and it outlives the card.
-import { check, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean, check, date, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { BUSINESS_ID_ALPHABET } from "../../business/id.ts";
 import { PHOTO_KEY_LENGTH, PHOTO_VARIANTS } from "../../photos/photo.ts";
 import { matches } from "./checks.ts";
@@ -27,4 +28,17 @@ export const photoCachePurges = pgTable(
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [check("photo_cache_purges_url_check", matches(t.url, PURGE_URL_PATTERN))],
+);
+
+/** The bounded hourly continuation of the orphan-photo sweep. */
+export const orphanPhotoSweepState = pgTable(
+  "orphan_photo_sweep_state",
+  {
+    singleton: boolean("singleton").primaryKey().default(true),
+    // The opaque continuation token R2 returns; it is never logged.
+    cursor: text("cursor"),
+    // The UTC day on which the last complete pass finished.
+    completedOn: date("completed_on", { mode: "string" }),
+  },
+  (t) => [check("orphan_photo_sweep_state_singleton_check", sql`${t.singleton}`)],
 );

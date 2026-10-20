@@ -6,6 +6,7 @@ All notable changes to this product are documented here. Format: [Keep a Changel
 
 ### Added
 
+- A daily orphan-photo sweep in the hourly Worker job. It keeps card and pending-edit photos, waits seven days before deleting, resumes bounded passes next hour, fails the run with counts only when it could not sweep something, and purges the media hostname cache through the shared photo deletion path (EMR-57).
 - Panel users and role bundles at `/admin/usuarios` and `/admin/roles`, with global permission checks, activation and assignment management, a concurrent last-super-admin guard, and an accessible panel home for roles without queue permissions (EMR-72).
 - Direct rectification of any card from its panel detail, using the registration form and validation, with optional field and photo removal, locality permissions and atomic contact auditing. Published cards keep a local catalogue zone, with hidden zones available to the admin; cards in review or rejected keep the registration's free-text option. The panel can open WhatsApp with a copy of the card's captured data, trades and privacy notice acceptance, without internal review data or photo addresses.
 - A Playwright audit of every panel screen at 390px with JavaScript disabled, using realistic names, zones, comments, reports, edits, photos, users and roles. It saves a screenshot per screen and checks overflow, main content and all tap targets.
