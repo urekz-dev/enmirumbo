@@ -1461,6 +1461,8 @@ Amended on 2026-10-19 (EMR-75) by decision of the product owner: the singleton a
 
 Added in v2 — source: ADR 0011, ADR 0013; EMR-57.
 
+Amended on 2026-10-29 (EMR-55) by decision of the product owner: a nullable `started_at` records the start of an unfinished pass, including a failed first page. It survives continuations and failures and clears when the pass completes; switching folders resets it to the new pass's start. The daily email counts an owned pass older than 24 hours, without keeping run reports.
+
 The database MUST have one row in `orphan_photo_sweep_state`, keyed by a `singleton` value that can only be true. The row stores the opaque R2 listing cursor, the UTC day the last complete sweep finished and the folder they belong to; all are nullable, and the migration MUST insert the row. A cursor is written only after its whole page is handled, so a failed page remains the next page retried; a page left half-done by a bound of the run is listed again, since what was deleted is gone from it. Completing a pass clears the cursor and records the UTC day; a later hourly run skips another pass that day. The row has no relation to a business and no card data. Its cursor MUST NOT appear in logs or reports.
 
 #### Scenario: the operational row exists
@@ -1487,3 +1489,19 @@ The database MUST have one row in `orphan_photo_sweep_state`, keyed by a `single
 
 - **WHEN** dev starts its sweep with stage's saved cursor or completed day in the copied singleton
 - **THEN** it starts a new bounded `dev/photos/` pass with neither stage's cursor nor its same-day skip, and subsequent dev runs resume or skip only that folder
+
+### Requirement: Daily admin email delivery keeps one operational row per locality (v2)
+
+Added in v2 — source: ADR 0013, ADR 0018, ADR 0021; EMR-55. Amended on 2026-10-29 (EMR-55) by decision of the product owner: `daily_admin_email_state` MUST have at most one row per locality, with a cascading foreign key to the locality, its environment, local day, completion flag, first preparation timestamp and nullable immutable batch. The batch holds only its recipient snapshot, the count-only email text and subject, panel links and idempotency key, never card data or the API key. It MUST be committed before the first send, preserved unchanged through failures, and cleared immediately on success. The completed day remains to prevent duplicates. A conditional upsert starts only a later day, or replaces state copied from another environment; a row lock serializes senders, and Resend's stable environment/locality/day idempotency key protects a send whose database commit is lost. No task-run reports or delivery history are stored. Delivery, retries, limits and the no-news case follow `deployment`, "The daily email to the admin lists the pending items and what expires within seven days (v2)".
+
+The locality's nullable `daily_registration_alert_snapshots` holds at most two count-only snapshots, the claimed alert's local day and its preceding day if claimed. The threshold claim writes it atomically with `daily_registration_alerted_on`, preserving yesterday after an early alert today. It contains only local day, observed registrations and threshold, never a card or recipient.
+
+#### Scenario: concurrent daily deliveries
+
+- **WHEN** two runs prepare or deliver the same locality and local day
+- **THEN** they preserve one immutable batch, only one sender holds its row lock, and retries reuse its idempotency key
+
+#### Scenario: a successful send
+
+- **WHEN** Resend accepts the batch and the completion commits
+- **THEN** the recipient and message snapshot is cleared and that local day cannot send again

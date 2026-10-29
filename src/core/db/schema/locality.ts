@@ -9,6 +9,7 @@ import {
   date,
   doublePrecision,
   integer,
+  jsonb,
   pgTable,
   text,
   unique,
@@ -85,6 +86,11 @@ export const localities = pgTable(
     contactWhatsapp: text("contact_whatsapp"),
     dailyRegistrationThreshold: integer("daily_registration_threshold").default(20),
     dailyRegistrationAlertedOn: date("daily_registration_alerted_on", { mode: "string" }),
+    // At most the current and preceding alert's local days, counts only. This
+    // preserves yesterday when today's threshold is passed before 08:00.
+    dailyRegistrationAlertSnapshots: jsonb("daily_registration_alert_snapshots").$type<
+      { day: string; registrations: number; threshold: number }[]
+    >(),
     active: boolean("active").notNull().default(false),
     latitude: doublePrecision("latitude"),
     longitude: doublePrecision("longitude"),

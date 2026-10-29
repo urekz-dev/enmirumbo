@@ -51,6 +51,8 @@ done
 [ "${#missing[@]}" -eq 0 ] ||
   usage "missing Worker secret(s) ${missing[*]}: add each to the GitHub Environment ${env_name} and to the env: of this step; nothing was deployed"
 
+# This includes RESEND_API_KEY: the required-secret list is the single source
+# for the upload, so email credentials follow the same protected file path.
 secrets_args=()
 if [ "${#names[@]}" -gt 0 ]; then
   umask 077

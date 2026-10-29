@@ -512,7 +512,7 @@ describe("The `Report` model stores a resident's notice about a card, with no da
 
   it("nothing about the reporter in the schema", async () => {
     const columns = await query<{ column_name: string }>(
-      "SELECT column_name FROM information_schema.columns WHERE table_name = 'reports' ORDER BY ordinal_position",
+      "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'reports' ORDER BY ordinal_position",
     );
     expect(columns.map((c) => c.column_name)).toEqual([
       "id",
@@ -582,6 +582,7 @@ describe("The migration tree applies in full and its constraints survive", () =>
       "business_trades",
       "businesses",
       "categories",
+      "daily_admin_email_state",
       "localities",
       "municipalities",
       "orphan_photo_sweep_state",

@@ -44,6 +44,8 @@ export const orphanPhotoSweepState = pgTable(
     cursor: text("cursor"),
     // The UTC day on which the last complete pass finished.
     completedOn: date("completed_on", { mode: "string" }),
+    // When the current pass first started, kept across bounded and failed runs.
+    startedAt: timestamp("started_at", { withTimezone: true }),
     // Null denotes the legacy photos/ scan, so its existing cursor stays valid.
     photoFolder: text("photo_folder"),
   },

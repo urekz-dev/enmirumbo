@@ -21,7 +21,7 @@
 // The channel is a structured line in the Worker log, by
 // `logRegistrationThresholdAlert`: the locality's code, its day, the count
 // and the threshold, never anything about a business or a person. The email
-// to the admin (EMR-55) is another channel with the same shape.
+// to the admin reads this state and the previous local day's counts at 08:00.
 //
 // Binding: HYPERDRIVE_FRESH, since it writes.
 import { sql } from "drizzle-orm";
@@ -38,7 +38,7 @@ export interface RegistrationThresholdAlert {
   threshold: number;
 }
 
-/** Where an alert goes: the log now, the admin's email with EMR-55. */
+/** The immediate alert channel; the daily email reads its state the next morning. */
 export type RegistrationThresholdChannel = (alert: RegistrationThresholdAlert) => Promise<void>;
 
 /**
@@ -75,7 +75,14 @@ export async function claimRegistrationThresholdAlerts(
       where l.active and l.daily_registration_threshold is not null
     )
     update localities as l
-    set daily_registration_alerted_on = today.day
+    set daily_registration_alerted_on = today.day,
+      daily_registration_alert_snapshots = jsonb_build_array(jsonb_build_object(
+        'day', today.day::text, 'registrations', today.registrations, 'threshold', today.threshold
+      )) || coalesce((
+        select jsonb_agg(snapshot) from jsonb_array_elements(
+          coalesce(l.daily_registration_alert_snapshots, '[]'::jsonb)
+        ) snapshot where snapshot->>'day' = (today.day - 1)::text
+      ), '[]'::jsonb)
     from today
     where l.code = today.code
       and today.registrations > today.threshold
@@ -96,7 +103,7 @@ export async function claimRegistrationThresholdAlerts(
     .sort((a, b) => a.locality.localeCompare(b.locality));
 }
 
-/** The channel of the alert until the admin's email arrives: one structured line in the log. */
+/** The immediate alert channel: one structured line in the log. */
 export async function logRegistrationThresholdAlert(
   alert: RegistrationThresholdAlert,
 ): Promise<void> {

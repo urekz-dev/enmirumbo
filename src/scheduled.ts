@@ -7,6 +7,8 @@
 // what it did as counts.
 //
 // The tasks:
+// - `daily-admin-email`: the pending items and operational backlog at 08:00
+//   local time, at most five Resend batches, with durable retries.
 // - `registration-threshold`: the daily registrations alert
 //   (src/core/registration/threshold.ts).
 // - `photo-cache-purge`: purges the addresses of deleted photos whose purge
@@ -32,9 +34,9 @@
 // request to Cloudflare's cache API (calls to R2 count against a separate
 // limit of 1,000). So the three tasks that delete photos are bounded to
 // 10 + 15 + 15 = 40 of them (the purge retry's requests, the photos the
-// retention purge deletes and the photos the sweep deletes), and 10 stay in
-// reserve, for the admin's daily email (EMR-55) and for the retention purge's
-// overshoot: it starts no new item once its 15 photos were deleted, so one
+// retention purge deletes and the photos the sweep deletes). Five requests
+// send at most five locality email batches; five stay in reserve for the
+// retention purge's overshoot: it starts no new item once its 15 photos were deleted, so one
 // card can add a photo or two beyond. Workers Paid, from the launch, allows
 // 10,000, and the bounds then only keep a run short.
 import { withDb } from "./core/db/client.ts";
@@ -51,12 +53,13 @@ import {
   type MediaBucketEnv,
 } from "./lib/media-bucket.ts";
 import { mediaPhotoFolder } from "./lib/media-folder.ts";
+import { dailyAdminEmail } from "./lib/daily-email.ts";
 
 /** The subrequests to the internet one invocation may make on Workers Free. */
 export const SUBREQUEST_LIMIT = 50;
 
-/** The subrequests of that limit no task's bound spends: the email and the purge's overshoot. */
-export const SUBREQUEST_RESERVE = 10;
+/** The subrequests no task's bound spends: the retention purge's overshoot. */
+export const SUBREQUEST_RESERVE = 5;
 
 /** A task of the hourly job: what it did, as counts. */
 export interface ScheduledTask {
@@ -138,6 +141,20 @@ export const SCHEDULED_TASKS: readonly ScheduledTask[] = [
   { name: "photo-cache-purge", run: (env, _now, ctx) => purgeWaitingPhotos(env, ctx) },
   { name: "retention-purge", run: (env, now, ctx) => purgeExpiredRecords(env, now, ctx) },
   { name: "orphan-photo-sweep", run: runOrphanPhotoSweepTask },
+  {
+    name: "daily-admin-email",
+    run: async (env, now, ctx) => {
+      const counts = await dailyAdminEmail(env, now, ctx);
+      if (counts.failed > 0) {
+        throw new IncompleteTask(
+          Object.entries(counts)
+            .map(([name, count]) => `${count} ${name}`)
+            .join(", "),
+        );
+      }
+      return counts;
+    },
+  },
 ];
 
 export async function runScheduledTasks(

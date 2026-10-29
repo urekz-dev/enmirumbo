@@ -25,6 +25,7 @@ process.env["TURNSTILE_SECRET_KEY"] ??= TURNSTILE_TEST_SECRET_KEYS.alwaysPasses;
 // Worker has no such cache and purges nothing (src/lib/media-bucket.ts).
 process.env["MEDIA_ZONE_ID"] ??= "";
 process.env["MEDIA_CACHE_PURGE_TOKEN"] ??= "";
+process.env["RESEND_API_KEY"] ??= "";
 
 const PHONE = { ...devices["Pixel 7"], viewport: { width: 390, height: 844 } };
 
