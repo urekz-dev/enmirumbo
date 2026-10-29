@@ -24,7 +24,7 @@ const ISSUER = `https://${TEAM_DOMAIN}`;
 const AUD = "a1".repeat(32);
 const OTHER_APP_AUD = "b2".repeat(32);
 const ADMIN_EMAIL = "persona@enmirumbo.test";
-const DEPLOYED_URL = "https://stage-enmirumbo.urekz.workers.dev";
+const DEPLOYED_URL = "https://stage.enmirumbo.com";
 const LOCAL_URL = "http://localhost:4321";
 
 let teamKey: CryptoKey;

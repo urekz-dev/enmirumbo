@@ -16,7 +16,8 @@
   // Node.js compatibility is on by default from 2026-08-04.
   "compatibility_date": "2026-10-01",
   // The local Worker is never deployed. If it were, by mistake, it would get no
-  // workers.dev URL and no Version URLs. The environments turn workers.dev on.
+  // workers.dev URL and no Version URLs. Dev and stage use Custom Domains;
+  // production keeps its workers.dev URL until the cut-over (ADR 0008).
   // `preview_urls` stays false here and in every environment, each writing it
   // (ADR 0012, amended on 2026-10-15; test/scripts/quota-guardrails.test.ts).
   "workers_dev": false,
@@ -117,8 +118,9 @@
     // from stage on every deploy.
     "dev": {
       "name": "dev-enmirumbo",
-      "workers_dev": true,
+      "workers_dev": false,
       "preview_urls": false,
+      "routes": [{ "pattern": "dev.enmirumbo.com", "custom_domain": true }],
       // Workers Logs and traces off, as at the top level.
       "observability": {
         "enabled": false,
@@ -150,10 +152,9 @@
         // The AUD tag of the "enmirumbo admin" Access application, the same in
         // the three environments (ADR 0010).
         "ACCESS_AUD": "a98a5e8ae63966e34ec201af51ec9b15ba202afaee4768ddb940bcb016ad2338",
-        "SITE_URL": "https://dev-enmirumbo.urekz.workers.dev",
-        // The media hostname (ADR 0011), under urekz.com until enmirumbo.com
-        // moves to Cloudflare.
-        "MEDIA_URL": "https://media-dev-enmirumbo.urekz.com",
+        "SITE_URL": "https://dev.enmirumbo.com",
+        // The media hostname of the shared bucket (ADR 0011).
+        "MEDIA_URL": "https://media-dev.enmirumbo.com",
         // Never measured (ADR 0014): only prod loads Umami.
         "UMAMI_WEBSITE_ID": "",
         // The public site key of the Turnstile widget enmirumbo-dev (managed,
@@ -172,8 +173,9 @@
     // Deployed on every push to main (deploy-stage.yml).
     "stage": {
       "name": "stage-enmirumbo",
-      "workers_dev": true,
+      "workers_dev": false,
       "preview_urls": false,
+      "routes": [{ "pattern": "stage.enmirumbo.com", "custom_domain": true }],
       // Workers Logs and traces off, as at the top level.
       "observability": {
         "enabled": false,
@@ -204,10 +206,9 @@
         // The AUD tag of the "enmirumbo admin" Access application, the same in
         // the three environments (ADR 0010).
         "ACCESS_AUD": "a98a5e8ae63966e34ec201af51ec9b15ba202afaee4768ddb940bcb016ad2338",
-        "SITE_URL": "https://stage-enmirumbo.urekz.workers.dev",
-        // The media hostname (ADR 0011), under urekz.com until enmirumbo.com
-        // moves to Cloudflare.
-        "MEDIA_URL": "https://media-dev-enmirumbo.urekz.com",
+        "SITE_URL": "https://stage.enmirumbo.com",
+        // The media hostname of the shared bucket (ADR 0011).
+        "MEDIA_URL": "https://media-dev.enmirumbo.com",
         // Never measured (ADR 0014): only prod loads Umami.
         "UMAMI_WEBSITE_ID": "",
         // The public site key of the Turnstile widget enmirumbo-dev (managed,
@@ -255,9 +256,8 @@
         // the three environments (ADR 0010).
         "ACCESS_AUD": "a98a5e8ae63966e34ec201af51ec9b15ba202afaee4768ddb940bcb016ad2338",
         "SITE_URL": "https://enmirumbo.urekz.workers.dev",
-        // The media hostname (ADR 0011), under urekz.com until enmirumbo.com
-        // moves to Cloudflare.
-        "MEDIA_URL": "https://media-enmirumbo.urekz.com",
+        // The media hostname (ADR 0011).
+        "MEDIA_URL": "https://media.enmirumbo.com",
         // Measurement stays off until the launch: the Website ID arrives with
         // the cut-over (ADR 0014).
         "UMAMI_WEBSITE_ID": "",

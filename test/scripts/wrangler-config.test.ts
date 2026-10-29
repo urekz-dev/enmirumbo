@@ -19,13 +19,37 @@ import {
   TURNSTILE_TEST_SITE_KEYS,
 } from "../../src/core/turnstile/keys.ts";
 
-const DEV_MEDIA = { bucket: "enmirumbo-media-dev", url: "https://media-dev-enmirumbo.urekz.com" };
-const PROD_MEDIA = { bucket: "enmirumbo-media", url: "https://media-enmirumbo.urekz.com" };
+const DEV_MEDIA = { bucket: "enmirumbo-media-dev", url: "https://media-dev.enmirumbo.com" };
+const PROD_MEDIA = { bucket: "enmirumbo-media", url: "https://media.enmirumbo.com" };
 
 const ENVIRONMENTS = [
-  { env: "dev", name: "dev-enmirumbo", crons: [], media: DEV_MEDIA },
-  { env: "stage", name: "stage-enmirumbo", crons: ["0 * * * *"], media: DEV_MEDIA },
-  { env: "prod", name: "enmirumbo", crons: ["0 * * * *"], media: PROD_MEDIA },
+  {
+    env: "dev",
+    name: "dev-enmirumbo",
+    siteUrl: "https://dev.enmirumbo.com",
+    workersDev: false,
+    routes: [{ pattern: "dev.enmirumbo.com", custom_domain: true }],
+    crons: [],
+    media: DEV_MEDIA,
+  },
+  {
+    env: "stage",
+    name: "stage-enmirumbo",
+    siteUrl: "https://stage.enmirumbo.com",
+    workersDev: false,
+    routes: [{ pattern: "stage.enmirumbo.com", custom_domain: true }],
+    crons: ["0 * * * *"],
+    media: DEV_MEDIA,
+  },
+  {
+    env: "prod",
+    name: "enmirumbo",
+    siteUrl: "https://enmirumbo.urekz.workers.dev",
+    workersDev: true,
+    routes: [],
+    crons: ["0 * * * *"],
+    media: PROD_MEDIA,
+  },
 ] as const;
 
 const VARIABLES = [
@@ -67,26 +91,25 @@ function read(env?: string): ResolvedConfig {
 
 describe("Three deployed environments, each with its own Worker, bindings and variables (v2)", () => {
   it.for(ENVIRONMENTS)(
-    "per environment: $env has its Worker, workers.dev on and Version URLs off",
-    ({ env, name }) => {
+    "per environment: $env has its intended hostname and Version URLs off",
+    ({ env, name, workersDev, routes }) => {
       const config = read(env);
       expect(config.name).toBe(name);
-      expect(config.workers_dev).toBe(true);
+      expect(config.workers_dev).toBe(workersDev);
       expect(config.preview_urls).toBe(false);
-      // Custom Domains and routes arrive with EMR-63.
-      expect(config.routes ?? []).toEqual([]);
+      expect(config.routes ?? []).toEqual(routes);
       expect(config.route).toBeUndefined();
     },
   );
 
   it.for(ENVIRONMENTS)(
     "per environment: $env declares its own variables and SITE_URL",
-    ({ env, name }) => {
+    ({ env, siteUrl }) => {
       const config = read(env);
       expect(Object.keys(config.vars)).toEqual(expect.arrayContaining(VARIABLES));
       expect(config.vars["ENVIRONMENT"]).toBe(env);
       expect(config.vars["ACCESS_TEAM_DOMAIN"]).toBe("urekz.cloudflareaccess.com");
-      expect(config.vars["SITE_URL"]).toBe(`https://${name}.urekz.workers.dev`);
+      expect(config.vars["SITE_URL"]).toBe(siteUrl);
     },
   );
 
@@ -198,6 +221,8 @@ describe("Three deployed environments, each with its own Worker, bindings and va
     expect(config.vars["ENVIRONMENT"]).toBe("local");
     expect(config.workers_dev).toBe(false);
     expect(config.preview_urls).toBe(false);
+    expect(config.routes ?? []).toEqual([]);
+    expect(config.route).toBeUndefined();
     expect(config.triggers.crons ?? []).toEqual([]);
     // The offline Images of Wrangler: tests and `vp run dev` never reach the
     // real service, so they spend none of the monthly allowance.
@@ -262,9 +287,12 @@ describe("Public media live in R2, in one bucket for production and one for dev 
 
   // The naming rule of AGENTS.md: one level below the zone, so Universal SSL
   // covers it.
-  it.for(ENVIRONMENTS)("the media hostname of $env is one level below urekz.com", ({ media }) => {
-    expect(new URL(media.url).hostname).toMatch(/^[a-z0-9-]+\.urekz\.com$/);
-  });
+  it.for(ENVIRONMENTS)(
+    "the media hostname of $env is one level below enmirumbo.com",
+    ({ media }) => {
+      expect(new URL(media.url).hostname).toMatch(/^[a-z0-9-]+\.enmirumbo\.com$/);
+    },
+  );
 });
 
 describe("Scheduled work runs from one hourly Cron Trigger per environment (v2)", () => {

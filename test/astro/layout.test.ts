@@ -395,11 +395,11 @@ describe("Every page declares its title, description, canonical and share previe
   it("an indexable page of a locality: canonical and og:url absolute, from SITE_URL", async () => {
     Object.assign(env, {
       ENVIRONMENT: "stage",
-      SITE_URL: "https://stage-enmirumbo.urekz.workers.dev",
+      SITE_URL: "https://stage.enmirumbo.com",
     });
     const html = await renderIndexable(TIZAYUCA, "/hidalgo/tizayuca");
 
-    expect(canonical(html)).toBe("https://stage-enmirumbo.urekz.workers.dev/hidalgo/tizayuca");
+    expect(canonical(html)).toBe("https://stage.enmirumbo.com/hidalgo/tizayuca");
     expect(meta(html, "property", "og:url")).toBe(canonical(html));
     expect(meta(html, "property", "og:title")).toBe(
       "enmirumbo — Encuentra negocios y servicios en Tizayuca",
@@ -474,7 +474,7 @@ describe("Every page declares its title, description, canonical and share previe
   // public-directory, "The card looks good when shared over WhatsApp or
   // Facebook", scenario: card with a photo
   it("a card with a photo shares its photo instead of its locality's image", async () => {
-    const photo = "https://media-enmirumbo.urekz.com/photos/yya626vdevvbuxa5avc2n8e6/full.webp";
+    const photo = "https://media.enmirumbo.com/photos/yya626vdevvbuxa5avc2n8e6/full.webp";
     const html = await container.renderToString(BaseLayout, {
       partial: false,
       props: {

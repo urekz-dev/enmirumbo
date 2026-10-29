@@ -352,13 +352,13 @@ Under `/{estado}/{municipio}/`, one path segment is a category (`servicios-del-h
 
 Three deployed environments ([ADR 0008](docs/adr/0008-environments-and-deployment-flow.md)), each a Wrangler environment in `wrangler.jsonc` with its own Worker, bindings and variables. The top level of `wrangler.jsonc` is the local Worker, `enmirumbo-local`, which is never deployed.
 
-| Environment | Worker            | URL                                       | Deployed by                                         | Database (Neon branch)    | Cron Trigger |
-| ----------- | ----------------- | ----------------------------------------- | --------------------------------------------------- | ------------------------- | ------------ |
-| `dev`       | `dev-enmirumbo`   | https://dev-enmirumbo.urekz.workers.dev   | `deploy-dev.yml`, by hand from any branch           | `dev`, reset from `stage` | none         |
-| `stage`     | `stage-enmirumbo` | https://stage-enmirumbo.urekz.workers.dev | `deploy-stage.yml`, on every push to `main`         | `stage`                   | hourly       |
-| `prod`      | `enmirumbo`       | https://enmirumbo.urekz.workers.dev       | `deploy-prod.yml`, on a tag `vX.Y.Z` (with Release) | `prod`                    | hourly       |
+| Environment | Worker            | URL today                           | At H4                                               | Deployed by                                         | Database (Neon branch)    | Cron Trigger |
+| ----------- | ----------------- | ----------------------------------- | --------------------------------------------------- | --------------------------------------------------- | ------------------------- | ------------ |
+| `dev`       | `dev-enmirumbo`   | https://dev.enmirumbo.com           | unchanged                                           | `deploy-dev.yml`, by hand from any branch           | `dev`, reset from `stage` | none         |
+| `stage`     | `stage-enmirumbo` | https://stage.enmirumbo.com         | unchanged                                           | `deploy-stage.yml`, on every push to `main`         | `stage`                   | hourly       |
+| `prod`      | `enmirumbo`       | https://enmirumbo.urekz.workers.dev | https://enmirumbo.com and https://www.enmirumbo.com | `deploy-prod.yml`, on a tag `vX.Y.Z` (with Release) | `prod`                    | hourly       |
 
-Every deployed environment answers with `X-Robots-Tag: noindex` and a closed `robots.txt` until the cut-over, production included: the Worker adds the header to its responses, and the `_headers` file of the build to the static assets (see [Legal pages](#legal-pages)). Version and Preview URLs are off, so `/admin` is reachable only through Access.
+Every deployed environment answers with `X-Robots-Tag: noindex` and a closed `robots.txt` until the cut-over, production included: the Worker adds the header to its responses, and the `_headers` file of the build to the static assets (see [Legal pages](#legal-pages)). Dev and stage use Custom Domains in the `enmirumbo.com` zone with `workers_dev` off; the apex and `www` still point DNS-only to the Vercel prototype, and production keeps its `workers.dev` URL until H4 attaches those names to the Worker. Version and Preview URLs are off, so `/admin` is reachable only through Access.
 
 Each workflow checks the ref, builds for its environment, checks the generated configuration (a real Turnstile site key and `TURNSTILE_SECRET_KEY` in `secrets.required` among the rest) and the `_headers` file of the static assets, which must give every one of them noindex and the security headers (`scripts/deploy/check-build.sh`), checks the catalogue URLs of the target database plus its pending migrations (`scripts/check-catalogue-urls.ts`, which applies them in a transaction and rolls it back, and stops the deploy on a conflict), applies the migrations, seeds (not on `prod`) and uploads the seed's photos (`scripts/deploy/upload-seed-media.sh`), deploys with the project's Wrangler and the Worker secrets (`scripts/deploy/deploy-worker.sh`, see [Secrets](#secrets)) and runs a smoke test (`scripts/deploy/smoke-test.sh`): the home answers 200, following its redirects within https, with `X-Robots-Tag: noindex` and the security headers; so does `/aviso-de-privacidad`, a prerendered page served without the Worker; and `robots.txt` is closed. The dev workflow first resets the Neon `dev` branch from `stage` (`scripts/deploy/reset-neon-dev.sh`), so anything stored in dev is lost on each deploy. Each step receives only the secrets it needs from the GitHub Environment of the same name (see [Secrets](#secrets)). To deploy a branch to dev: Actions, "Deploy dev", "Run workflow", pick the branch. To release: push a tag `vX.Y.Z` from `main`.
 
@@ -390,13 +390,13 @@ The Hyperdrive configurations hold the database credentials and are created by h
 
 Business photos live in a public media bucket of R2 ([ADR 0011](docs/adr/0011-photos-in-r2-transformed-on-upload.md), amended): a bucket of public content that people or the admin upload, organized by prefix, never anything private (the backups have their own). Cloudflare serves it from the media hostname, a custom domain of the bucket, without the Worker. Production has its own bucket; `dev` and `stage` share one, because a binding or an R2 token cannot be limited to a prefix (so nothing deployed from a branch can reach production's photos), and because `dev` copies `stage`'s database, whose cards must point at photos that exist.
 
-| Environment       | Bucket (binding `MEDIA`) | `MEDIA_URL`                             | Later                             |
-| ----------------- | ------------------------ | --------------------------------------- | --------------------------------- |
-| `local`           | `enmirumbo-media-local`  | empty: served under `/_media/`          |                                   |
-| `dev` and `stage` | `enmirumbo-media-dev`    | `https://media-dev-enmirumbo.urekz.com` | `https://media-dev.enmirumbo.com` |
-| `prod`            | `enmirumbo-media`        | `https://media-enmirumbo.urekz.com`     | `https://media.enmirumbo.com`     |
+| Environment       | Bucket (binding `MEDIA`) | `MEDIA_URL`                       |
+| ----------------- | ------------------------ | --------------------------------- |
+| `local`           | `enmirumbo-media-local`  | empty: served under `/_media/`    |
+| `dev` and `stage` | `enmirumbo-media-dev`    | `https://media-dev.enmirumbo.com` |
+| `prod`            | `enmirumbo-media`        | `https://media.enmirumbo.com`     |
 
-The hostnames live under `urekz.com` until `enmirumbo.com` is on Cloudflare (EMR-63); moving them is a change of `MEDIA_URL` and of the custom domains, never of code. They are one level below their zone, as the [naming rule](AGENTS.md) asks, so Cloudflare's free Universal SSL certificate covers them.
+The media hostnames use the active `enmirumbo.com` zone. They are one level below the zone, as the [naming rule](AGENTS.md) asks, so Cloudflare's free Universal SSL certificate covers them.
 
 - A business stores one photo key, 24 random characters of the identifier alphabet, prefixed with `dev_` only on dev (`newPhotoKey`, `src/core/photos/photo.ts`). The key determines its folder: dev keys use `dev/photos/<dev_key>/`, while stage, production and local keys keep `photos/<key>/`. `ENVIRONMENT` selects this policy in `src/lib/media-folder.ts`, passed to the core by `mediaBucket(env)`. Existing unmarked keys and objects stay in place and count as stage photos in the shared bucket. Each photo is two WebP objects: `photos/<key>/card.webp`, 400×400, for the listing card, and `photos/<key>/full.webp`, 1200×900, for the card, its share preview and its Schema.org block. Each carries `Cache-Control: public, max-age=31536000, immutable`: a key never changes its bytes, so browsers and Cloudflare's cache keep it for a year.
 - Pages build a photo's address only through `src/lib/media.ts`, from `MEDIA_URL` and a stored key of a published card; a stored value that is not exactly a key the server generates is no photo, and the listing card shows its placeholder. The listing card shows the `card` variant with its size, and only the first card of a list loads it at once; the card shows the `full` one above its name. A deployed environment without an https `MEDIA_URL` shows no photo and logs it once.
@@ -411,20 +411,20 @@ The hostnames live under `urekz.com` until `enmirumbo.com` is on Cloudflare (EMR
 
 Set up once, by hand, before the first deploy that binds `MEDIA` (a deploy fails while its bucket does not exist, and the merge to `main` deploys `stage`):
 
-1. In the Cloudflare dashboard of the account that holds the `urekz.com` zone: R2 object storage, Overview, Create bucket. Name `enmirumbo-media`, location Automatic, default storage class Standard, Create bucket. Repeat for `enmirumbo-media-dev`.
-2. In `enmirumbo-media`: Settings, Custom Domains, Add, `media-enmirumbo.urekz.com`, Continue, Connect Domain. Wait until its status is Active. In `enmirumbo-media-dev`, the same with `media-dev-enmirumbo.urekz.com`.
+1. In the Cloudflare dashboard of the account that holds the `enmirumbo.com` zone: R2 object storage, Overview, Create bucket. Name `enmirumbo-media`, location Automatic, default storage class Standard, Create bucket. Repeat for `enmirumbo-media-dev`.
+2. In `enmirumbo-media`: Settings, Custom Domains, Add, `media.enmirumbo.com`, Continue, Connect Domain. Wait until its status is Active. In `enmirumbo-media-dev`, the same with `media-dev.enmirumbo.com`.
 3. In each bucket: Settings, Public Development URL. It must say it is disabled; if it is enabled, Disable, type `disallow`, Disallow.
-4. In the `urekz.com` zone: Caching, Configuration, Browser Cache TTL must be "Respect Existing Headers" (the default), so the objects' year of caching reaches browsers. Optionally, Caching, Tiered Cache, Smart Tiered Cache, as R2 recommends; it applies to the whole zone.
+4. In the `enmirumbo.com` zone: Caching, Configuration, Browser Cache TTL must be "Respect Existing Headers" (the default), so the objects' year of caching reaches browsers. Optionally, Caching, Tiered Cache, Smart Tiered Cache, as R2 recommends; it applies to the whole zone.
 5. R2 object storage, Overview, API Tokens (Manage), Create Account API Token. Name `enmirumbo-media-dev-seed`, permission Object Read & Write, Specify bucket(s): Apply to specific buckets only, `enmirumbo-media-dev`, TTL Forever, Create API Token. Copy the Access Key ID and the Secret Access Key, and keep them in the password manager.
 6. In GitHub: Settings, Environments, `dev`, Environment secrets, Add environment secret: `MEDIA_R2_ACCESS_KEY_ID` with the Access Key ID, then `MEDIA_R2_SECRET_ACCESS_KEY` with the Secret Access Key. Repeat in `stage` with the same two values.
 7. Deploy `dev` (Actions, "Deploy dev", Run workflow). Wrangler does not call the R2 API to deploy, and Cloudflare checks the binding when the Worker is uploaded, so the deploy tokens need no new permission. If a deploy fails with an authentication error about an R2 bucket, edit that environment's `CLOUDFLARE_API_TOKEN` and add Workers R2 Storage Bucket Item Read on its bucket only (`enmirumbo-media` for `prod`, `enmirumbo-media-dev` for `dev` and `stage`).
 8. Check the media hostname of `dev` and `stage`: the first request must answer 200 with `content-type: image/webp` and the cache header, a second one `cf-cache-status: HIT`, and the root 404:
 
 ```sh
-url=https://media-dev-enmirumbo.urekz.com/photos/yya626vdevvbuxa5avc2n8e6/card.webp
+url=https://media-dev.enmirumbo.com/photos/yya626vdevvbuxa5avc2n8e6/card.webp
 curl -sI "$url" | grep -iE '^(HTTP|content-type|cache-control|cf-cache-status)'
 curl -sI "$url" | grep -i '^cf-cache-status'
-curl -s -o /dev/null -w '%{http_code}\n' https://media-dev-enmirumbo.urekz.com/
+curl -s -o /dev/null -w '%{http_code}\n' https://media-dev.enmirumbo.com/
 ```
 
 Production's hostname answers 404 to everything until the registration uploads the first photo.
@@ -446,7 +446,7 @@ The content security policy of production without a Website ID (each directive o
 default-src 'self'
 script-src 'self' https://challenges.cloudflare.com
 style-src 'self'
-img-src 'self' https://media-enmirumbo.urekz.com
+img-src 'self' https://media.enmirumbo.com
 connect-src 'self'
 frame-src https://challenges.cloudflare.com
 frame-ancestors 'none'
@@ -461,7 +461,7 @@ To read the headers of a deployed environment, for a page of the Worker and for 
 
 ```sh
 for path in /hidalgo/tizayuca /aviso-de-privacidad; do
-  curl -sI "https://stage-enmirumbo.urekz.workers.dev${path}" |
+  curl -sI "https://stage.enmirumbo.com${path}" |
     grep -iE '^(content-security-policy|x-content-type-options|x-frame-options|referrer-policy|x-robots-tag):'
 done
 ```
@@ -472,20 +472,20 @@ Both must print the four security headers with the values above, with that envir
 
 Every secret lives in the GitHub Environments of this repository, `dev`, `stage` and `prod`, plus `backup` for the nightly backup ([ADR 0020](docs/adr/0020-secrets-in-github-environments.md)): Settings > Environments. A secret reaches only the jobs that declare its environment; `prod` releases its secrets only to tags `v*`, and `stage` and `backup` only to `main`. GitHub masks their values in the logs and never shows them again, so the originals stay in each provider and in the custodian's password manager.
 
-| Secret                       | Environments                     | What it is                                                                                                                                                                  |
-| ---------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`       | `dev`, `stage`, `prod`           | An account API token with the Editor role on that environment's Worker only.                                                                                                |
-| `CLOUDFLARE_ACCOUNT_ID`      | `dev`, `stage`, `prod`, `backup` | The Cloudflare account id.                                                                                                                                                  |
-| `DATABASE_URL`               | `dev`, `stage`, `prod`, `backup` | The direct (non-pooled) connection string of that environment's Neon branch, `sslmode=verify-full`. In `backup`, production's, for the read-only role `enmirumbo_backup`.   |
-| `NEON_API_KEY`               | `dev`                            | A Neon project-scoped API key, to reset the `dev` branch from `stage`.                                                                                                      |
-| `NEON_PROJECT_ID`            | `dev`                            | The Neon project id.                                                                                                                                                        |
-| `MEDIA_R2_ACCESS_KEY_ID`     | `dev`, `stage`                   | The Access Key ID of the R2 token `enmirumbo-media-dev-seed`, with Object Read & Write on `enmirumbo-media-dev` only (the same token in both).                              |
-| `MEDIA_R2_SECRET_ACCESS_KEY` | `dev`, `stage`                   | The Secret Access Key of that token.                                                                                                                                        |
-| `R2_ACCESS_KEY_ID`           | `backup`                         | The Access Key ID of an R2 token with Object Read & Write on `enmirumbo-backups` only.                                                                                      |
-| `R2_SECRET_ACCESS_KEY`       | `backup`                         | The Secret Access Key of that token.                                                                                                                                        |
-| `TURNSTILE_SECRET_KEY`       | `dev`, `stage`, `prod`           | A Worker secret: the secret key of the Turnstile widget of the environment, `enmirumbo` in `prod` and `enmirumbo-dev` in `dev` and `stage` (the same value in both).        |
-| `MEDIA_ZONE_ID`              | `dev`, `stage`, `prod`           | A Worker secret: the zone id of the media hostname, today the `urekz.com` zone in all three. A secret because the repository holds no account or zone ids.                  |
-| `MEDIA_CACHE_PURGE_TOKEN`    | `dev`, `stage`, `prod`           | A Worker secret: a Cloudflare API token with the permission Zone, Cache Purge on that zone only, which purges a deleted photo from the cache (the same value in all three). |
+| Secret                       | Environments                     | What it is                                                                                                                                                                       |
+| ---------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`       | `dev`, `stage`, `prod`           | An account API token with the Editor role on that environment's Worker only.                                                                                                     |
+| `CLOUDFLARE_ACCOUNT_ID`      | `dev`, `stage`, `prod`, `backup` | The Cloudflare account id.                                                                                                                                                       |
+| `DATABASE_URL`               | `dev`, `stage`, `prod`, `backup` | The direct (non-pooled) connection string of that environment's Neon branch, `sslmode=verify-full`. In `backup`, production's, for the read-only role `enmirumbo_backup`.        |
+| `NEON_API_KEY`               | `dev`                            | A Neon project-scoped API key, to reset the `dev` branch from `stage`.                                                                                                           |
+| `NEON_PROJECT_ID`            | `dev`                            | The Neon project id.                                                                                                                                                             |
+| `MEDIA_R2_ACCESS_KEY_ID`     | `dev`, `stage`                   | The Access Key ID of the R2 token `enmirumbo-media-dev-seed`, with Object Read & Write on `enmirumbo-media-dev` only (the same token in both).                                   |
+| `MEDIA_R2_SECRET_ACCESS_KEY` | `dev`, `stage`                   | The Secret Access Key of that token.                                                                                                                                             |
+| `R2_ACCESS_KEY_ID`           | `backup`                         | The Access Key ID of an R2 token with Object Read & Write on `enmirumbo-backups` only.                                                                                           |
+| `R2_SECRET_ACCESS_KEY`       | `backup`                         | The Secret Access Key of that token.                                                                                                                                             |
+| `TURNSTILE_SECRET_KEY`       | `dev`, `stage`, `prod`           | A Worker secret: the secret key of the Turnstile widget of the environment, `enmirumbo` in `prod` and `enmirumbo-dev` in `dev` and `stage` (the same value in both).             |
+| `MEDIA_ZONE_ID`              | `dev`, `stage`, `prod`           | A Worker secret: the id of the `enmirumbo.com` zone that serves every media hostname. A secret because the repository holds no account or zone ids.                              |
+| `MEDIA_CACHE_PURGE_TOKEN`    | `dev`, `stage`, `prod`           | A Worker secret: a Cloudflare API token with Zone, Cache Purge on the `enmirumbo.com` zone only, which purges deleted photos from the media cache (the same value in all three). |
 
 The Worker secrets are declared by name in `secrets.required` at the top level and in each Wrangler environment of `wrangler.jsonc`, today `TURNSTILE_SECRET_KEY`, `MEDIA_ZONE_ID` and `MEDIA_CACHE_PURGE_TOKEN`; the per-IP quotas need none, since their key lives only in the memory of the Durable Object. Their values live in the GitHub Environments. The Deploy step of each workflow gets them through its own `env:` and runs `scripts/deploy/deploy-worker.sh`, which stops if one is missing, writes them to a file in the runner's temporary directory that only its owner can read, deploys with `wrangler deploy --secrets-file` and removes the file. A new Worker secret goes in `secrets.required`, in the GitHub Environments and in the `env:` of the three Deploy steps. Changing a secret takes a new deploy of that environment. Locally no real secret is needed; a `.dev.vars` file, ignored by git, holds any local value.
 

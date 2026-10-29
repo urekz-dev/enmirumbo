@@ -161,13 +161,18 @@ describe("Each environment is built and deployed by its own workflow (v2): the r
 
 const WORKERS = { dev: "dev-enmirumbo", stage: "stage-enmirumbo", prod: "enmirumbo" } as const;
 type Environment = keyof typeof WORKERS;
+const SITE_URLS = {
+  dev: "https://dev.enmirumbo.com",
+  stage: "https://stage.enmirumbo.com",
+  prod: "https://enmirumbo.urekz.workers.dev",
+} as const;
 
 // The public media of each environment (ADR 0011): production alone, dev and
 // stage together.
 const MEDIA = {
-  dev: { bucket: "enmirumbo-media-dev", url: "https://media-dev-enmirumbo.urekz.com" },
-  stage: { bucket: "enmirumbo-media-dev", url: "https://media-dev-enmirumbo.urekz.com" },
-  prod: { bucket: "enmirumbo-media", url: "https://media-enmirumbo.urekz.com" },
+  dev: { bucket: "enmirumbo-media-dev", url: "https://media-dev.enmirumbo.com" },
+  stage: { bucket: "enmirumbo-media-dev", url: "https://media-dev.enmirumbo.com" },
+  prod: { bucket: "enmirumbo-media", url: "https://media.enmirumbo.com" },
 } as const;
 
 // The site key of each environment's Turnstile widget (ADR 0012): public, and
@@ -196,7 +201,17 @@ function build(environment: Environment, overrides: Record<string, unknown> = {}
     name: WORKERS[environment],
     targetEnvironment: environment,
     topLevelName: "enmirumbo-local",
-    workers_dev: true,
+    workers_dev: environment === "prod",
+    ...(environment === "prod"
+      ? {}
+      : {
+          routes: [
+            {
+              pattern: environment === "dev" ? "dev.enmirumbo.com" : "stage.enmirumbo.com",
+              custom_domain: true,
+            },
+          ],
+        }),
     preview_urls: false,
     observability: OBSERVABILITY_OFF,
     triggers: { crons: environment === "dev" ? [] : ["0 * * * *"] },
@@ -208,7 +223,7 @@ function build(environment: Environment, overrides: Record<string, unknown> = {}
       ENVIRONMENT: environment,
       ACCESS_TEAM_DOMAIN: "urekz.cloudflareaccess.com",
       ACCESS_AUD: "a1".repeat(32),
-      SITE_URL: `https://${WORKERS[environment]}.urekz.workers.dev`,
+      SITE_URL: SITE_URLS[environment],
       MEDIA_URL: MEDIA[environment].url,
       TURNSTILE_SITE_KEY: SITE_KEYS[environment],
     },
@@ -227,7 +242,7 @@ function build(environment: Environment, overrides: Record<string, unknown> = {}
 // src/integrations/static-headers.ts.
 const CSP =
   "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self'; " +
-  "img-src 'self' https://media-enmirumbo.urekz.com; connect-src 'self'; " +
+  "img-src 'self' https://media.enmirumbo.com; connect-src 'self'; " +
   "frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; object-src 'none'; " +
   "base-uri 'none'; form-action 'self'";
 const SECURITY_RULE = [
@@ -277,9 +292,7 @@ describe("Each environment is built and deployed by its own workflow (v2): the b
       const result = checkBuild(environment, build(environment), { GITHUB_OUTPUT: output });
       expect(result.stderr).toBe("");
       expect(result.status).toBe(0);
-      expect(readFileSync(output, "utf8")).toBe(
-        `site-url=https://${WORKERS[environment]}.urekz.workers.dev\n`,
-      );
+      expect(readFileSync(output, "utf8")).toBe(`site-url=${SITE_URLS[environment]}\n`);
     },
   );
 
@@ -381,6 +394,39 @@ describe("Each environment is built and deployed by its own workflow (v2): the b
     }
   });
 
+  it.for(["dev", "stage"] as const)(
+    "$environment requires workers.dev off and its Custom Domain route",
+    (environment) => {
+      const config = build(environment);
+      expect(errors(checkBuild(environment, { ...config, workers_dev: true }))).toEqual([
+        expect.stringContaining("workers_dev is true, expected false"),
+      ]);
+      expect(errors(checkBuild(environment, { ...config, routes: [] }))).toEqual([
+        expect.stringContaining("expected exactly one Custom Domain route"),
+      ]);
+      const otherHost = environment === "dev" ? "stage.enmirumbo.com" : "dev.enmirumbo.com";
+      expect(
+        errors(
+          checkBuild(environment, {
+            ...config,
+            routes: [{ pattern: otherHost, custom_domain: true }],
+          }),
+        ),
+      ).toEqual([expect.stringContaining(`expected pattern '${environment}.enmirumbo.com'`)]);
+    },
+  );
+
+  it("production keeps workers.dev on and has no route until H4", () => {
+    expect(
+      errors(
+        checkBuild("prod", {
+          ...build("prod"),
+          routes: [{ pattern: "enmirumbo.com", custom_domain: true }],
+        }),
+      ),
+    ).toEqual([expect.stringContaining("prod must have no route until H4")]);
+  });
+
   // deployment, "Anti-abuse counters live in a Durable Object and never in
   // PostgreSQL (v2)": without the counter the quotas would not count.
   it("a build without the quota counter, or with a counter that is not declared, is refused", () => {
@@ -428,11 +474,7 @@ describe("Each environment is built and deployed by its own workflow (v2): the b
   });
 
   it("a MEDIA_URL that is not an https origin is refused", () => {
-    for (const url of [
-      "",
-      "http://media-enmirumbo.urekz.com",
-      "https://media-enmirumbo.urekz.com/",
-    ]) {
+    for (const url of ["", "http://media.enmirumbo.com", "https://media.enmirumbo.com/"]) {
       const config = build("prod");
       const result = checkBuild("prod", { ...config, vars: { ...config.vars, MEDIA_URL: url } });
       expect(errors(result), url).toEqual([expect.stringContaining("MEDIA_URL is")]);

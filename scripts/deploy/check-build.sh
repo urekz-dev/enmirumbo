@@ -5,7 +5,9 @@
 # Cloudflare. It reads the file `wrangler deploy` will deploy, not
 # wrangler.jsonc, and reports every problem at once:
 #   - the build targets <env>, with that environment's Worker name and vars;
-#   - workers.dev on and Version/Preview URLs off;
+#   - dev and stage have workers.dev off and one Custom Domain for SITE_URL;
+#     prod has workers.dev on and no route until the cut-over; Version/Preview
+#     URLs are off in every environment;
 #   - Workers Logs and traces off, every key of them written false, so
 #     Cloudflare keeps no request URL, which in the edit mode carries the key
 #     to a card (docs/specs/deployment.md, "Workers Logs and traces stay off
@@ -52,16 +54,19 @@ config="${2:-dist/server/wrangler.json}"
 case "${env_name}" in
 dev)
   worker="dev-enmirumbo"
+  workers_dev="false"
   crons='[]'
   media_bucket="enmirumbo-media-dev"
   ;;
 stage)
   worker="stage-enmirumbo"
+  workers_dev="false"
   crons='["0 * * * *"]'
   media_bucket="enmirumbo-media-dev"
   ;;
 prod)
   worker="enmirumbo"
+  workers_dev="true"
   crons='["0 * * * *"]'
   media_bucket="enmirumbo-media"
   ;;
@@ -90,8 +95,8 @@ value() {
   error "the Worker name is $(value '.name'), expected \"${worker}\""
 [ "$(value '.vars.ENVIRONMENT')" = "\"${env_name}\"" ] ||
   error "ENVIRONMENT is $(value '.vars.ENVIRONMENT'), expected \"${env_name}\""
-[ "$(value '.workers_dev')" = "true" ] ||
-  error "workers_dev is $(value '.workers_dev'), expected true"
+[ "$(value '.workers_dev')" = "${workers_dev}" ] ||
+  error "workers_dev is $(value '.workers_dev'), expected ${workers_dev} for ${env_name}"
 [ "$(value '.preview_urls')" = "false" ] ||
   error "preview_urls is $(value '.preview_urls'), expected false: Version URLs would bypass Access"
 observability_off='{"enabled":false,"logs":{"enabled":false,"invocation_logs":false,"persist":false},"traces":{"enabled":false,"persist":false}}'
@@ -121,6 +126,26 @@ fi
 site_url="$(jq -r '.vars.SITE_URL // ""' "${config}")"
 [[ "${site_url}" =~ ^https://[a-z0-9.-]+$ ]] ||
   error "SITE_URL is '${site_url}', expected an https origin without a path or trailing slash"
+
+route_count="$(jq '[.routes // [] | .[]] | length' "${config}")"
+has_single_route="$(jq 'has("route")' "${config}")"
+if [ "${env_name}" = "prod" ]; then
+  if [ "${route_count}" != "0" ] || [ "${has_single_route}" = "true" ]; then
+    error "prod must have no route until H4; found routes $(jq -c '.routes // []' "${config}") and route $(value '.route')"
+  fi
+else
+  site_host="${site_url#https://}"
+  custom_domain_count="$(jq '[.routes // [] | .[] | select(.custom_domain == true)] | length' "${config}")"
+  if [ "${route_count}" != "1" ] || [ "${custom_domain_count}" != "1" ] || [ "${has_single_route}" = "true" ]; then
+    error "expected exactly one Custom Domain route for SITE_URL host '${site_host}', found routes $(jq -c '.routes // []' "${config}") and route $(value '.route')"
+  else
+    route_host="$(jq -r '.routes[0].pattern // ""' "${config}")"
+    route_custom_domain="$(jq -r '.routes[0].custom_domain // false' "${config}")"
+    if [ "${route_host}" != "${site_host}" ] || [ "${route_custom_domain}" != "true" ]; then
+      error "Custom Domain route is $(jq -c '.routes[0]' "${config}"), expected pattern '${site_host}' with custom_domain true"
+    fi
+  fi
+fi
 
 [ -n "$(jq -r '.vars.ACCESS_TEAM_DOMAIN // ""' "${config}")" ] || error "ACCESS_TEAM_DOMAIN is empty"
 

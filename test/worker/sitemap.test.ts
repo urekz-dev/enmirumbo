@@ -16,7 +16,7 @@ import { cleanup, createFixture, db, type Fixture } from "./fixtures.ts";
 
 const STATE = "93";
 const PREFIX = `/estado-de-prueba-${STATE}/`;
-const ORIGIN = "https://stage-enmirumbo.urekz.workers.dev";
+const ORIGIN = "https://stage.enmirumbo.com";
 let f: Fixture;
 
 beforeAll(async () => {

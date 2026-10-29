@@ -51,7 +51,7 @@ const headers = () => readFileSync(join(build, "client/_headers"), "utf8");
 function deployed(environment: string, extra: Record<string, string> = {}) {
   return {
     ENVIRONMENT: environment,
-    MEDIA_URL: "https://media-enmirumbo.urekz.com",
+    MEDIA_URL: "https://media.enmirumbo.com",
     UMAMI_WEBSITE_ID: "",
     ...extra,
   };
