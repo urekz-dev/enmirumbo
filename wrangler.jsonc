@@ -105,13 +105,19 @@
   // lists them again, and its deploy uploads them (scripts/deploy/
   // deploy-worker.sh). Locally none is needed: without TURNSTILE_SECRET_KEY the
   // local Worker emulates Turnstile's always-pass test secret, and a
-  // .dev.vars file may set another test secret. MEDIA_ZONE_ID and
+  // .dev.vars file may set another test secret. RESEND_API_KEY sends the
+  // daily admin email; locally it previews without a key. MEDIA_ZONE_ID and
   // MEDIA_CACHE_PURGE_TOKEN purge a deleted photo from the cache of the media
   // hostname (src/lib/media-bucket.ts): the zone's id, a secret because the
   // repository holds no account or zone ids, and a token with Zone, Cache
   // Purge on that zone. The local Worker has no such cache and purges nothing.
   "secrets": {
-    "required": ["TURNSTILE_SECRET_KEY", "MEDIA_ZONE_ID", "MEDIA_CACHE_PURGE_TOKEN"],
+    "required": [
+      "TURNSTILE_SECRET_KEY",
+      "MEDIA_ZONE_ID",
+      "MEDIA_CACHE_PURGE_TOKEN",
+      "RESEND_API_KEY",
+    ],
   },
   "env": {
     // Deployed by hand from any branch (deploy-dev.yml). Its database is reset
@@ -167,7 +173,12 @@
         "DEPLOY_COMMIT": "",
       },
       "secrets": {
-        "required": ["TURNSTILE_SECRET_KEY", "MEDIA_ZONE_ID", "MEDIA_CACHE_PURGE_TOKEN"],
+        "required": [
+          "TURNSTILE_SECRET_KEY",
+          "MEDIA_ZONE_ID",
+          "MEDIA_CACHE_PURGE_TOKEN",
+          "RESEND_API_KEY",
+        ],
       },
     },
     // Deployed on every push to main (deploy-stage.yml).
@@ -217,7 +228,12 @@
         "TURNSTILE_SITE_KEY": "0x4AAAAAAFaqXxFK2fa7EiS4",
       },
       "secrets": {
-        "required": ["TURNSTILE_SECRET_KEY", "MEDIA_ZONE_ID", "MEDIA_CACHE_PURGE_TOKEN"],
+        "required": [
+          "TURNSTILE_SECRET_KEY",
+          "MEDIA_ZONE_ID",
+          "MEDIA_CACHE_PURGE_TOKEN",
+          "RESEND_API_KEY",
+        ],
       },
     },
     // Production, deployed from a tag vX.Y.Z (deploy-prod.yml).
@@ -267,7 +283,12 @@
         "TURNSTILE_SITE_KEY": "0x4AAAAAAFaqP_qD38iv_oZ6",
       },
       "secrets": {
-        "required": ["TURNSTILE_SECRET_KEY", "MEDIA_ZONE_ID", "MEDIA_CACHE_PURGE_TOKEN"],
+        "required": [
+          "TURNSTILE_SECRET_KEY",
+          "MEDIA_ZONE_ID",
+          "MEDIA_CACHE_PURGE_TOKEN",
+          "RESEND_API_KEY",
+        ],
       },
     },
   },

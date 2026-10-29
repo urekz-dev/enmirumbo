@@ -141,6 +141,13 @@
       "when": 1792466768473,
       "tag": "0019_tasks_run",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793307677095,
+      "tag": "0020_daily_admin_email",
+      "breakpoints": true
     }
   ]
 }

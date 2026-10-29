@@ -238,6 +238,7 @@ describe("Scheduled work runs from one hourly Cron Trigger per environment (v2)"
       "photo-cache-purge",
       "retention-purge",
       "orphan-photo-sweep",
+      "daily-admin-email",
     ]);
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

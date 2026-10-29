@@ -7,7 +7,7 @@ test("previews UTC, runs one task and reloads only its result", async ({ page })
   await page.goto("/admin");
   await page.getByRole("link", { name: "Tareas", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Tareas programadas");
-  await expect(page.getByLabel("Tarea").getByRole("option")).toHaveCount(4);
+  await expect(page.getByLabel("Tarea").getByRole("option")).toHaveCount(5);
   await page.getByLabel("Tarea").selectOption("photo-cache-purge");
   await page.getByLabel("Zona horaria").selectOption("America/Mexico_City");
   await page.getByLabel("Fecha y hora").fill("2026-10-19T03:00");
@@ -45,4 +45,20 @@ test("invalid input stays next to the field and an unreadable result shows the p
   // Form defaults are not validation defaults: an empty submitted date is invalid.
   await page.getByRole("button", { name: "Correr tarea", exact: true }).click();
   await expect(page.locator("#time-error")).toContainText("Elige otra fecha y hora");
+});
+
+test("the daily email can be previewed at 08:00 without a local API key", async ({ page }) => {
+  await page.goto("/admin/tareas");
+  await page.getByLabel("Tarea").selectOption("daily-admin-email");
+  await page.getByLabel("Zona horaria").selectOption("America/Mexico_City");
+  await page.getByLabel("Fecha y hora").fill("2026-10-19T08:00");
+  await page.getByRole("button", { name: "Correr tarea", exact: true }).click();
+  const result = page.getByRole("region", { name: "Resultado de la tarea" });
+  await expect(result).toContainText("Listo, la tarea terminó.");
+  await expect(result).toContainText("0 sent");
+  await expect(result).toContainText("1 previewed");
+  await expect(result).toContainText("0 failed");
+  await expect(result).not.toContainText("@enmirumbo.test");
+  await page.reload();
+  await expect(result).toContainText("1 previewed");
 });

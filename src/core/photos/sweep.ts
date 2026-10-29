@@ -25,7 +25,7 @@ export const MAX_ORPHAN_SWEEP_PHOTOS_PER_RUN = 15;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const GRACE_PERIOD_MS = 7 * DAY_MS;
 
-/** Counts suitable for the Worker log and the future daily email. */
+/** Counts suitable for the Worker log and the daily email. */
 export interface OrphanPhotoSweepCounts extends Record<string, number> {
   listedObjects: number;
   deletedPhotos: number;
@@ -131,11 +131,15 @@ export async function sweepOrphanPhotos(
       // this listing; persist the new ownership even if its first page fails.
       await tx
         .update(orphanPhotoSweepState)
-        .set({ photoFolder: folder, cursor: null, completedOn: null });
+        .set({ photoFolder: folder, cursor: null, completedOn: null, startedAt: now });
     }
     if (cursor === undefined && completedOn === utcDay) {
       counts.skipped = 1;
       return;
+    }
+
+    if (sameFolder && state.startedAt === null) {
+      await tx.update(orphanPhotoSweepState).set({ startedAt: now });
     }
 
     const seenKeys = new Set<string>();
@@ -247,6 +251,7 @@ export async function sweepOrphanPhotos(
         photoFolder: folder,
         cursor: cursor ?? null,
         completedOn: cursor === undefined ? utcDay : completedOn,
+        startedAt: cursor === undefined ? null : ((sameFolder ? state.startedAt : null) ?? now),
       });
 
       if (cursor === undefined) {

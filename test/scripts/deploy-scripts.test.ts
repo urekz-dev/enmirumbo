@@ -192,7 +192,12 @@ const OBSERVABILITY_OFF = {
 };
 
 /** The Worker secrets every deployed environment requires by name. */
-const WORKER_SECRETS = ["TURNSTILE_SECRET_KEY", "MEDIA_ZONE_ID", "MEDIA_CACHE_PURGE_TOKEN"];
+const WORKER_SECRETS = [
+  "TURNSTILE_SECRET_KEY",
+  "MEDIA_ZONE_ID",
+  "MEDIA_CACHE_PURGE_TOKEN",
+  "RESEND_API_KEY",
+];
 
 // What `CLOUDFLARE_ENV=<env> vp run build` writes to dist/server/wrangler.json,
 // with real-looking Hyperdrive ids.
@@ -658,7 +663,7 @@ function deployWorker(
       "set -euo pipefail",
       `log=${JSON.stringify(log)}`,
       'printf "args:%s\\n" "$*" >>"$log"',
-      'printf "env:%s\\n" "${TURNSTILE_SECRET_KEY:-}${MEDIA_ZONE_ID:-}${MEDIA_CACHE_PURGE_TOKEN:-}" >>"$log"',
+      'printf "env:%s\\n" "${TURNSTILE_SECRET_KEY:-}${MEDIA_ZONE_ID:-}${MEDIA_CACHE_PURGE_TOKEN:-}${RESEND_API_KEY:-}" >>"$log"',
       "while [ $# -gt 0 ]; do",
       '  if [ "$1" = "--secrets-file" ]; then',
       '    printf "mode:%s\\n" "$(stat -c %a "$2" 2>/dev/null || stat -f %Lp "$2")" >>"$log"',
@@ -693,6 +698,7 @@ const SECRETS = {
   TURNSTILE_SECRET_KEY: TURNSTILE_SECRET,
   MEDIA_ZONE_ID: "fictitious-media-zone-id",
   MEDIA_CACHE_PURGE_TOKEN: "fictitious-media-cache-purge-token",
+  RESEND_API_KEY: crypto.randomUUID(),
 };
 
 describe("Each environment is built and deployed by its own workflow (v2): the Worker secrets", () => {
@@ -748,7 +754,7 @@ describe("Each environment is built and deployed by its own workflow (v2): the W
       expect(result.lines).toEqual([]);
       expect(errors(result)).toEqual([
         expect.stringContaining(
-          "missing Worker secret(s) TURNSTILE_SECRET_KEY MEDIA_ZONE_ID MEDIA_CACHE_PURGE_TOKEN: add each to the GitHub Environment prod",
+          "missing Worker secret(s) TURNSTILE_SECRET_KEY MEDIA_ZONE_ID MEDIA_CACHE_PURGE_TOKEN RESEND_API_KEY: add each to the GitHub Environment prod",
         ),
       ]);
     }

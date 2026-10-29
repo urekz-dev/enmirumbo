@@ -61,7 +61,12 @@ const VARIABLES = [
   "UMAMI_WEBSITE_ID",
   "TURNSTILE_SITE_KEY",
 ];
-const SECRETS = ["TURNSTILE_SECRET_KEY", "MEDIA_ZONE_ID", "MEDIA_CACHE_PURGE_TOKEN"];
+const SECRETS = [
+  "TURNSTILE_SECRET_KEY",
+  "MEDIA_ZONE_ID",
+  "MEDIA_CACHE_PURGE_TOKEN",
+  "RESEND_API_KEY",
+];
 const HYPERDRIVE_BINDINGS = ["HYPERDRIVE", "HYPERDRIVE_FRESH"];
 
 // The fields these tests read. Wrangler's own Config type comes from a package

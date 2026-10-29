@@ -24,6 +24,8 @@ process.env["TURNSTILE_SECRET_KEY"] ??= TURNSTILE_TEST_SECRET_KEYS.alwaysPasses;
 // Worker has no such cache and purges nothing (src/lib/media-bucket.ts).
 process.env["MEDIA_ZONE_ID"] ??= "";
 process.env["MEDIA_CACHE_PURGE_TOKEN"] ??= "";
+// Daily email is a counts-only local preview without an API key.
+process.env["RESEND_API_KEY"] ??= "";
 
 const generated = ["dist/**", ".astro/**", "worker-configuration.d.ts"];
 

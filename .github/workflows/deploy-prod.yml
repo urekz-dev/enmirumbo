@@ -79,6 +79,7 @@ jobs:
           TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
           MEDIA_ZONE_ID: ${{ secrets.MEDIA_ZONE_ID }}
           MEDIA_CACHE_PURGE_TOKEN: ${{ secrets.MEDIA_CACHE_PURGE_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: scripts/deploy/deploy-worker.sh prod
       - name: Smoke test
         env:

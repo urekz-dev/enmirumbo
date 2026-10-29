@@ -172,7 +172,7 @@ beforeEach(async () => {
       .where(inArray(businesses.localityCode, [fixture.localityA, fixture.localityB]));
     await tx
       .update(orphanPhotoSweepState)
-      .set({ cursor: null, completedOn: null, photoFolder: null })
+      .set({ cursor: null, completedOn: null, photoFolder: null, startedAt: null })
       .where(eq(orphanPhotoSweepState.singleton, true));
   });
   await env.MEDIA.delete(["outside/photos/not-a-business-photo.webp", STRAY]);
@@ -416,6 +416,7 @@ describe("The orphan-photo sweep is bounded, age-gated and reference-aware (v2)"
 
     expect(first).toMatchObject({ listedObjects: 2, continued: 1, incomplete: 0 });
     expect(stateAfterFirst?.cursor).toBeTruthy();
+    expect(stateAfterFirst?.startedAt).toEqual(now);
     expect(second).toMatchObject({ listedObjects: 2, continued: 1, incomplete: 0 });
     expect(third).toMatchObject({ listedObjects: 2, continued: 0, incomplete: 0 });
     expect(skipped).toMatchObject({ listedObjects: 0, skipped: 1, continued: 0, incomplete: 0 });
@@ -438,13 +439,18 @@ describe("The orphan-photo sweep is bounded, age-gated and reference-aware (v2)"
       },
     };
 
-    const first = await sweep(new Date(), ages, {}, failingBucket);
+    const startedAt = new Date();
+    const first = await sweep(startedAt, ages, {}, failingBucket);
+    expect((await db((tx) => tx.select().from(orphanPhotoSweepState)))[0]?.startedAt).toEqual(
+      startedAt,
+    );
     const failureLog = JSON.stringify(first);
     const retried = await sweep(new Date(Date.now() + 60 * 60 * 1000), ages, {}, failingBucket);
 
     expect(first).toMatchObject({ deletedPhotos: 0, failed: 1, incomplete: 1 });
     expect(failureLog).not.toContain(key);
     expect(retried).toMatchObject({ deletedPhotos: 1, incomplete: 0 });
+    expect((await db((tx) => tx.select().from(orphanPhotoSweepState)))[0]?.startedAt).toBeNull();
     expect(
       await Promise.all(photoObjectKeys(key).map((objectKey) => env.MEDIA.head(objectKey))),
     ).toEqual([null, null]);

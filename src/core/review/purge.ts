@@ -26,8 +26,8 @@
 // The task is called every hour and each run purges only the items of the
 // localities whose local hour at the time it was scheduled for is 3, by their
 // own time zone: after midnight, at the lowest traffic, and before the admin's
-// 08:00 email (EMR-55), which can report what the night's purge did or could
-// not do. In every other hour the run does nothing and reports zero counts. A
+// 08:00 email, which reads the remaining overdue items from current state.
+// In every other hour the run does nothing and reports zero counts. A
 // day whose 03:00 does not exist because of a daylight saving jump is skipped,
 // and its items go the next day. What a run's bounds leave, and what failed,
 // waits for the next day's 03:00 run.
@@ -43,7 +43,7 @@
 // looks at it, which is the point of failing.
 //
 // The report is counts only, as a task's report is (src/scheduled.ts): it is
-// what the admin's daily email (EMR-55) can add to its text.
+// also suitable for operators; the daily email reads the remaining state.
 //
 // Binding: HYPERDRIVE_FRESH.
 import { type AnyColumn, and, asc, eq, isNotNull, ne, sql, type SQL } from "drizzle-orm";
