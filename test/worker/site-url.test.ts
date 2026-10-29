@@ -27,8 +27,8 @@ describe("Canonical URLs, share previews and the sitemap use the full locality p
 
   it("each environment uses its own site URL", () => {
     for (const [environment, url] of [
-      ["dev", "https://dev-enmirumbo.urekz.workers.dev"],
-      ["stage", "https://stage-enmirumbo.urekz.workers.dev"],
+      ["dev", "https://dev.enmirumbo.com"],
+      ["stage", "https://stage.enmirumbo.com"],
       ["prod", "https://enmirumbo.urekz.workers.dev"],
     ] as const) {
       expect(absoluteUrl({ ENVIRONMENT: environment, SITE_URL: url }, "/hidalgo/tizayuca")).toBe(

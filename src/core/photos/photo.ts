@@ -128,7 +128,7 @@ export interface PhotoSource {
 
 /**
  * The address of one variant of a stored photo, from `base` (the media
- * hostname of the environment, such as `https://media-enmirumbo.urekz.com`,
+ * hostname of the environment, such as `https://media.enmirumbo.com`,
  * or the local path the local Worker serves the local bucket at, without a
  * trailing slash), or null: when there is no base, or the stored value is
  * not a photo key the server generated.

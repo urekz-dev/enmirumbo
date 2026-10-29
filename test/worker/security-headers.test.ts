@@ -32,7 +32,7 @@ const WEBSITE_ID = "94db1cb1-74f4-4a40-ad6c-962362670409";
 
 const PROD: SecurityVars = {
   ENVIRONMENT: "prod",
-  MEDIA_URL: "https://media-enmirumbo.urekz.com",
+  MEDIA_URL: "https://media.enmirumbo.com",
   ACCESS_TEAM_DOMAIN: "urekz.cloudflareaccess.com",
   UMAMI_WEBSITE_ID: "",
 };
@@ -130,13 +130,9 @@ describe("The site declares where JavaScript may come from and where data may go
   it("images come from the site and the media hostname of the environment (ADR 0011)", () => {
     expect(directives(securityHeaders(PROD)["Content-Security-Policy"] ?? "")["img-src"]).toEqual([
       "'self'",
-      "https://media-enmirumbo.urekz.com",
+      "https://media.enmirumbo.com",
     ]);
-    for (const media of [
-      "",
-      "http://media-enmirumbo.urekz.com",
-      "https://media-enmirumbo.urekz.com/photos",
-    ]) {
+    for (const media of ["", "http://media.enmirumbo.com", "https://media.enmirumbo.com/photos"]) {
       const policy = securityHeaders({ ...PROD, MEDIA_URL: media })["Content-Security-Policy"];
       expect(directives(policy ?? "")["img-src"], media).toEqual(["'self'"]);
     }

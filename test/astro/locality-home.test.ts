@@ -383,10 +383,10 @@ describe("The home of a locality lives under it and names it from the record (v2
   it("the site's title and description in the locality, and its own canonical", async () => {
     Object.assign(env, {
       ENVIRONMENT: "stage",
-      SITE_URL: "https://stage-enmirumbo.urekz.workers.dev",
+      SITE_URL: "https://stage.enmirumbo.com",
     });
     const html = await render();
-    const canonical = "https://stage-enmirumbo.urekz.workers.dev/hidalgo/tizayuca";
+    const canonical = "https://stage.enmirumbo.com/hidalgo/tizayuca";
 
     expect(/<title>([^<]*)<\/title>/.exec(html)?.[1]).toBe(
       "enmirumbo — Encuentra negocios y servicios en Tizayuca",

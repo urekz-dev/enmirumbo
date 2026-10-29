@@ -302,7 +302,7 @@ describe("Public registration page on a single screen", () => {
   it("its title and description name the locality, its canonical is its own address, and it may be indexed", async () => {
     Object.assign(env, {
       ENVIRONMENT: "stage",
-      SITE_URL: "https://stage-enmirumbo.urekz.workers.dev",
+      SITE_URL: "https://stage.enmirumbo.com",
     });
     const html = await render();
 
@@ -313,7 +313,7 @@ describe("Public registration page on a single screen", () => {
       "Registra gratis tu negocio de Tizayuca en enmirumbo: un solo formulario, sin cuenta ni contraseña. Lo revisamos y te contactamos por WhatsApp.",
     );
     expect(/<link rel="canonical" href="([^"]*)"/.exec(html)?.[1]).toBe(
-      "https://stage-enmirumbo.urekz.workers.dev/hidalgo/tizayuca/registro",
+      "https://stage.enmirumbo.com/hidalgo/tizayuca/registro",
     );
     expect(html).not.toContain('name="robots"');
   });

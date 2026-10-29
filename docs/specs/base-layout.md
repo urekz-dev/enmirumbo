@@ -532,7 +532,7 @@ The pages that belong to no locality (the site root, the admin panel, a 404 outs
 
 ### Requirement: Canonical URLs, share previews and the sitemap use the full locality path (v2)
 
-Added in v2 — source: ADR 0007, ADR 0008.
+Added in v2 — source: ADR 0007, ADR 0008. Amended on 2026-10-29 (EMR-63) by decision of the product owner: the dev and stage `SITE_URL` values use `dev.enmirumbo.com` and `stage.enmirumbo.com`; production stays at `enmirumbo.urekz.workers.dev` until H4.
 
 Canonical URLs, Open Graph URLs and the entries of `sitemap.xml` MUST be absolute, MUST include the `/{estado}/{municipio}/` prefix and MUST be built from the site URL variable of the environment. The sitemap MUST list the pages of every active locality.
 
@@ -555,7 +555,7 @@ In "Server Component with a document in es-MX and base metadata", and in `deploy
 #### Scenario: each environment with its own base
 
 - **WHEN** the canonical of the home of Tizayuca is read on `stage`
-- **THEN** it is `https://stage-enmirumbo.urekz.workers.dev/hidalgo/tizayuca`
+- **THEN** it is `https://stage.enmirumbo.com/hidalgo/tizayuca`
 
 #### Scenario: a deployed environment without a usable `SITE_URL`
 
@@ -771,14 +771,14 @@ The site MUST serve `/sitemap.xml`, generated from the database on every request
 
 ### Requirement: Every page declares its title, description, canonical and share preview (v2)
 
-Added in v2 — source: ADR 0007, ADR 0008, PRD §8, PRD §9. Amended on 2026-10-15 by EMR-33: a page of a list after the first keeps its `pagina` in its canonical, and a page that must not be indexed says so with `noindex, follow`. Amended on 2026-10-18 by EMR-35: a published card with a photo shares its photo instead of its locality's image.
+Added in v2 — source: ADR 0007, ADR 0008, PRD §8, PRD §9. Amended on 2026-10-15 by EMR-33: a page of a list after the first keeps its `pagina` in its canonical, and a page that must not be indexed says so with `noindex, follow`. Amended on 2026-10-18 by EMR-35: a published card with a photo shares its photo instead of its locality's image. Amended on 2026-10-29 (EMR-63) by decision of the product owner: the dev and stage canonicals use their `enmirumbo.com` Custom Domains.
 
 Every page MUST declare its title and, when it has one, its description, as "Server Component with a document in es-MX and base metadata" and "Pages outside a locality name no locality (v2)" describe, and the same title and description as `og:title` and `og:description`. Every page that search engines may index MUST declare its absolute canonical URL, its own address without a query, as `<link rel="canonical">` and `og:url`: the root, the home of each locality, the legal pages and, as they land, the directory pages of `public-directory`. Two cases keep part of the query or none of it, as `public-directory` describes: a page of a list after the first keeps its `pagina`, and a category listing with a zone filter declares the listing without it. A page that must not be indexed or that answers 404 (a not-found page, the panel, a trade page without published businesses) declares no canonical; one that must not be indexed and answers 200 declares `<meta name="robots" content="noindex, follow">`, so its links are still followed. Every page MUST declare its share image (`og:image`, absolute) with its media type, its width, its height and its alt text, as "Each locality has its own share image, one static image per locality (v2)" describes; the card of a published business with a photo declares its photo instead (`public-directory`, "The card looks good when shared over WhatsApp or Facebook"): its 1200×900 WebP variant from the media hostname, with the alt text "Foto de <nombre del negocio>". Without a base for absolute URLs, the canonical, `og:url` and `og:image` are left out and the page still answers. The prerendered legal pages take the base of the environment their build targets.
 
 #### Scenario: the home of a locality
 
 - **WHEN** the home of Tizayuca is read on `stage`
-- **THEN** its canonical and `og:url` are `https://stage-enmirumbo.urekz.workers.dev/hidalgo/tizayuca`, and its `og:title` and `og:description` are its title and description
+- **THEN** its canonical and `og:url` are `https://stage.enmirumbo.com/hidalgo/tizayuca`, and its `og:title` and `og:description` are its title and description
 
 #### Scenario: every page of the sitemap
 

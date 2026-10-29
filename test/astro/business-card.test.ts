@@ -540,7 +540,7 @@ describe("The listing card brings the essentials and WhatsApp without extra taps
 });
 
 const PHOTO_KEY = "yya626vdevvbuxa5avc2n8e6";
-const MEDIA = "https://media-enmirumbo.urekz.com";
+const MEDIA = "https://media.enmirumbo.com";
 
 /** The `<img>` tags of the HTML, as attribute maps. */
 function images(html: string): Record<string, string>[] {

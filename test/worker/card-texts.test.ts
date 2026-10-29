@@ -323,7 +323,7 @@ describe("Own title and description on each directory page, with its canonical: 
 });
 
 describe("Each published card emits Schema.org LocalBusiness", () => {
-  const URL = "https://stage-enmirumbo.urekz.workers.dev/hidalgo/tizayuca/negocio/x-b5q68b2e72";
+  const URL = "https://stage.enmirumbo.com/hidalgo/tizayuca/negocio/x-b5q68b2e72";
 
   // Scenario: published card with structured data
   it("names the business, its URL, its zone in the locality, its category and its trades", () => {
@@ -391,7 +391,7 @@ describe("Each published card emits Schema.org LocalBusiness", () => {
   // server generated (test/worker/photos.test.ts); the block never reads the
   // stored value.
   it("the image is the address the site built, and there is none without one", () => {
-    const photo = "https://media-enmirumbo.urekz.com/photos/yya626vdevvbuxa5avc2n8e6/full.webp";
+    const photo = "https://media.enmirumbo.com/photos/yya626vdevvbuxa5avc2n8e6/full.webp";
     expect(localBusinessData(card(), TIZAYUCA, URL, photo).image).toEqual([photo]);
     expect(localBusinessData(card(), TIZAYUCA, URL, null)).not.toHaveProperty("image");
     expect(
