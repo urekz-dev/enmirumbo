@@ -10,7 +10,7 @@ import { localityPath } from "../../src/core/locality/paths.ts";
 import { absoluteUrl, LOCAL_SITE_URL, siteOrigin } from "../../src/lib/site-url.ts";
 
 const TIZAYUCA = { slug: "tizayuca", state: { slug: "hidalgo" } };
-const PROD = { ENVIRONMENT: "prod", SITE_URL: "https://enmirumbo.urekz.workers.dev" };
+const PROD = { ENVIRONMENT: "prod", SITE_URL: "https://enmirumbo.com" };
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -20,16 +20,14 @@ describe("Canonical URLs, share previews and the sitemap use the full locality p
   it("canonical of a card: the site URL followed by the locality path", () => {
     expect(
       absoluteUrl(PROD, localityPath(TIZAYUCA, "negocio", "plomeria-de-prueba-a1b2c3d4")),
-    ).toBe(
-      "https://enmirumbo.urekz.workers.dev/hidalgo/tizayuca/negocio/plomeria-de-prueba-a1b2c3d4",
-    );
+    ).toBe("https://enmirumbo.com/hidalgo/tizayuca/negocio/plomeria-de-prueba-a1b2c3d4");
   });
 
   it("each environment uses its own site URL", () => {
     for (const [environment, url] of [
       ["dev", "https://dev.enmirumbo.com"],
       ["stage", "https://stage.enmirumbo.com"],
-      ["prod", "https://enmirumbo.urekz.workers.dev"],
+      ["prod", "https://enmirumbo.com"],
     ] as const) {
       expect(absoluteUrl({ ENVIRONMENT: environment, SITE_URL: url }, "/hidalgo/tizayuca")).toBe(
         `${url}/hidalgo/tizayuca`,
@@ -67,13 +65,13 @@ describe("The base of absolute URLs is SITE_URL, and only the local environment 
       undefined,
       "",
       "not a url",
-      "http://enmirumbo.urekz.workers.dev",
+      "http://enmirumbo.com",
       "https://localhost:4321",
       "http://localhost:4321",
       "https://127.0.0.1",
-      "https://enmirumbo.urekz.workers.dev/hidalgo",
-      "https://enmirumbo.urekz.workers.dev/?x=1",
-      "https://user:pass@enmirumbo.urekz.workers.dev",
+      "https://enmirumbo.com/hidalgo",
+      "https://enmirumbo.com/?x=1",
+      "https://user:pass@enmirumbo.com",
     ];
     for (const SITE_URL of unusable) {
       expect(absoluteUrl({ ENVIRONMENT: "prod", SITE_URL }, "/"), String(SITE_URL)).toBeNull();

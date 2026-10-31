@@ -430,7 +430,7 @@ describe("The card view is measured on its own, without custom instrumentation",
   // itself wherever the layout loads its script)
   it("the card's route is in the measured trunk of the site", () => {
     const url = new URL(
-      "https://enmirumbo.urekz.workers.dev/hidalgo/tizayuca/negocio/plomeria-de-prueba-b5q68b2e72",
+      "https://enmirumbo.com/hidalgo/tizayuca/negocio/plomeria-de-prueba-b5q68b2e72",
     );
     expect(isMeasured(url, "/[state]/[municipality]/negocio/[card]")).toBe(true);
   });

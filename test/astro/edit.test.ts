@@ -130,7 +130,7 @@ function render({
       waiting,
       keptPhoto,
     },
-    request: new Request(`https://enmirumbo.urekz.workers.dev${PATH}`),
+    request: new Request(`https://enmirumbo.com${PATH}`),
     locals: { locality: TIZAYUCA } as App.Locals,
   });
 }
@@ -138,7 +138,7 @@ function render({
 function renderThanks(): Promise<string> {
   return container.renderToString(EditThanksPage, {
     partial: false,
-    request: new Request("https://enmirumbo.urekz.workers.dev/hidalgo/tizayuca/editar/gracias"),
+    request: new Request("https://enmirumbo.com/hidalgo/tizayuca/editar/gracias"),
     locals: { locality: TIZAYUCA } as App.Locals,
   });
 }
@@ -480,7 +480,7 @@ describe("A token that is not exactly the current one opens nothing and gives no
   // Scenarios: the edit page is neither indexed nor linked; the token does
   // not leave in the Referer
   it("the edit page asks not to be indexed nor followed, sends no path as referrer, has no canonical and names nothing of the card in its title", async () => {
-    Object.assign(env, { SITE_URL: "https://enmirumbo.urekz.workers.dev" });
+    Object.assign(env, { SITE_URL: "https://enmirumbo.com" });
     const html = await render();
     expect(html).toContain('<meta name="robots" content="noindex, nofollow">');
     expect(html).toContain('<meta name="referrer" content="strict-origin">');
@@ -519,7 +519,7 @@ describe("A token that is not exactly the current one opens nothing and gives no
       Object.assign(env, { ENVIRONMENT: "prod", UMAMI_WEBSITE_ID: WEBSITE_ID });
       const html = await container.renderToString(NotFoundPage, {
         partial: false,
-        request: new Request(`https://enmirumbo.urekz.workers.dev${path}`),
+        request: new Request(`https://enmirumbo.com${path}`),
         locals: { locality: TIZAYUCA } as App.Locals,
       });
       expect(readable(mainOf(html))).toContain("No encontramos esta página");
@@ -527,7 +527,7 @@ describe("A token that is not exactly the current one opens nothing and gives no
       // The site's 404 elsewhere is measured, so the exclusion is the edit mode's.
       const elsewhere = await container.renderToString(NotFoundPage, {
         partial: false,
-        request: new Request(`https://enmirumbo.urekz.workers.dev/hidalgo/tizayuca/negocio/x`),
+        request: new Request(`https://enmirumbo.com/hidalgo/tizayuca/negocio/x`),
         locals: { locality: TIZAYUCA } as App.Locals,
       });
       expect(elsewhere).toContain("https://cloud.umami.is/script.js");
@@ -537,7 +537,7 @@ describe("A token that is not exactly the current one opens nothing and gives no
   it("a not-found address under the edit mode declares the same as its pages", async () => {
     const html = await container.renderToString(NotFoundPage, {
       partial: false,
-      request: new Request(`https://enmirumbo.urekz.workers.dev/hidalgo/tizayuca/editar/x`),
+      request: new Request(`https://enmirumbo.com/hidalgo/tizayuca/editar/x`),
       locals: { locality: TIZAYUCA } as App.Locals,
     });
     expect(readable(mainOf(html))).toContain("No encontramos esta página");
@@ -546,7 +546,7 @@ describe("A token that is not exactly the current one opens nothing and gives no
     // Outside the edit mode, the site's 404 declares neither.
     const elsewhere = await container.renderToString(NotFoundPage, {
       partial: false,
-      request: new Request(`https://enmirumbo.urekz.workers.dev/hidalgo/tizayuca/negocio/x`),
+      request: new Request(`https://enmirumbo.com/hidalgo/tizayuca/negocio/x`),
       locals: { locality: TIZAYUCA } as App.Locals,
     });
     expect(elsewhere).not.toContain('name="referrer"');

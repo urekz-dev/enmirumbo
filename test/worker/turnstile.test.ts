@@ -168,7 +168,7 @@ describe("Turnstile is checked on the server, fails closed and has a switch in t
   // Scenario: a valid Turnstile token
   it("a real secret asks siteverify once, with the secret and the token and never the address", async () => {
     const { calls, fetch } = fakeFetch(() =>
-      json({ success: true, action: "registration", hostname: "enmirumbo.urekz.workers.dev" }),
+      json({ success: true, action: "registration", hostname: "enmirumbo.com" }),
     );
     expect(await verifyTurnstileToken("real-token", options({ fetch }))).toBe("valid");
     expect(calls).toHaveLength(1);

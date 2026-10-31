@@ -41,14 +41,14 @@ describe("Deployed environments stay out of search engines until the cut-over (v
   it("a response with immutable headers is copied with the header", () => {
     // The headers of a redirect made with Response.redirect are immutable, like
     // those of a response that comes from fetch().
-    const redirect = Response.redirect("https://enmirumbo.urekz.workers.dev/", 302);
+    const redirect = Response.redirect("https://enmirumbo.com/", 302);
     expect(() => redirect.headers.set("X-Test", "1")).toThrow();
 
     const result = withRobotsPolicy(redirect, "prod");
 
     expect(result.headers.get("X-Robots-Tag")).toBe("noindex");
     expect(result.status).toBe(302);
-    expect(result.headers.get("Location")).toBe("https://enmirumbo.urekz.workers.dev/");
+    expect(result.headers.get("Location")).toBe("https://enmirumbo.com/");
   });
 
   it.for(DEPLOYED)("the panel keeps its stricter value in %s", (environment) => {

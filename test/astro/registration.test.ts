@@ -135,7 +135,7 @@ function render({
   return container.renderToString(RegistrationPage, {
     partial: false,
     props: { catalogue, action: ACTION, draft, errors, general, turnstile },
-    request: new Request(`https://enmirumbo.urekz.workers.dev${address}`),
+    request: new Request(`https://enmirumbo.com${address}`),
     locals: { locality } as App.Locals,
   });
 }
@@ -144,7 +144,7 @@ function render({
 function renderThanks(locality: ServedLocality = TIZAYUCA): Promise<string> {
   return container.renderToString(ThanksPage, {
     partial: false,
-    request: new Request(`https://enmirumbo.urekz.workers.dev${PATH}/gracias`),
+    request: new Request(`https://enmirumbo.com${PATH}/gracias`),
     locals: { locality } as App.Locals,
   });
 }
@@ -1079,7 +1079,7 @@ describe("A successful submission queues the business and shows the thank-you sc
 describe("The registration funnel is measured with the views of its two screens", () => {
   const WEBSITE_ID = "94db1cb1-74f4-4a40-ad6c-962362670409";
   const UMAMI = `<script defer src="https://cloud.umami.is/script.js" data-website-id="${WEBSITE_ID}" data-exclude-search="true">`;
-  const SITE = "https://enmirumbo.urekz.workers.dev";
+  const SITE = "https://enmirumbo.com";
 
   function measured(): void {
     Object.assign(env, { ENVIRONMENT: "prod", SITE_URL: SITE, UMAMI_WEBSITE_ID: WEBSITE_ID });

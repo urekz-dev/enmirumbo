@@ -10,7 +10,8 @@
 // it. Without one (the root, /admin, a 404 outside a locality) the layout
 // names no locality: the title is the brand alone, there is no site
 // description, the wordmark leads to the root and the footer has no
-// neighbours line.
+// neighbours line. The root passes whether any locality is active; only the
+// root 404 checks that state itself, so the layout adds no database read.
 //
 // Metadata (docs/specs/base-layout.md, "Every page declares its title,
 // description, canonical and share preview (v2)"): a page that may be indexed
@@ -68,6 +69,8 @@ interface Props {
   noindex?: boolean | undefined;
   /** The tag of this page view (ANALYTICS_TAGS), when the measurement is on. */
   analyticsTag?: AnalyticsTag | undefined;
+  /** Whether the footer shows its legal links; root pages pass their active-locality state. */
+  showLegalLinks?: boolean | undefined;
   /**
    * The page's own share image, with an absolute `src`, instead of its
    * locality's: a card's photo.
@@ -81,6 +84,7 @@ const {
   canonicalPath,
   noindex: noindexProp = false,
   analyticsTag,
+  showLegalLinks: showLegalLinksProp = true,
   image: ownImage,
 } = Astro.props;
 // The panel and the edit mode: never indexed nor followed, and no path leaves
@@ -142,6 +146,6 @@ const deploy = readDeployInfo(env);
     <main class="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-8 sm:px-6">
       <slot />
     </main>
-    <SiteFooter locality={locality} deploy={deploy} />
+    <SiteFooter locality={locality} deploy={deploy} showLegalLinks={showLegalLinksProp} />
   </body>
 </html>

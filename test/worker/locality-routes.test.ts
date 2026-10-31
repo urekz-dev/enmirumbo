@@ -453,7 +453,7 @@ describe("The chosen locality is remembered in a cookie that holds only its slug
 
   it("the cookie: only the slug, for the whole site, a year, no scripts, Lax, Secure on HTTPS", () => {
     expect(LOCALITY_COOKIE).toBe("locality");
-    expect(localityCookieOptions(new URL("https://enmirumbo.urekz.workers.dev/"))).toEqual({
+    expect(localityCookieOptions(new URL("https://enmirumbo.com/"))).toEqual({
       path: "/",
       maxAge: 31_536_000,
       httpOnly: true,

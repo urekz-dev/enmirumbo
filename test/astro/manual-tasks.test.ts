@@ -28,7 +28,7 @@ it.each(["stage", "prod"] as const)(
       expect(hiddenTaskRequest(environment, url, "/404")).toBeNull();
       return gateAdminRequest(
         { url, request, routePattern: "/404", locals: {} },
-        () => container.renderToResponse(NotFound, { request }),
+        () => container.renderToResponse(NotFound, { request, props: { showLegalLinks: false } }),
         {
           config: { environment: "local", teamDomain: "", aud: "" },
           keys: () => {

@@ -3,15 +3,33 @@
 // layout"), for any unknown URL and for whatever a route marks as nonexistent.
 // It renders inside the layout, so a 404 under a locality keeps that
 // locality's footer, and "Ir al inicio" leads to that locality's home.
+import { env, waitUntil } from "cloudflare:workers";
+import { withDb } from "../core/db/client.ts";
+import { activeLocalities } from "../core/locality/served.ts";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { homePath } from "../lib/site.ts";
 
+interface Props {
+  /** A rendered-state override for component tests; the route reads its own state. */
+  showLegalLinks?: boolean | undefined;
+}
+
 // Also when a route or the middleware rewrites to this page.
 Astro.response.status = 404;
-const home = homePath(Astro.locals.locality);
+const locality = Astro.locals.locality;
+const showLegalLinks =
+  Astro.props.showLegalLinks ??
+  (locality !== undefined ||
+    (await withDb(
+      env,
+      "HYPERDRIVE",
+      { waitUntil },
+      async (db) => (await activeLocalities(db)).length > 0,
+    )));
+const home = homePath(locality);
 ---
 
-<BaseLayout>
+<BaseLayout showLegalLinks={showLegalLinks}>
   <section class="flex flex-1 flex-col items-center justify-center gap-6 py-12 text-center">
     <h1 class="max-w-md text-2xl font-bold tracking-tight sm:text-3xl">
       No encontramos esta página

@@ -58,9 +58,9 @@ switch (destination.kind) {
 ---
 
 {destination.kind === "list" ? (
-  <BaseLayout canonicalPath="/" description={ROOT_DESCRIPTION}>
+  <BaseLayout canonicalPath="/" description={ROOT_DESCRIPTION} showLegalLinks={active.length > 0}>
     <LocalityList localities={destination.localities} suggested={destination.suggested} />
   </BaseLayout>
 ) : (
-  <ComingSoon canonicalPath="/" description={ROOT_DESCRIPTION} />
+  <ComingSoon canonicalPath="/" description={ROOT_DESCRIPTION} showLegalLinks={active.length > 0} />
 )}

@@ -22,7 +22,9 @@ All notable changes to this product are documented here. Format: [Keep a Changel
 
 ### Changed
 
-- Dev and stage now use the Custom Domains `dev.enmirumbo.com` and `stage.enmirumbo.com`, with `workers_dev` off; production stays at its `workers.dev` URL until H4. The media hostnames and `MEDIA_ZONE_ID` use the active `enmirumbo.com` zone (EMR-63).
+- Production now uses `enmirumbo.com` as a Custom Domain with `workers_dev` off; `www.enmirumbo.com` permanently redirects to the apex through Cloudflare. The production monitor checks the apex, and every deployed environment has a Custom Domain matching `SITE_URL` (EMR-61).
+- While no locality is active, the coming-soon home and root 404 omit the footer links to the draft legal pages. The legal pages remain prerendered and directly reachable (EMR-61).
+- Dev and stage use the Custom Domains `dev.enmirumbo.com` and `stage.enmirumbo.com`, with `workers_dev` off. The media hostnames and `MEDIA_ZONE_ID` use the active `enmirumbo.com` zone (EMR-63).
 - Dev uploads and seed photos have their own `dev/photos/` folder in the shared media bucket, encoded by a `dev_` key marker. Copied stage photos still render on dev, while deletions, replacements, retention purges, cache retries and orphan sweeps touch only the environment's own folder; existing objects stay in place (EMR-75).
 
 - Each deploy checks the catalogue URLs of its target database plus the pending migrations before applying them. The pending migrations run inside a transaction that is rolled back, so the check never changes the database, and a zone the panel added that would take a URL from a new category or trade stops the deploy (EMR-73).
@@ -34,7 +36,7 @@ All notable changes to this product are documented here. Format: [Keep a Changel
 - ADR 0020: secrets in GitHub Environments, replacing ADR 0009.
 - ADR 0021: panel users, roles and permissions in the database.
 - The admin panel at `/admin`, protected by Cloudflare Access: the Worker verifies the Access token of every admin request and answers 403 without one. Locally it opens with a fixed identity.
-- Three deployed environments, `dev`, `stage` and `prod`, with their deploy workflows: `dev` by hand from any branch (its database is reset from `stage`, and the page footer names the branch and commit), `stage` on every push to `main`, and `prod` from a tag `vX.Y.Z`, which also creates the GitHub Release. Dev and stage use Custom Domains; production stays on `workers.dev` until H4. Each deploy checks its build first and runs a smoke test after.
+- Three deployed environments, `dev`, `stage` and `prod`, with their deploy workflows: `dev` by hand from any branch (its database is reset from `stage`, and the page footer names the branch and commit), `stage` on every push to `main`, and `prod` from a tag `vX.Y.Z`, which also creates the GitHub Release. All three use Custom Domains. Each deploy checks its build first and runs a smoke test after.
 - Every deployed environment, production included, asks search engines not to index it (`X-Robots-Tag: noindex` and a closed `robots.txt`) until the cut-over.
 - `/health` answers `ok` when the site reaches its database.
 - Production is checked every 30 minutes, and backed up every night to a private bucket that keeps each backup for 30 days. The README describes how to restore one.

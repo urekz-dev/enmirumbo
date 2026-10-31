@@ -164,7 +164,7 @@ type Environment = keyof typeof WORKERS;
 const SITE_URLS = {
   dev: "https://dev.enmirumbo.com",
   stage: "https://stage.enmirumbo.com",
-  prod: "https://enmirumbo.urekz.workers.dev",
+  prod: "https://enmirumbo.com",
 } as const;
 
 // The public media of each environment (ADR 0011): production alone, dev and
@@ -206,17 +206,8 @@ function build(environment: Environment, overrides: Record<string, unknown> = {}
     name: WORKERS[environment],
     targetEnvironment: environment,
     topLevelName: "enmirumbo-local",
-    workers_dev: environment === "prod",
-    ...(environment === "prod"
-      ? {}
-      : {
-          routes: [
-            {
-              pattern: environment === "dev" ? "dev.enmirumbo.com" : "stage.enmirumbo.com",
-              custom_domain: true,
-            },
-          ],
-        }),
+    workers_dev: false,
+    routes: [{ pattern: new URL(SITE_URLS[environment]).host, custom_domain: true }],
     preview_urls: false,
     observability: OBSERVABILITY_OFF,
     triggers: { crons: environment === "dev" ? [] : ["0 * * * *"] },
@@ -375,12 +366,12 @@ describe("Each environment is built and deployed by its own workflow (v2): the b
     }
   });
 
-  it("Version URLs on, workers.dev off, a cron on dev or a bad SITE_URL are refused", () => {
+  it("Version URLs on, workers.dev on, a cron on dev or a bad SITE_URL are refused", () => {
     expect(errors(checkBuild("prod", build("prod", { preview_urls: true })))).toEqual([
       expect.stringContaining("preview_urls is true"),
     ]);
-    expect(errors(checkBuild("prod", build("prod", { workers_dev: false })))).toEqual([
-      expect.stringContaining("workers_dev is false"),
+    expect(errors(checkBuild("prod", build("prod", { workers_dev: true })))).toEqual([
+      expect.stringContaining("workers_dev is true, expected false"),
     ]);
     expect(errors(checkBuild("prod", build("prod", { preview_urls: undefined })))).toEqual([
       expect.stringContaining("preview_urls is null"),
@@ -388,18 +379,16 @@ describe("Each environment is built and deployed by its own workflow (v2): the b
     expect(errors(checkBuild("dev", build("dev", { triggers: { crons: ["0 * * * *"] } })))).toEqual(
       [expect.stringContaining("the Cron Triggers are")],
     );
-    for (const url of [
-      "http://enmirumbo.urekz.workers.dev",
-      "https://enmirumbo.urekz.workers.dev/",
-      "",
-    ]) {
+    for (const url of ["http://enmirumbo.com", "https://enmirumbo.com/", ""]) {
       const config = build("prod");
       const result = checkBuild("prod", { ...config, vars: { ...config.vars, SITE_URL: url } });
-      expect(errors(result)).toEqual([expect.stringContaining("SITE_URL is")]);
+      expect(errors(result)).toEqual(
+        expect.arrayContaining([expect.stringContaining("SITE_URL is")]),
+      );
     }
   });
 
-  it.for(["dev", "stage"] as const)(
+  it.for(["dev", "stage", "prod"] as const)(
     "$environment requires workers.dev off and its Custom Domain route",
     (environment) => {
       const config = build(environment);
@@ -409,7 +398,13 @@ describe("Each environment is built and deployed by its own workflow (v2): the b
       expect(errors(checkBuild(environment, { ...config, routes: [] }))).toEqual([
         expect.stringContaining("expected exactly one Custom Domain route"),
       ]);
-      const otherHost = environment === "dev" ? "stage.enmirumbo.com" : "dev.enmirumbo.com";
+      const siteHost = new URL(SITE_URLS[environment]).host;
+      const otherHost =
+        environment === "prod"
+          ? "dev.enmirumbo.com"
+          : environment === "dev"
+            ? "stage.enmirumbo.com"
+            : "dev.enmirumbo.com";
       expect(
         errors(
           checkBuild(environment, {
@@ -417,20 +412,17 @@ describe("Each environment is built and deployed by its own workflow (v2): the b
             routes: [{ pattern: otherHost, custom_domain: true }],
           }),
         ),
-      ).toEqual([expect.stringContaining(`expected pattern '${environment}.enmirumbo.com'`)]);
+      ).toEqual([expect.stringContaining(`expected pattern '${siteHost}'`)]);
+      expect(
+        errors(
+          checkBuild(environment, {
+            ...config,
+            routes: [{ pattern: siteHost, custom_domain: false }],
+          }),
+        ),
+      ).toEqual([expect.stringContaining("expected exactly one Custom Domain route")]);
     },
   );
-
-  it("production keeps workers.dev on and has no route until H4", () => {
-    expect(
-      errors(
-        checkBuild("prod", {
-          ...build("prod"),
-          routes: [{ pattern: "enmirumbo.com", custom_domain: true }],
-        }),
-      ),
-    ).toEqual([expect.stringContaining("prod must have no route until H4")]);
-  });
 
   // deployment, "Anti-abuse counters live in a Durable Object and never in
   // PostgreSQL (v2)": without the counter the quotas would not count.
@@ -945,7 +937,7 @@ describe("Each environment is built and deployed by its own workflow (v2): reset
 // ---------------------------------------------------------------------------
 // smoke-test.sh
 
-const ORIGIN = "https://enmirumbo.urekz.workers.dev";
+const ORIGIN = "https://enmirumbo.com";
 const SECURITY_HEADERS = {
   "content-security-policy": CSP,
   "x-content-type-options": "nosniff",
@@ -1097,11 +1089,7 @@ describe("Each environment is built and deployed by its own workflow (v2): the s
   });
 
   it("refuses anything but an https origin", () => {
-    for (const origin of [
-      "http://enmirumbo.urekz.workers.dev",
-      `${ORIGIN}/`,
-      "enmirumbo.urekz.workers.dev",
-    ]) {
+    for (const origin of ["http://enmirumbo.com", `${ORIGIN}/`, "enmirumbo.com"]) {
       expect(run("smoke-test.sh", [origin]).status).toBe(1);
     }
   });

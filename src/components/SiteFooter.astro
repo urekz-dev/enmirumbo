@@ -1,9 +1,9 @@
 ---
 // The global footer (docs/specs/base-layout.md, "Global layout with header and
 // footer on every page"): the brand alone, the line for the neighbours of the
-// locality, read from the locality record (PRD §5), and the links to the two
-// legal pages, each with a touch area of at least 44px. Outside a locality
-// there is no locality to name, so the neighbours line is left out (v2).
+// locality, read from the locality record (PRD §5), and, when enabled, links
+// to the two legal pages, each with a touch area of at least 44px. Outside a
+// locality there is no locality to name, so the neighbours line is left out (v2).
 // While another locality is active too, a page of a locality offers to change
 // municipality with a link to the list (docs/specs/public-directory.md, "The
 // pages of a locality offer to change municipality while two or more are
@@ -17,9 +17,10 @@ import type { DeployInfo } from "../lib/deploy-info.ts";
 interface Props {
   locality: ServedLocality | undefined;
   deploy: DeployInfo | undefined;
+  showLegalLinks: boolean;
 }
 
-const { locality, deploy } = Astro.props;
+const { locality, deploy, showLegalLinks } = Astro.props;
 ---
 
 <footer class="border-t border-line bg-surface">
@@ -38,20 +39,22 @@ const { locality, deploy } = Astro.props;
         Cambiar de municipio
       </a>
     )}
-    <nav aria-label="Enlaces legales" class="mt-2 flex flex-wrap gap-x-4">
-      <a
-        href="/aviso-de-privacidad"
-        class="inline-flex min-h-11 items-center text-ink underline underline-offset-4"
-      >
-        Aviso de privacidad
-      </a>
-      <a
-        href="/terminos"
-        class="inline-flex min-h-11 items-center text-ink underline underline-offset-4"
-      >
-        Términos y condiciones
-      </a>
-    </nav>
+    {showLegalLinks && (
+      <nav aria-label="Enlaces legales" class="mt-2 flex flex-wrap gap-x-4">
+        <a
+          href="/aviso-de-privacidad"
+          class="inline-flex min-h-11 items-center text-ink underline underline-offset-4"
+        >
+          Aviso de privacidad
+        </a>
+        <a
+          href="/terminos"
+          class="inline-flex min-h-11 items-center text-ink underline underline-offset-4"
+        >
+          Términos y condiciones
+        </a>
+      </nav>
+    )}
     {deploy && (
       <p class="mt-2 break-all" data-testid="deploy-info">
         Versión de prueba: rama <code>{deploy.branch}</code>, commit{" "}

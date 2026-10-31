@@ -87,7 +87,7 @@ afterEach(() => {
 function measured(): void {
   Object.assign(env, {
     ENVIRONMENT: "prod",
-    SITE_URL: "https://enmirumbo.urekz.workers.dev",
+    SITE_URL: "https://enmirumbo.com",
     UMAMI_WEBSITE_ID: WEBSITE_ID,
   });
 }
@@ -98,9 +98,7 @@ function render(
   state: SearchState,
   locality: ServedLocality = TIZAYUCA,
 ): Promise<string> {
-  const url = new URL(
-    `https://enmirumbo.urekz.workers.dev/${locality.state.slug}/${locality.slug}/buscar`,
-  );
+  const url = new URL(`https://enmirumbo.com/${locality.state.slug}/${locality.slug}/buscar`);
   url.searchParams.set("q", query);
   const route = "/[state]/[municipality]/buscar";
   return container.renderToString(SearchPage, {

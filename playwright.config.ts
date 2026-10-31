@@ -56,6 +56,7 @@ export default defineConfig({
         "admin-rectification.spec.ts",
         "admin-phone-audit.spec.ts",
         "turnstile-real.spec.ts",
+        "no-active-locality.spec.ts",
       ],
     },
     // A listing longer than a page (test/e2e/many-cards/): it publishes
@@ -199,12 +200,22 @@ export default defineConfig({
         "seo.spec.ts",
       ],
     },
+    // The coming-soon root and root 404 omit the legal footer links when no
+    // locality is active. This test turns the seeded locality off briefly,
+    // then restores it after the two-locality suite has finished.
+    {
+      name: "phone, no active locality",
+      use: PHONE,
+      testMatch: "no-active-locality.spec.ts",
+      dependencies: ["phone, two localities"],
+    },
     // The real Turnstile script under the site's policy, which needs the
     // network: only by hand, with E2E_TURNSTILE_REAL=1 (README, Registration).
     {
       name: "phone, real Turnstile",
       use: PHONE,
       testMatch: "turnstile-real.spec.ts",
+      dependencies: ["phone, no active locality"],
     },
   ],
   webServer: {

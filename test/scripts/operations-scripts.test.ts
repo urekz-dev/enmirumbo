@@ -95,7 +95,7 @@ function fakeNetwork(routes: Record<string, Answer[]>) {
   };
 }
 
-const SITE = "https://enmirumbo.urekz.workers.dev";
+const SITE = "https://enmirumbo.com";
 const checkSite = (env: Record<string, string>, origin = SITE) =>
   run("scripts/monitor/check-site.sh", [origin], env);
 
@@ -173,7 +173,7 @@ describe("Production is checked every 30 minutes (v2): the check", () => {
     expect(result.stderr).toContain(message);
   });
 
-  it.for(["http://enmirumbo.urekz.workers.dev", `${SITE}/`, "enmirumbo.urekz.workers.dev"])(
+  it.for(["http://enmirumbo.com", `${SITE}/`, "enmirumbo.com"])(
     "refuses %s as the origin before any request",
     (origin) => {
       const net = fakeNetwork({});
