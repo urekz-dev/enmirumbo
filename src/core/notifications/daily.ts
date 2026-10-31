@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { can } from "../access/queries.ts";
 import type { Db } from "../db/client.ts";
+import { failureKind } from "../db/failure.ts";
 import { dailyAdminEmailState, users } from "../db/schema/index.ts";
 import type { PhotoFolder } from "../photos/photo.ts";
 import { dailyEmailText, dailySummary, hasDailyNews, reservedEmailDomain } from "./summary.ts";
@@ -197,7 +198,10 @@ export async function runDailyAdminEmail(
         counts.sent += 1;
         counts.emails += state.batch.recipients.length;
       });
-    } catch {
+    } catch (error) {
+      console.error(
+        `daily email: a locality could not be prepared or sent (${failureKind(error)})`,
+      );
       counts.failed += 1;
     }
   }
