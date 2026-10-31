@@ -4,6 +4,10 @@ All notable changes to this product are documented here. Format: [Keep a Changel
 
 ## [Unreleased]
 
+### Fixed
+
+- The daily admin email reaches Resend. A Worker's fetch refuses the redirect mode `error`, so every send failed before leaving the Worker and was only counted; the request now uses `manual` and treats a redirect as a failure, and a failed send or locality is logged by its HTTP status or the kind of its error (EMR-55).
+
 ### Added
 
 - A daily counts-only admin email through Resend at 08:00 in each locality's time zone, to active users with review permission: pending work, seven-day retention warnings, unfinished scheduled work and yesterday's registration alert, with panel links and no card data. Durable per-locality claims, immutable retries and Resend idempotency prevent duplicate sends; no-news days send nothing, non-production skips reserved domains, and local runs without a key preview counts only. Five bounded batches fit the hourly subrequest budget; `RESEND_API_KEY` follows the environment secret deployment path. The dev task is available from `/admin/tareas` (EMR-55).

@@ -1,5 +1,9 @@
 // Resend's HTTP boundary. Provider responses and thrown errors may contain
-// addresses or credentials, so none is logged or propagated.
+// addresses or credentials, so none is logged or propagated: a failure logs
+// only the HTTP status or the error's kind. Workers' fetch accepts only the
+// redirect modes "follow" and "manual" (it throws on "error"), so a redirect
+// is not followed and its 3xx answer counts as a failure.
+import { failureKind } from "../core/db/failure.ts";
 import type { DailyEmailBatch } from "../core/notifications/daily.ts";
 
 export const RESEND_BATCH_URL = "https://api.resend.com/emails/batch";
@@ -33,15 +37,16 @@ export async function sendResendBatch(
         })),
       ),
       signal: AbortSignal.timeout(options.timeoutMs ?? RESEND_TIMEOUT_MS),
-      redirect: "error",
+      redirect: "manual",
     });
     if (!response.ok) {
       await response.body?.cancel();
+      console.error(`resend: the batch was refused (HTTP ${response.status})`);
       return false;
     }
     const body: unknown = await response.json();
     const data = (body as { data?: unknown } | null)?.data;
-    return (
+    const confirmed =
       Array.isArray(data) &&
       data.length === batch.recipients.length &&
       data.every(
@@ -50,9 +55,11 @@ export async function sendResendBatch(
           typeof entry === "object" &&
           "id" in entry &&
           typeof entry.id === "string",
-      )
-    );
-  } catch {
+      );
+    if (!confirmed) console.error("resend: the answer did not confirm every email");
+    return confirmed;
+  } catch (error) {
+    console.error(`resend: the batch could not be sent (${failureKind(error)})`);
     return false;
   }
 }
