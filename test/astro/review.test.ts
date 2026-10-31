@@ -1055,7 +1055,7 @@ describe("The panel is not indexed nor linked from the public site", () => {
         partial: false,
         props: { title: "Registros por revisar" },
         slots: { default: "<h1>Panel</h1>" },
-        request: new Request(`https://enmirumbo.urekz.workers.dev${path}`),
+        request: new Request(`https://enmirumbo.com${path}`),
         locals: {} as App.Locals,
       });
 

@@ -44,9 +44,9 @@ const ENVIRONMENTS = [
   {
     env: "prod",
     name: "enmirumbo",
-    siteUrl: "https://enmirumbo.urekz.workers.dev",
-    workersDev: true,
-    routes: [],
+    siteUrl: "https://enmirumbo.com",
+    workersDev: false,
+    routes: [{ pattern: "enmirumbo.com", custom_domain: true }],
     crons: ["0 * * * *"],
     media: PROD_MEDIA,
   },

@@ -39,7 +39,7 @@ import { cleanup, createFixture, db, type Fixture, insertBusiness } from "./fixt
 const KEY = "yya626vdevvbuxa5avc2n8e6";
 const PROD = {
   ENVIRONMENT: "prod",
-  SITE_URL: "https://enmirumbo.urekz.workers.dev",
+  SITE_URL: "https://enmirumbo.com",
   MEDIA_URL: "https://media.enmirumbo.com",
 };
 const LOCAL = { ENVIRONMENT: "local", SITE_URL: "http://localhost:4321", MEDIA_URL: "" };
@@ -226,7 +226,7 @@ describe("The local Worker serves the local media bucket under /_media/", () => 
         await serveLocalMedia(request, { ENVIRONMENT: environment, MEDIA: env.MEDIA }),
       ).toBeNull();
     }
-    expect(await get(`/_media/${key}`, {}, "https://enmirumbo.urekz.workers.dev")).toBeNull();
+    expect(await get(`/_media/${key}`, {}, "https://enmirumbo.com")).toBeNull();
     expect(await get("/hidalgo/tizayuca")).toBeNull();
     expect(await get("/_mediateca")).toBeNull();
   });

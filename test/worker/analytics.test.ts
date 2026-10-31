@@ -25,7 +25,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const url = (path: string) => new URL(`https://enmirumbo.urekz.workers.dev${path}`);
+const url = (path: string) => new URL(`https://enmirumbo.com${path}`);
 
 describe("Cookieless measurement is loaded only in production and only when configured (v2)", () => {
   // Scenario: with both variables the provider's script is loaded (v2: the

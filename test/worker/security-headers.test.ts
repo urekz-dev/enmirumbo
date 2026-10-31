@@ -49,7 +49,7 @@ function directives(policy: string): Record<string, string[]> {
 }
 
 function request(path: string): Request {
-  return new Request(`https://enmirumbo.urekz.workers.dev${path}`);
+  return new Request(`https://enmirumbo.com${path}`);
 }
 
 function page(headers: Record<string, string> = {}, status = 200): Response {
@@ -146,7 +146,7 @@ describe("Every site response carries the basic security headers", () => {
     ["a 404", "/no-existe", page({}, 404)],
     ["an error", "/hidalgo/tizayuca", new Response(null, { status: 500 })],
     ["robots.txt", "/robots.txt", new Response("User-agent: *\nDisallow: /\n")],
-    ["a redirect", "/", Response.redirect("https://enmirumbo.urekz.workers.dev/hidalgo/tizayuca")],
+    ["a redirect", "/", Response.redirect("https://enmirumbo.com/hidalgo/tizayuca")],
   ] as const)("%s carries them", ([, path, response]) => {
     const result = withSecurityHeaders(response.clone(), request(path), PROD);
     expect(result.headers.get("Content-Security-Policy")).toContain("frame-ancestors 'none'");
@@ -214,7 +214,7 @@ describe("Every site response carries the basic security headers", () => {
   it.for(["/hidalgo/tizayuca", "/hidalgo/tizayuca/registro", "/editar/x", "/hidalgo/editar/x"])(
     "a page outside the edit mode (%s) keeps the site's policy and headers",
     (path) => {
-      expect(isEditModeRequest(new URL(`https://enmirumbo.urekz.workers.dev${path}`))).toBe(false);
+      expect(isEditModeRequest(new URL(`https://enmirumbo.com${path}`))).toBe(false);
       const result = withSecurityHeaders(
         withEditModeHeaders(page({ "Cache-Control": "max-age=60" }), request(path)),
         request(path),
@@ -234,7 +234,7 @@ describe("Every site response carries the basic security headers", () => {
     );
     expect(result.headers.get("Cache-Control")).toBe("no-store");
     expect(result.headers.get("X-Robots-Tag")).toBe("noindex, nofollow");
-    const redirect = Response.redirect("https://enmirumbo.urekz.workers.dev/hidalgo/tizayuca", 302);
+    const redirect = Response.redirect("https://enmirumbo.com/hidalgo/tizayuca", 302);
     expect(withEditModeHeaders(redirect, request(path)).headers.get("Cache-Control")).toBe(
       "no-store",
     );
@@ -260,16 +260,14 @@ describe("Every site response carries the basic security headers", () => {
   });
 
   it("a response with immutable headers is copied with them", () => {
-    const redirect = Response.redirect("https://enmirumbo.urekz.workers.dev/hidalgo/tizayuca", 301);
+    const redirect = Response.redirect("https://enmirumbo.com/hidalgo/tizayuca", 301);
     expect(() => redirect.headers.set("X-Test", "1")).toThrow();
 
     const result = withSecurityHeaders(redirect, request("/"), PROD);
 
     expect(result.headers.get("X-Frame-Options")).toBe("DENY");
     expect(result.status).toBe(301);
-    expect(result.headers.get("Location")).toBe(
-      "https://enmirumbo.urekz.workers.dev/hidalgo/tizayuca",
-    );
+    expect(result.headers.get("Location")).toBe("https://enmirumbo.com/hidalgo/tizayuca");
   });
 
   it("the dev server leaves the policy out and keeps the rest", () => {

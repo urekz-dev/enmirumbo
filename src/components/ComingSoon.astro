@@ -12,12 +12,14 @@ interface Props {
   canonicalPath: string;
   /** The page's own description; without it, the layout's. */
   description?: string | undefined;
+  /** Whether the footer may link the legal pages yet. */
+  showLegalLinks: boolean;
 }
 
-const { canonicalPath, description } = Astro.props;
+const { canonicalPath, description, showLegalLinks } = Astro.props;
 ---
 
-<BaseLayout canonicalPath={canonicalPath} description={description}>
+<BaseLayout canonicalPath={canonicalPath} description={description} showLegalLinks={showLegalLinks}>
   <section class="flex flex-1 flex-col justify-center gap-4">
     <h1 class="text-3xl font-bold">enmirumbo</h1>
     <p class="text-lg">Estamos armando el directorio de negocios de tu colonia.</p>

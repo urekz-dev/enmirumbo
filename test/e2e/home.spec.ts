@@ -73,6 +73,13 @@ test.describe("Home of the site inside the layout, with the entry to registratio
     expect(response?.status()).toBe(200);
     await expect(page.getByRole("banner")).toBeVisible();
     await expect(page.getByRole("contentinfo")).toBeVisible();
+    const footer = page.getByRole("contentinfo");
+    await expect(
+      footer.getByRole("link", { name: "Aviso de privacidad", exact: true }),
+    ).toHaveAttribute("href", "/aviso-de-privacidad");
+    await expect(
+      footer.getByRole("link", { name: "Términos y condiciones", exact: true }),
+    ).toHaveAttribute("href", "/terminos");
     const main = page.getByRole("main");
     // The municipality comes from the locality record.
     await expect(main.getByRole("heading", { level: 1 })).toHaveText("¿Qué necesitas en Tizayuca?");

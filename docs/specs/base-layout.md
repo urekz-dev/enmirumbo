@@ -4,7 +4,9 @@
 
 ### Requirement: Global layout with header and footer on every page
 
-Every page of the site MUST render inside a global layout with a header that shows the brand as the typographic wordmark "enmirumbo", and a footer at the end of the page. The footer MUST include the links to the two legal pages, with the literal texts "Aviso de privacidad" and "Términos y condiciones", each pointing to a page that exists and with a touch area of at least 44px.
+Every page of the site MUST render inside a global layout with a header that shows the brand as the typographic wordmark "enmirumbo", and a footer at the end of the page. The footer MUST include the links to the two legal pages, with the literal texts "Aviso de privacidad" and "Términos y condiciones", each pointing to a page that exists and with a touch area of at least 44px. The dynamic root home and root 404 omit those footer links while no locality is active; the prerendered legal pages remain as they are and keep their footer links.
+
+Amended on 2026-10-31 (EMR-61) by decision of the product owner: when no locality is active, the coming-soon root and the root 404 omit the footer links to the draft privacy notice and terms. The root locality list shows them when it has active localities, and pages of an active locality keep them. The legal pages remain prerendered, directly reachable and unchanged.
 
 AMENDED (founder's request: "el header se ve limpio con solo el wordmark"): the header NO LONGER carries "Tizayuca" next to the wordmark. Hyperlocal positioning is still mandatory in the product, but it is required on other surfaces: the `h1` of the home, the footer (with the line "Hecho para los vecinos de Tizayuca, Hidalgo.") and all the SEO metadata (`title`, `description`, Open Graph) of the requirement "Server Component with a document in es-MX and base metadata".
 
@@ -27,8 +29,13 @@ AMENDED (rebrand approved by the founder on 2026-09-04, T-019): the brand of the
 
 #### Scenario: footer with the legal links and no dead links
 
-- **WHEN** the resident reaches the end of any page
+- **WHEN** the resident reaches the end of a page of an active locality, or the root locality list
 - **THEN** they see the footer with the site identification ("enmirumbo") and the links "Aviso de privacidad" and "Términos y condiciones", each pointing to a page that really exists, and no link that leads to a nonexistent page
+
+#### Scenario: no legal footer links before a locality is active
+
+- **WHEN** no locality is active and a resident reaches the end of the coming-soon root or a root 404
+- **THEN** they see the brand in the footer without links to the draft privacy notice or terms
 
 #### Scenario: the footer links can be tapped on a phone
 
@@ -532,7 +539,7 @@ The pages that belong to no locality (the site root, the admin panel, a 404 outs
 
 ### Requirement: Canonical URLs, share previews and the sitemap use the full locality path (v2)
 
-Added in v2 — source: ADR 0007, ADR 0008. Amended on 2026-10-29 (EMR-63) by decision of the product owner: the dev and stage `SITE_URL` values use `dev.enmirumbo.com` and `stage.enmirumbo.com`; production stays at `enmirumbo.urekz.workers.dev` until H4.
+Added in v2 — source: ADR 0007, ADR 0008. Amended on 2026-10-29 (EMR-63) by decision of the product owner: the dev and stage `SITE_URL` values use `dev.enmirumbo.com` and `stage.enmirumbo.com`; EMR-61 later amended production's `SITE_URL` as described below. Amended on 2026-10-31 (EMR-61) by decision of the product owner: production's `SITE_URL` is `https://enmirumbo.com` on its Custom Domain; `www.enmirumbo.com` permanently redirects to the apex through a Cloudflare Redirect Rule managed outside the repository.
 
 Canonical URLs, Open Graph URLs and the entries of `sitemap.xml` MUST be absolute, MUST include the `/{estado}/{municipio}/` prefix and MUST be built from the site URL variable of the environment. The sitemap MUST list the pages of every active locality.
 
@@ -675,7 +682,9 @@ Every surface of the site —public pages, admin panel, metadata, share preview,
 
 Added in v2 — source: ADR 0008.
 
-In `dev`, `stage` and production, every response of the Worker —pages, errors, `/robots.txt` and any other route— MUST carry `X-Robots-Tag: noindex`, and `/robots.txt` MUST close the whole site (`User-agent: *` and `Disallow: /`). Production is included until the cut-over attaches the apex and `www`; the story of the cut-over lifts it. Until then this requirement wins over the ones that make pages indexable (the legal pages, trade pages with published businesses) and over the open `robots.txt` of "The site publishes a `robots.txt` that allows what is public and excludes what is not relevant". A response that already carries a stricter value, such as the admin panel's `noindex, nofollow`, MUST keep it. An `ENVIRONMENT` that is missing or is not exactly `local`, `dev`, `stage` or `prod` MUST count as deployed. Locally nothing changes: no header, and `/robots.txt` is the open one of "The open `robots.txt` allows the public site and excludes what is not relevant (v2)" (amended on 2026-10-15, EMR-30: until then it excluded `/admin` alone). Cloudflare serves the static files of the build —the prerendered legal pages and the hashed CSS and JavaScript under `/_astro/`— without invoking the Worker, so they MUST get the header from the `_headers` file of the build: the build of an environment that blocks indexing, by the same rule as the Worker, adds a rule that gives every static file `X-Robots-Tag: noindex`, and a local build adds none. The deploy MUST refuse a build without that rule, and its smoke test checks a prerendered page. When the cut-over lets production be indexed, its builds stop adding the rule with no other change.
+Amended on 2026-10-31 (EMR-61) by decision of the product owner: production keeps `X-Robots-Tag: noindex` and a closed `robots.txt` while the catalogue is empty and the legal review is pending, even though `enmirumbo.com` is already its Custom Domain. Attaching the Custom Domain is not the cut-over and does not lift this requirement.
+
+In `dev`, `stage` and production, every response of the Worker —pages, errors, `/robots.txt` and any other route— MUST carry `X-Robots-Tag: noindex`, and `/robots.txt` MUST close the whole site (`User-agent: *` and `Disallow: /`). Production remains noindex until the cut-over; attaching its Custom Domain does not lift this rule. Until then this requirement wins over the ones that make pages indexable (the legal pages, trade pages with published businesses) and over the open `robots.txt` of "The site publishes a `robots.txt` that allows what is public and excludes what is not relevant". A response that already carries a stricter value, such as the admin panel's `noindex, nofollow`, MUST keep it. An `ENVIRONMENT` that is missing or is not exactly `local`, `dev`, `stage` or `prod` MUST count as deployed. Locally nothing changes: no header, and `/robots.txt` is the open one of "The open `robots.txt` allows the public site and excludes what is not relevant (v2)" (amended on 2026-10-15, EMR-30: until then it excluded `/admin` alone). Cloudflare serves the static files of the build —the prerendered legal pages and the hashed CSS and JavaScript under `/_astro/`— without invoking the Worker, so they MUST get the header from the `_headers` file of the build: the build of an environment that blocks indexing, by the same rule as the Worker, adds a rule that gives every static file `X-Robots-Tag: noindex`, and a local build adds none. The deploy MUST refuse a build without that rule, and its smoke test checks a prerendered page. When the cut-over lets production be indexed, its builds stop adding the rule with no other change.
 
 #### Scenario: any response of a deployed environment
 

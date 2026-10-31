@@ -8,8 +8,8 @@ Include what you found, where (a URL or a file and line), how to reproduce it an
 
 ## Scope
 
-- This repository and the enmirumbo sites it deploys, including production's `workers.dev` address until H4 and the dev and stage Custom Domains.
-- Out of scope: the prototype at `enmirumbo.com` while it still runs on Vercel, denial of service, social engineering, and reports from automated scanners without a working proof.
+- This repository and the enmirumbo sites it deploys: production at `enmirumbo.com`, the `www.enmirumbo.com` redirect, and the dev and stage Custom Domains.
+- Out of scope: the old Vercel prototype, denial of service, social engineering, and reports from automated scanners without a working proof.
 
 Do not access, change or delete data that is not yours, and stop as soon as you can prove the problem.
 

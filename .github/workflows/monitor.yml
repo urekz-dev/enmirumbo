@@ -29,5 +29,5 @@ jobs:
       - name: Check production
         env:
           # SITE_URL of prod in wrangler.jsonc (test/scripts/wrangler-config.test.ts).
-          SITE_URL: https://enmirumbo.urekz.workers.dev
+          SITE_URL: https://enmirumbo.com
         run: scripts/monitor/check-site.sh "${SITE_URL}"

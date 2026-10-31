@@ -93,7 +93,7 @@ function renderReport(
   return container.renderToString(ReportPage, {
     partial: false,
     props: { card: { id: CARD.id, name: CARD.name }, action: ACTION, error, draft },
-    request: new Request(`https://enmirumbo.urekz.workers.dev${REPORT_PATH}`),
+    request: new Request(`https://enmirumbo.com${REPORT_PATH}`),
     locals: { locality } as App.Locals,
   });
 }
@@ -460,7 +460,7 @@ describe("The server validates the report's reason and comment, and keeps the dr
         error: null,
         draft: EMPTY_DRAFT,
       },
-      request: new Request(`https://enmirumbo.urekz.workers.dev${REPORT_PATH}`),
+      request: new Request(`https://enmirumbo.com${REPORT_PATH}`),
       locals: { locality: TIZAYUCA } as App.Locals,
     });
 

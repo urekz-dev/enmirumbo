@@ -425,12 +425,15 @@ describe("With no active locality the root says the directory is coming (v2)", (
   it("the notice that the directory is being built, naming no locality", async () => {
     const html = await container.renderToString(ComingSoon, {
       partial: false,
-      props: { canonicalPath: "/", description: ROOT_DESCRIPTION },
+      props: { canonicalPath: "/", description: ROOT_DESCRIPTION, showLegalLinks: false },
       request: new Request("http://localhost:4321/"),
       locals: {} as App.Locals,
     });
 
     expect(paragraphs(html)).toContain("Estamos armando el directorio de negocios de tu colonia.");
     expect(html).not.toMatch(/tizayuca|hidalgo/i);
+    expect(
+      anchors(html).filter(([href]) => ["/aviso-de-privacidad", "/terminos"].includes(href)),
+    ).toEqual([]);
   });
 });

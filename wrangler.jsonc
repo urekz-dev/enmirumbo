@@ -17,7 +17,7 @@
   "compatibility_date": "2026-10-01",
   // The local Worker is never deployed. If it were, by mistake, it would get no
   // workers.dev URL and no Version URLs. Dev and stage use Custom Domains;
-  // production keeps its workers.dev URL until the cut-over (ADR 0008).
+  // Production has its Custom Domain in env.prod; the local Worker is not deployed.
   // `preview_urls` stays false here and in every environment, each writing it
   // (ADR 0012, amended on 2026-10-15; test/scripts/quota-guardrails.test.ts).
   "workers_dev": false,
@@ -239,8 +239,9 @@
     // Production, deployed from a tag vX.Y.Z (deploy-prod.yml).
     "prod": {
       "name": "enmirumbo",
-      "workers_dev": true,
+      "workers_dev": false,
       "preview_urls": false,
+      "routes": [{ "pattern": "enmirumbo.com", "custom_domain": true }],
       // Workers Logs and traces off, as at the top level.
       "observability": {
         "enabled": false,
@@ -271,7 +272,7 @@
         // The AUD tag of the "enmirumbo admin" Access application, the same in
         // the three environments (ADR 0010).
         "ACCESS_AUD": "a98a5e8ae63966e34ec201af51ec9b15ba202afaee4768ddb940bcb016ad2338",
-        "SITE_URL": "https://enmirumbo.urekz.workers.dev",
+        "SITE_URL": "https://enmirumbo.com",
         // The media hostname (ADR 0011).
         "MEDIA_URL": "https://media.enmirumbo.com",
         // Measurement stays off until the launch: the Website ID arrives with

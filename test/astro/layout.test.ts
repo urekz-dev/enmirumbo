@@ -60,9 +60,13 @@ function localsWith(locality: ServedLocality | undefined): App.Locals {
 }
 
 /** The 404 page, a page with no title of its own, as a whole document. */
-function renderNotFound(locality?: ServedLocality): Promise<string> {
+function renderNotFound(
+  locality?: ServedLocality,
+  showLegalLinks = locality !== undefined,
+): Promise<string> {
   return container.renderToString(NotFound, {
     partial: false,
+    props: { showLegalLinks },
     locals: localsWith(locality),
   });
 }
@@ -178,11 +182,17 @@ describe("Global layout with header and footer on every page", () => {
     for (const anchor of anchors) expect(anchor).toMatch(/\bmin-h-11\b/);
   });
 
-  it("outside a locality the footer names no locality but keeps the brand and the legal links", async () => {
+  it("a root 404 with no active locality keeps the brand but omits the legal links", async () => {
     const footer = element(await renderNotFound(), "footer");
 
     expect(visibleText(footer)).not.toContain("Hecho para los vecinos");
     expect(visibleText(footer)).toMatch(/^\s*enmirumbo\n/);
+    expect(links(footer)).toEqual([]);
+  });
+
+  it("a root 404 shows the legal links after a locality is active", async () => {
+    const footer = element(await renderNotFound(undefined, true), "footer");
+
     expect(links(footer)).toEqual(LEGAL_LINKS);
   });
 });
@@ -534,7 +544,7 @@ describe("Cookieless measurement is loaded only in production and only when conf
   function measured(environment: string, websiteId = WEBSITE_ID): void {
     Object.assign(env, {
       ENVIRONMENT: environment,
-      SITE_URL: "https://enmirumbo.urekz.workers.dev",
+      SITE_URL: "https://enmirumbo.com",
       UMAMI_WEBSITE_ID: websiteId,
     });
   }
@@ -573,7 +583,7 @@ describe("Cookieless measurement is loaded only in production and only when conf
       const html = await container.renderToString(BaseLayout, {
         partial: false,
         slots: { default: "<h1>Panel</h1>" },
-        request: new Request(`https://enmirumbo.urekz.workers.dev${path}`),
+        request: new Request(`https://enmirumbo.com${path}`),
         locals: localsWith(undefined),
       });
 

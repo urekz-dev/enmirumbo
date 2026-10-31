@@ -10,7 +10,7 @@
 # check is retried.
 #
 # Usage: scripts/deploy/smoke-test.sh <https origin>
-#   for example scripts/deploy/smoke-test.sh https://enmirumbo.urekz.workers.dev
+#   for example scripts/deploy/smoke-test.sh https://enmirumbo.com
 # Optional: SMOKE_ATTEMPTS (default 10), SMOKE_DELAY (seconds, default 6).
 set -euo pipefail
 

@@ -5,7 +5,7 @@
 # before it counts as failed, so one dropped request does not raise an alarm.
 #
 # Usage: scripts/monitor/check-site.sh <https origin>
-#   for example scripts/monitor/check-site.sh https://enmirumbo.urekz.workers.dev
+#   for example scripts/monitor/check-site.sh https://enmirumbo.com
 # Optional: MONITOR_ATTEMPTS (default 3), MONITOR_DELAY (seconds, default 20).
 set -euo pipefail
 

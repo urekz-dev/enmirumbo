@@ -442,7 +442,7 @@ describe("The queue leads to the zones screen", () => {
       partial: false,
       props: { title: "Colonias" },
       slots: { default: "<h1>Colonias</h1>" },
-      request: new Request("https://enmirumbo.urekz.workers.dev/admin/colonias"),
+      request: new Request("https://enmirumbo.com/admin/colonias"),
       locals: {} as App.Locals,
     });
 

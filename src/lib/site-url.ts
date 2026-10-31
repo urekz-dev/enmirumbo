@@ -46,7 +46,7 @@ export interface SiteVars {
 
 /**
  * The origin every absolute URL starts with, such as
- * `https://enmirumbo.urekz.workers.dev`, without a trailing slash; or null in
+ * `https://enmirumbo.com`, without a trailing slash; or null in
  * a deployed environment whose SITE_URL is missing, is not an https origin or
  * names this machine.
  */
