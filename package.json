@@ -8,28 +8,28 @@
     "prepare": "vp config"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "14.3.4",
-    "@tailwindcss/vite": "4.3.3",
-    "astro": "7.3.8",
+    "@astrojs/cloudflare": "14.4.6",
+    "@tailwindcss/vite": "4.3.5",
+    "astro": "7.4.7",
     "drizzle-orm": "0.45.4",
-    "jose": "6.2.12",
+    "jose": "6.2.15",
     "nanoid": "6.0.2",
     "pg": "8.23.1",
-    "tailwindcss": "4.3.3"
+    "tailwindcss": "4.3.5"
   },
   "devDependencies": {
-    "@astrojs/check": "0.9.10",
-    "@cloudflare/vitest-plugin": "1.4.0",
-    "@playwright/test": "1.64.0",
+    "@astrojs/check": "0.9.12",
+    "@cloudflare/vitest-plugin": "1.6.0",
+    "@playwright/test": "1.65.0",
     "@types/node": "24.19.2",
     "@types/pg": "8.23.1",
     "drizzle-kit": "0.31.11",
     "prettier": "3.9.10",
-    "prettier-plugin-astro": "1.1.1",
+    "prettier-plugin-astro": "1.1.2",
     "typescript": "6.0.3",
     "vite-plus": "catalog:",
     "vitest": "catalog:",
-    "wrangler": "4.149.0"
+    "wrangler": "4.158.0"
   },
   "devEngines": {
     "packageManager": {
